@@ -14,7 +14,7 @@ import {
 } from "../core/git.js";
 import { analyzeDiff } from "../core/diff-analyzer.js";
 import { sanitizeHunk } from "../core/commit-message.js";
-import { setLanguage, getLanguage, getAutoAggCommit } from "../utils/settings.js";
+import { getLanguage, getAutoAggCommit } from "../utils/settings.js";
 
 export let isAggCommitRunning = false;
 
@@ -55,14 +55,13 @@ export async function handleAggCommit(
 	ctx: ExtensionContext,
 	args: string,
 ): Promise<void> {
-	// Parse language argument
+	// Parse language argument (temporary override, does not save)
 	const langArg = parseLangArg(args);
+	let lang = getLanguage(ctx.cwd);
 	if (langArg) {
-		setLanguage(langArg);
-		ctx.ui.notify(`Language set to: ${langArg}`, "info");
+		lang = langArg;
+		ctx.ui.notify(`Language set to: ${langArg} (this run only)`, "info");
 	}
-
-	const lang = getLanguage();
 
 	// 1. Skip in non-interactive mode
 	if (!ctx.hasUI) {

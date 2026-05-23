@@ -7,6 +7,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { handleAggCommit, isAggCommitRunning } from "./commands/agg-commit.js";
 import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
+import { handleConfig } from "./commands/config.js";
 import { isGitRepository, hasChanges } from "./core/git.js";
 import { getAutoAggCommit } from "./utils/settings.js";
 import { updateAutoAggCommitStatus } from "./utils/status.js";
@@ -15,7 +16,7 @@ export default function (pi: ExtensionAPI) {
 	// Initialize status on session start
 	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.hasUI) {
-			updateAutoAggCommitStatus(ctx.ui, getAutoAggCommit());
+			updateAutoAggCommitStatus(ctx.ui, getAutoAggCommit(ctx.cwd), ctx.cwd);
 		}
 	});
 
@@ -24,6 +25,14 @@ export default function (pi: ExtensionAPI) {
 		description: "Auto stage and commit changes with AI-generated Conventional Commits messages",
 		handler: async (args, ctx) => {
 			await handleAggCommit(pi, ctx, args);
+		},
+	});
+
+	// Register /git-config command
+	pi.registerCommand("git-config", {
+		description: "Get, set, or list pi-git configuration values",
+		handler: async (args, ctx) => {
+			await handleConfig(pi, ctx, args);
 		},
 	});
 
@@ -45,7 +54,7 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		if (!getAutoAggCommit()) {
+		if (!getAutoAggCommit(ctx.cwd)) {
 			return;
 		}
 

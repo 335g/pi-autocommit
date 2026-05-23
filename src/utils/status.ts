@@ -11,8 +11,12 @@ function isJapanese(lang: string): boolean {
  * Update the footer status indicator for auto-agg-commit.
  * Shows a label when enabled, clears it when disabled.
  */
-export function updateAutoAggCommitStatus(ui: ExtensionUIContext, enabled: boolean): void {
-	const lang = getSettings().lang ?? "en";
+export function updateAutoAggCommitStatus(
+	ui: ExtensionUIContext,
+	enabled: boolean,
+	cwd?: string,
+): void {
+	const lang = getSettings(cwd).lang ?? "en";
 	if (enabled) {
 		const text = isJapanese(lang)
 			? "[pi-git] auto-commit: 有効"

@@ -48,7 +48,7 @@ export async function handleAutoAggCommit(
 
 	const trimmed = args.trim().toLowerCase();
 	const current = getAutoAggCommit();
-	const lang = getSettings().lang ?? "en";
+	const lang = getSettings(ctx.cwd).lang ?? "en";
 
 	let next: boolean;
 	switch (trimmed) {
