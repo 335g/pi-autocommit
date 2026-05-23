@@ -11,8 +11,8 @@ export default function (pi: ExtensionAPI) {
 	// Register /git-auto-commit command
 	pi.registerCommand("git-auto-commit", {
 		description: "Auto stage and commit changes with AI-generated Conventional Commits messages",
-		handler: async (_args, ctx) => {
-			await handleAutoCommit(pi, ctx);
+		handler: async (args, ctx) => {
+			await handleAutoCommit(pi, ctx, args);
 		},
 	});
 }
