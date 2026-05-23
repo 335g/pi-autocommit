@@ -19,6 +19,11 @@ import { clearAutoAggCommitStatus, restoreAutoAggCommitStatus } from "../utils/s
 
 export let isAggCommitRunning = false;
 
+/** Set the agg-commit running flag from external modules */
+export function setAggCommitRunning(value: boolean): void {
+	isAggCommitRunning = value;
+}
+
 const STATUS_ID = "pi-git-agg-commit";
 
 function parseLangArg(args: string): string | undefined {
