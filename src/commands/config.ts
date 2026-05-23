@@ -6,6 +6,7 @@
  * and local (<repo>/.pi-git/settings.json) scopes.
  */
 
+import { existsSync } from "node:fs";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -16,6 +17,8 @@ import {
 	saveGlobalSettings,
 	saveLocalSettings,
 	getLocalSettingsPath,
+	DEFAULT_SETTINGS,
+	GLOBAL_SETTINGS_FILE,
 } from "../utils/settings.js";
 
 function isJapanese(lang: string): boolean {
@@ -173,13 +176,29 @@ export async function handleConfig(
 			// Default to local when inside a git repo
 			const localPath = getLocalSettingsPath(ctx.cwd);
 			if (localPath) {
-				saveLocalSettings({ [key]: parsed }, ctx.cwd);
-				ctx.ui.notify(
-					ja
-						? `[pi-git] ${key}=${parsed} をローカル設定に保存しました`
-						: `[pi-git] Saved ${key}=${parsed} to local config`,
-					"info",
-				);
+				const globalExists = existsSync(GLOBAL_SETTINGS_FILE);
+				const localExists = existsSync(localPath);
+				if (!globalExists && !localExists) {
+					// グローバルもローカルもない場合：デフォルト値で初期化
+					saveLocalSettings(
+						{ ...DEFAULT_SETTINGS, [key]: parsed },
+						ctx.cwd,
+					);
+					ctx.ui.notify(
+						ja
+							? `[pi-git] ${key}=${parsed} をローカル設定に保存しました（デフォルト値で初期化）`
+							: `[pi-git] Saved ${key}=${parsed} to local config (initialized with defaults)`,
+						"info",
+					);
+				} else {
+					saveLocalSettings({ [key]: parsed }, ctx.cwd);
+					ctx.ui.notify(
+						ja
+							? `[pi-git] ${key}=${parsed} をローカル設定に保存しました`
+							: `[pi-git] Saved ${key}=${parsed} to local config`,
+						"info",
+					);
+				}
 			} else {
 				// Fallback to global when not in a repo
 				saveGlobalSettings({ [key]: parsed });

@@ -25,13 +25,13 @@ export interface PiGitSettings {
 
 export type SettingOrigin = "default" | "global" | "local";
 
-const DEFAULT_SETTINGS: PiGitSettings = {
+export const DEFAULT_SETTINGS: PiGitSettings = {
 	lang: "en",
 	autoAggCommit: false,
 };
 
-const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
-const GLOBAL_SETTINGS_FILE = join(GLOBAL_CONFIG_DIR, "settings.json");
+export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
+export const GLOBAL_SETTINGS_FILE = join(GLOBAL_CONFIG_DIR, "settings.json");
 const LOCAL_SETTINGS_DIR = ".pi-git";
 const LOCAL_SETTINGS_FILE = "settings.json";
 
