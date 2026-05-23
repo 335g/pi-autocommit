@@ -6,7 +6,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { getSettings, getAutoAggCommit, setAutoAggCommit } from "../utils/settings.js";
+import { getSettings, getAutoAggCommit, saveLocalSettings, getLocalSettingsPath, saveGlobalSettings } from "../utils/settings.js";
 import { updateAutoAggCommitStatus } from "../utils/status.js";
 
 function isJapanese(lang: string): boolean {
@@ -109,7 +109,29 @@ export async function handleAutoAggCommit(
 		}
 	}
 
-	setAutoAggCommit(next);
+	const localPath = getLocalSettingsPath(ctx.cwd);
+	if (localPath) {
+		saveLocalSettings({ auto_agg_commit: next }, ctx.cwd);
+	} else {
+		saveGlobalSettings({ auto_agg_commit: next });
+	}
+
 	updateAutoAggCommitStatus(ctx.ui, next);
-	ctx.ui.notify(getToggledMessage(next, lang), "info");
+
+	const ja = isJapanese(lang);
+	if (localPath) {
+		ctx.ui.notify(
+			ja
+				? `[pi-git] 自動 git-agg-commit を${next ? "有効" : "無効"}にしました（ローカル設定）`
+				: `[pi-git] Auto git-agg-commit ${next ? "enabled" : "disabled"} (local config)`,
+			"info",
+		);
+	} else {
+		ctx.ui.notify(
+			ja
+				? `[pi-git] 自動 git-agg-commit を${next ? "有効" : "無効"}にしました（グローバル設定 — Gitリポジトリ外のため）`
+				: `[pi-git] Auto git-agg-commit ${next ? "enabled" : "disabled"} (global config — outside git repo)`,
+			"info",
+		);
+	}
 }
