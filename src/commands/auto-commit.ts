@@ -24,6 +24,26 @@ function parseLangArg(args: string): string | undefined {
 	return match?.[1];
 }
 
+function isJapanese(lang: string): boolean {
+	return lang === "ja" || lang === "ja-JP" || lang === "japanese";
+}
+
+function statusText(lang: string, key: "prepare" | "collectDiff" | "analyze" | "generateMessage" | "commit"): string {
+	const ja = isJapanese(lang);
+	switch (key) {
+		case "prepare":
+			return ja ? "[pi-git] 準備中..." : "[pi-git] Preparing...";
+		case "collectDiff":
+			return ja ? "[pi-git] diff収集中..." : "[pi-git] Collecting diff...";
+		case "analyze":
+			return ja ? "[pi-git] hunk解析中..." : "[pi-git] Analyzing hunks...";
+		case "generateMessage":
+			return ja ? "[pi-git] コミットメッセージ生成中..." : "[pi-git] Generating messages...";
+		case "commit":
+			return ja ? "[pi-git] コミット実行中..." : "[pi-git] Committing...";
+	}
+}
+
 export async function handleAutoCommit(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
@@ -36,12 +56,14 @@ export async function handleAutoCommit(
 		ctx.ui.notify(`Commit message language set to: ${langArg}`, "info");
 	}
 
+	const lang = getCommitMessageLanguage();
+
 	// 1. Skip in non-interactive mode
 	if (!ctx.hasUI) {
 		return;
 	}
 
-	ctx.ui.setStatus(STATUS_ID, "[pi-git] 準備中...");
+	ctx.ui.setStatus(STATUS_ID, statusText(lang, "prepare"));
 
 	// 2. Check git repository
 	if (!(await isGitRepository(pi))) {
@@ -58,7 +80,7 @@ export async function handleAutoCommit(
 	}
 
 	// 4. Get full diff including tracked changes and untracked files
-	ctx.ui.setStatus(STATUS_ID, "[pi-git] diff収集中...");
+	ctx.ui.setStatus(STATUS_ID, statusText(lang, "collectDiff"));
 	const { stdout: trackedDiff, code: trackedCode } = await pi.exec("git", ["diff", "HEAD"]);
 	if (trackedCode !== 0) {
 		ctx.ui.setStatus(STATUS_ID, "");
@@ -87,7 +109,7 @@ export async function handleAutoCommit(
 	}
 
 	// 5. Analyze diff into logical hunks
-	ctx.ui.setStatus(STATUS_ID, "[pi-git] hunk解析中...");
+	ctx.ui.setStatus(STATUS_ID, statusText(lang, "analyze"));
 	let hunks = await analyzeDiff(pi, ctx, diff);
 	if (hunks.length === 0) {
 		ctx.ui.setStatus(STATUS_ID, "");
@@ -96,11 +118,11 @@ export async function handleAutoCommit(
 	}
 
 	// 6. Sanitize commit messages
-	ctx.ui.setStatus(STATUS_ID, "[pi-git] コミットメッセージ生成中...");
+	ctx.ui.setStatus(STATUS_ID, statusText(lang, "generateMessage"));
 	hunks = hunks.map(sanitizeHunk);
 
 	// 7. Stage and commit each hunk
-	ctx.ui.setStatus(STATUS_ID, "[pi-git] コミット実行中...");
+	ctx.ui.setStatus(STATUS_ID, statusText(lang, "commit"));
 	let committedCount = 0;
 	let failedCount = 0;
 
