@@ -1,5 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { getSettings } from "./settings.js";
+import { getSettings, getAutoAggCommit } from "./settings.js";
 
 const AUTO_AGG_COMMIT_STATUS_KEY = "!pi-git-auto-agg-commit";
 
@@ -25,4 +25,17 @@ export function updateAutoAggCommitStatus(
 	} else {
 		ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, undefined);
 	}
+}
+
+/** Clear the auto-agg-commit status from footer (e.g., before running agg-commit). */
+export function clearAutoAggCommitStatus(ui: ExtensionUIContext): void {
+	ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, undefined);
+}
+
+/** Restore the auto-agg-commit status based on current settings. */
+export function restoreAutoAggCommitStatus(
+	ui: ExtensionUIContext,
+	cwd?: string,
+): void {
+	updateAutoAggCommitStatus(ui, getAutoAggCommit(cwd), cwd);
 }

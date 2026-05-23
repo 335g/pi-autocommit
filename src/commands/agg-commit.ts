@@ -15,6 +15,7 @@ import {
 import { analyzeDiff } from "../core/diff-analyzer.js";
 import { sanitizeHunk } from "../core/commit-message.js";
 import { getLanguage, getAutoAggCommit } from "../utils/settings.js";
+import { clearAutoAggCommitStatus, restoreAutoAggCommitStatus } from "../utils/status.js";
 
 export let isAggCommitRunning = false;
 
@@ -78,7 +79,13 @@ export async function handleAggCommit(
 	}
 
 	isAggCommitRunning = true;
-	const autoCommit = getAutoAggCommit();
+	const autoCommit = getAutoAggCommit(ctx.cwd);
+
+	// agg-commit 実行中は auto-commit の永続インジケータを隠し、
+	// 統合ステータスで表示する（重複を避けるため）
+	if (autoCommit) {
+		clearAutoAggCommitStatus(ctx.ui);
+	}
 
 	try {
 	ctx.ui.setStatus(STATUS_ID, statusText(lang, "prepare", autoCommit));
@@ -214,5 +221,9 @@ export async function handleAggCommit(
 		}
 	} finally {
 		isAggCommitRunning = false;
+		// agg-commit 完了後、auto-commit インジケータを復元
+		if (autoCommit) {
+			restoreAutoAggCommitStatus(ctx.ui, ctx.cwd);
+		}
 	}
 }
