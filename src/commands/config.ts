@@ -88,7 +88,7 @@ export async function handleConfig(
 		else positional.push(token);
 	}
 
-	if (help || positional.length === 0) {
+	if (help) {
 		const lines = ja
 			? [
 					"/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--help]",
