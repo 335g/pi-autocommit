@@ -17,7 +17,7 @@ import { analyzeDiff } from "../core/diff-analyzer.js";
 import { sanitizeHunk } from "../core/commit-message.js";
 import { setLanguage, getLanguage } from "../utils/settings.js";
 
-let isAutoCommitRunning = false;
+export let isAutoCommitRunning = false;
 
 const STATUS_ID = "pi-git-auto-commit";
 
@@ -62,6 +62,15 @@ export async function handleAutoCommit(
 
 	// 1. Skip in non-interactive mode
 	if (!ctx.hasUI) {
+		return;
+	}
+
+	// Prevent concurrent executions to avoid staging area conflicts
+	if (isAutoCommitRunning) {
+		ctx.ui.notify(
+			isJapanese(lang) ? "git-auto-commit 実行中です。完了してから再度実行してください。" : "git-auto-commit is already running. Please wait for it to complete.",
+			"warning",
+		);
 		return;
 	}
 

@@ -95,6 +95,7 @@ The language setting is saved to `~/.config/pi-git/settings.json` and reused acr
 | AI model unavailable / auth fails | Falls back to file-per-hunk splitting |
 | Untracked files | Included in diff analysis and committed |
 | User edits files during execution | Safe: diff is snapshotted at the start via `git stash` so analysis is not affected by concurrent edits |
+| `/git-auto-commit` run while another is already in progress | Blocked with a warning; prevents staging area conflicts between concurrent executions |
 
 #### Status display
 
