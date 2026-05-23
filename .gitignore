@@ -1,0 +1,10 @@
+.env
+/.direnv
+node_modules
+
+
+# APM dependencies
+apm_modules/
+
+.agents
+.claude
