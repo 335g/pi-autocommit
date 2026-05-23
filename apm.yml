@@ -7,6 +7,9 @@ targets:
 dependencies:
   apm:
   - mitsuhiko/agent-stuff/skills/mermaid
+  - mattpocock/skills/skills/productivity/grill-me
+  - mattpocock/skills/skills/productivity/handoff
+  - mattpocock/skills/skills/engineering/grill-with-docs
   mcp: []
 includes: auto
 scripts: {}
