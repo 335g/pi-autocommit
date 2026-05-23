@@ -1,0 +1,12 @@
+name: pi-git
+version: 1.0.0
+description: APM project for pi-git
+author: Yoshiki Kudo
+targets:
+- claude
+dependencies:
+  apm:
+  - mitsuhiko/agent-stuff/skills/mermaid
+  mcp: []
+includes: auto
+scripts: {}

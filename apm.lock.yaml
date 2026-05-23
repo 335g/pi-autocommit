@@ -1,0 +1,14 @@
+lockfile_version: '1'
+generated_at: '2026-05-23T02:57:10.854109+00:00'
+apm_version: 0.14.1
+dependencies:
+- repo_url: mitsuhiko/agent-stuff
+  host: github.com
+  resolved_commit: ab79f98104bcd3c6a7c5491e609f6d6700a7414d
+  virtual_path: skills/mermaid
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/mermaid
+  - .claude/skills/mermaid
+  content_hash: sha256:c27878e303ee74ba5997fbcf9a02f9956d3678a11da34e5a64f903178a6606c3
