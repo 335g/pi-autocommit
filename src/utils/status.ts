@@ -4,12 +4,9 @@ const AUTO_AGG_COMMIT_STATUS_KEY = "!pi-git-auto-agg-commit";
 
 /**
  * Update the footer status indicator for auto-agg-commit.
- * Shows [auto-commit ON] when enabled, clears when disabled.
+ * The indicator is now merged into the main agg-commit status text,
+ * so this only clears any legacy status.
  */
-export function updateAutoAggCommitStatus(ui: ExtensionUIContext, enabled: boolean): void {
-	if (enabled) {
-		ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, "[auto-commit ON]");
-	} else {
-		ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, undefined);
-	}
+export function updateAutoAggCommitStatus(ui: ExtensionUIContext, _enabled: boolean): void {
+	ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, undefined);
 }
