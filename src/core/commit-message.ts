@@ -65,7 +65,10 @@ function inferTypeFromFiles(files: string[]): string {
  * Returns a clean, valid Conventional Commits message.
  */
 export function sanitizeCommitMessage(message: string, files?: string[]): string {
-	let sanitized = message.trim();
+	const originalMessage = message.trim();
+	console.log(`[pi-git] Sanitizing message: "${originalMessage.substring(0, 80)}${originalMessage.length > 80 ? '...' : ''}"`);
+
+	let sanitized = originalMessage;
 
 	// Remove trailing period from subject
 	sanitized = sanitized.replace(/\.$/, "");
@@ -79,34 +82,45 @@ export function sanitizeCommitMessage(message: string, files?: string[]): string
 
 		// Normalize type
 		if (!VALID_TYPES.includes(type)) {
+			console.log(`[pi-git] Normalizing type "${type}" -> "chore"`);
 			type = "chore";
 		}
 
 		// Truncate subject if too long
 		if (subject.length > MAX_SUBJECT_LENGTH) {
-			subject = subject.slice(0, MAX_SUBJECT_LENGTH - 3) + "...";
+			const truncated = subject.slice(0, MAX_SUBJECT_LENGTH - 3) + "...";
+			console.log(`[pi-git] Truncating subject: "${subject.substring(0, 50)}..." -> "${truncated}"`);
+			subject = truncated;
 		}
 
-		return buildMessage(type, scope, subject, match[3] === "!");
+		const result = buildMessage(type, scope, subject, match[3] === "!");
+		console.log(`[pi-git] Valid conventional commit: "${result}"`);
+		return result;
 	}
 
 	// Not a conventional commit - try to fix or fallback
+	console.warn(`[pi-git] Not a conventional commit: "${sanitized.substring(0, 60)}"`);
+
 	// If it has a colon, maybe it's an unknown format
 	const colonIndex = sanitized.indexOf(":");
 	if (colonIndex > 0) {
 		const possibleSubject = sanitized.slice(colonIndex + 1).trim();
 		if (possibleSubject.length > 0) {
 			const type = files ? inferTypeFromFiles(files) : "chore";
+			console.log(`[pi-git] Extracted subject after colon, inferred type: "${type}"`);
 			return buildMessage(type, undefined, possibleSubject);
 		}
 	}
 
 	// Fallback: treat entire message as subject
 	const fallbackType = files ? inferTypeFromFiles(files) : "chore";
+	console.log(`[pi-git] Inferred type from files: "${fallbackType}"`);
 	const subject = sanitized.length > MAX_SUBJECT_LENGTH
 		? sanitized.slice(0, MAX_SUBJECT_LENGTH - 3) + "..."
 		: sanitized;
-	return buildMessage(fallbackType, undefined, subject || "update files");
+	const result = buildMessage(fallbackType, undefined, subject || "update files");
+	console.log(`[pi-git] Fallback message: "${result}"`);
+	return result;
 }
 
 /**
