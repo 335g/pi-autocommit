@@ -20,14 +20,14 @@ export interface PiGitSettings {
 	/** Display and commit message language (e.g., "en", "ja") */
 	lang?: string;
 	/** Whether to automatically run git-agg-commit after assistant response */
-	autoAggCommit?: boolean;
+	auto_agg_commit?: boolean;
 }
 
 export type SettingOrigin = "default" | "global" | "local";
 
 export const DEFAULT_SETTINGS: PiGitSettings = {
 	lang: "en",
-	autoAggCommit: false,
+	auto_agg_commit: false,
 };
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
@@ -132,7 +132,7 @@ export function getLanguage(cwd?: string): string {
 }
 
 export function getAutoAggCommit(cwd?: string): boolean {
-	return getSettings(cwd).autoAggCommit ?? false;
+	return getSettings(cwd).auto_agg_commit ?? false;
 }
 
 // ───────────────────────────────────────────────
@@ -182,5 +182,5 @@ export function setLanguage(lang: string): void {
 
 /** Backward-compatible alias. */
 export function setAutoAggCommit(enabled: boolean): void {
-	saveGlobalSettings({ autoAggCommit: enabled });
+	saveGlobalSettings({ auto_agg_commit: enabled });
 }

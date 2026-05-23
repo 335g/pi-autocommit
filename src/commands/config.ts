@@ -25,7 +25,7 @@ function isJapanese(lang: string): boolean {
 	return lang === "ja" || lang === "ja-JP" || lang === "japanese";
 }
 
-const VALID_KEYS = ["lang", "autoAggCommit"] as const;
+const VALID_KEYS = ["lang", "auto_agg_commit"] as const;
 type ValidKey = (typeof VALID_KEYS)[number];
 
 function isValidKey(key: string): key is ValidKey {
@@ -41,10 +41,10 @@ function validateValue(key: ValidKey, value: string): string | boolean {
 				);
 			}
 			return value;
-		case "autoAggCommit":
+		case "auto_agg_commit":
 			if (value !== "true" && value !== "false") {
 				throw new Error(
-					`Invalid autoAggCommit: ${value}. Must be "true" or "false".`,
+					`Invalid auto_agg_commit: ${value}. Must be "true" or "false".`,
 				);
 			}
 			return value === "true";
@@ -74,13 +74,20 @@ export async function handleConfig(
 	let showGlobal = false;
 	let list = false;
 	let showOrigin = false;
+	let keys = false;
 	const positional: string[] = [];
 
 	for (const token of tokens) {
 		if (token === "--global") showGlobal = true;
 		else if (token === "--list") list = true;
 		else if (token === "--show-origin") showOrigin = true;
+		else if (token === "--keys") keys = true;
 		else positional.push(token);
+	}
+
+	if (keys) {
+		ctx.ui.notify(VALID_KEYS.join("\n"), "info");
+		return;
 	}
 
 	if (list) {
@@ -110,8 +117,8 @@ export async function handleConfig(
 	if (positional.length === 0) {
 		ctx.ui.notify(
 			ja
-				? "使用方法: /git-config <key> [value] [--global] [--list] [--show-origin]"
-				: "Usage: /git-config <key> [value] [--global] [--list] [--show-origin]",
+				? "使用方法: /git-config <key> [value] [--global] [--list] [--show-origin] [--keys]"
+				: "Usage: /git-config <key> [value] [--global] [--list] [--show-origin] [--keys]",
 			"warning",
 		);
 		return;
