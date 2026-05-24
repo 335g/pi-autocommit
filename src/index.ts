@@ -8,6 +8,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { handleAggCommit, isAggCommitRunning, setAggCommitRunning } from "./commands/agg-commit.js";
 import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
 import { handleConfig } from "./commands/config.js";
+import { handleDiff } from "./commands/diff.js";
 import { isGitRepository, hasChanges, stageFiles, resetStaging } from "./core/git.js";
 import { generateAutoCommitMessage } from "./core/auto-commit-message.js";
 import { getAutoAggCommit, getLanguage } from "./utils/settings.js";
@@ -34,6 +35,14 @@ export default function (pi: ExtensionAPI) {
 		description: "Get, set, or list pi-git configuration values",
 		handler: async (args, ctx) => {
 			await handleConfig(pi, ctx, args);
+		},
+	});
+
+	// Register /git-diff command
+	pi.registerCommand("git-diff", {
+		description: "Interactive diff review with AI-assisted hunk decomposition",
+		handler: async (args, ctx) => {
+			await handleDiff(pi, ctx, args);
 		},
 	});
 

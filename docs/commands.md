@@ -170,6 +170,65 @@ Project-specific overrides. Created automatically on the first `/git-config` wri
 
 ---
 
+## `/git-diff`
+
+Interactive diff review with AI-assisted hunk decomposition. Displays a side-by-side file tree and diff viewer, allowing you to review, adjust, and commit changes one logical hunk at a time.
+
+### Usage
+
+```
+/git-diff
+/git-diff --lang=ja
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--lang=<code>` | Override the display and commit message language for **this run only**. Accepted values: `en` (English), `ja` (Japanese). |
+
+### Layout
+
+The UI is an overlay with three areas:
+
+- **Top bar** — Current hunk's commit message and file count (`hunk files / total files`). Press `e` to edit the message inline.
+- **Left pane** — File tree. Changed files are listed with their git status. Files in the current hunk are shown in color (green=added, yellow=modified, red=deleted). Unassigned files are dimmed.
+- **Right pane** — Unified diff of the selected file.
+- **Bottom bar** — Contextual key guide or status messages.
+
+### Keybindings
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move selection in file tree |
+| `Space` | Toggle selected file in/out of current hunk |
+| `c` | Commit the current hunk |
+| `s` | Skip the current hunk (files become unassigned) |
+| `n` | Analyze remaining unassigned files and generate the next hunk candidate |
+| `a` | Add all unassigned files to the current hunk |
+| `r` | Remove all files from the current hunk |
+| `e` | Edit the commit message (Enter to confirm, Escape to cancel) |
+| `q` / `Escape` | Quit `/git-diff` |
+| `?` | Show/hide full keybinding help |
+
+### Workflow
+
+1. **Snapshot** — Working tree changes are stashed to freeze the diff.
+2. **Analysis** — AI splits the diff into logical hunks with Conventional Commit messages.
+3. **Review** — Browse files, read diffs, and adjust which files belong to the current hunk.
+4. **Edit message** — Press `e` to customize the AI-generated commit message.
+5. **Commit** — Press `c` to stage and commit the current hunk.
+6. **Iterate** — Remaining unassigned files are shown; press `n` to generate the next hunk, or continue adjusting.
+7. **Restore** — When done (or quit), the stash is popped to restore the working tree.
+
+### Notes
+
+- If you quit without committing all changes, uncommitted files remain in the working tree (the stash is popped).
+- Pre-commit hooks run normally; if a commit fails, the error is shown and you can edit the message and retry.
+- Side-by-side (two-column) diff display is planned as a future enhancement.
+
+---
+
 ## Environment & Concurrency
 
 - All commands that modify the working tree (`/git-agg-commit`) detect and prevent concurrent execution to avoid staging area conflicts.

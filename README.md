@@ -111,6 +111,42 @@ During execution, the current phase is shown in the pi footer:
 
 ---
 
+### `/git-diff`
+
+Interactive diff review with AI-assisted hunk decomposition. Displays a file tree and unified diff side-by-side, letting you review, adjust, and commit changes one logical hunk at a time.
+
+#### Usage
+
+```
+/git-diff
+/git-diff --lang=ja
+```
+
+#### What it does
+
+1. **Snapshot** — Stashes the working tree to freeze the diff.
+2. **Hunk analysis** — AI splits changes into logical hunks with Conventional Commit messages.
+3. **Interactive review** — Browse files with `↑`/`↓`, toggle files in/out of the current hunk with `Space`, and edit the commit message with `e`.
+4. **Commit** — Press `c` to stage and commit the current hunk.
+5. **Iterate** — Remaining unassigned files are re-analyzed with `n` for the next hunk.
+6. **Restore** — Pops the stash when done.
+
+#### Keybindings
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move in file tree |
+| `Space` | Toggle file in/out of hunk |
+| `c` | Commit current hunk |
+| `s` | Skip current hunk |
+| `n` | Generate next hunk from remaining changes |
+| `a` / `r` | Add all / Remove all files from current hunk |
+| `e` | Edit commit message |
+| `q` / `Escape` | Quit |
+| `?` | Show keybinding help |
+
+---
+
 ## Requirements
 
 - pi-coding-agent
