@@ -149,6 +149,7 @@ export async function generateAutoCommitMessage(
 			apiKey: auth.apiKey,
 			headers: auth.headers,
 			signal: ctx.signal,
+			reasoning: "minimal",
 		});
 
 		const text = result.content
