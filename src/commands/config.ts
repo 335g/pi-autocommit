@@ -70,6 +70,7 @@ export async function handleConfig(
   let list = false;
   let showOrigin = false;
   let keys = false;
+  let models = false;
   let help = false;
   const positional: string[] = [];
 
@@ -78,6 +79,7 @@ export async function handleConfig(
     else if (token === "--list") list = true;
     else if (token === "--show-origin") showOrigin = true;
     else if (token === "--keys") keys = true;
+    else if (token === "--models") models = true;
     else if (token === "--help") help = true;
     else positional.push(token);
   }
@@ -85,7 +87,7 @@ export async function handleConfig(
   if (help) {
     const lines = ja
       ? [
-          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--help]",
+          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--help]",
           "",
           "サブコマンド:",
           "  <key>           設定値を取得",
@@ -96,10 +98,11 @@ export async function handleConfig(
           "  --list           すべての設定値を一覧表示",
           "  --show-origin    値の取得元（default/global/local）を表示",
           "  --keys           有効なキー一覧と説明を表示",
+          "  --models         analysis_model に設定可能なモデル一覧を表示",
           "  --help           このヘルプを表示",
         ]
       : [
-          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--help]",
+          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--help]",
           "",
           "Subcommands:",
           "  <key>           Get the value of a setting",
@@ -110,6 +113,7 @@ export async function handleConfig(
           "  --list           List all configured values",
           "  --show-origin    Show value origin (default/global/local)",
           "  --keys           Show valid keys with descriptions",
+          "  --models         Show available models for analysis_model",
           "  --help           Show this help message",
         ];
     ctx.ui.notify(lines.join("\n"), "info");
@@ -126,6 +130,31 @@ export async function handleConfig(
       return line;
     });
     ctx.ui.notify(lines.join("\n"), "info");
+    return;
+  }
+
+  if (models) {
+    const availableModels = ctx.modelRegistry.getAvailable();
+    if (availableModels.length === 0) {
+      ctx.ui.notify(
+        ja ? "利用可能なモデルが見つかりません" : "No available models found",
+        "warning",
+      );
+      return;
+    }
+
+    const currentModel = getSettings(ctx.cwd).analysis_model;
+    const lines = availableModels.map((model) => {
+      const modelId = `${model.provider}/${model.id}`;
+      const isCurrent = modelId === currentModel;
+      const marker = isCurrent ? " (current)" : "";
+      return `${modelId}${marker}`;
+    });
+
+    const header = ja
+      ? "analysis_model に設定可能なモデル一覧:"
+      : "Available models for analysis_model:";
+    ctx.ui.notify(`${header}\n${lines.join("\n")}`, "info");
     return;
   }
 
