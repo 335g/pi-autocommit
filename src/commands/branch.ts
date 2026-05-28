@@ -1,7 +1,7 @@
 /**
- * /git-switch command
+ * /git-branch command
  *
- * Switch between git branches.
+ * Manage git branches: list, switch, create, and delete.
  */
 
 import type {
@@ -10,6 +10,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   createAndSwitchBranch,
+  deleteBranch,
   getBranches,
   getCurrentBranch,
   isGitRepository,
@@ -18,7 +19,7 @@ import {
 import { isJapanese } from "../utils/lang.js";
 import { getSettings } from "../utils/settings.js";
 
-export async function handleSwitch(
+export async function handleBranch(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: string,
@@ -42,12 +43,14 @@ export async function handleSwitch(
 
   // Parse flags
   let createNew = false;
+  let deleteFlag = false;
   let listOnly = false;
   let help = false;
   const positional: string[] = [];
 
   for (const token of tokens) {
     if (token === "-c" || token === "--create") createNew = true;
+    else if (token === "-d" || token === "--delete") deleteFlag = true;
     else if (token === "--list" || token === "-l") listOnly = true;
     else if (token === "--help" || token === "-h") help = true;
     else positional.push(token);
@@ -56,30 +59,32 @@ export async function handleSwitch(
   if (help) {
     const lines = ja
       ? [
-          "/git-switch [<branch>] [-c|--create] [--list] [--help]",
+          "/git-branch [<branch>] [-c|--create] [-d|--delete] [--list] [--help]",
           "",
-          "ブランチを切り替えます。",
+          "ブランチを管理します。",
           "",
           "引数:",
           "  <branch>        切り替えるブランチ名",
           "",
           "フラグ:",
           "  -c, --create    新しいブランチを作成して切り替え",
+          "  -d, --delete    ブランチを削除（マージ済みのみ）",
           "  --list, -l      ブランチ一覧を表示",
           "  --help, -h      このヘルプを表示",
           "",
           "引数を省略すると、ブランチ一覧を表示します。",
         ]
       : [
-          "/git-switch [<branch>] [-c|--create] [--list] [--help]",
+          "/git-branch [<branch>] [-c|--create] [-d|--delete] [--list] [--help]",
           "",
-          "Switch between git branches.",
+          "Manage git branches.",
           "",
           "Arguments:",
           "  <branch>        Branch name to switch to",
           "",
           "Flags:",
           "  -c, --create    Create a new branch and switch to it",
+          "  -d, --delete    Delete a branch (merged only)",
           "  --list, -l      List all branches",
           "  --help, -h      Show this help message",
           "",
@@ -90,14 +95,17 @@ export async function handleSwitch(
   }
 
   // List branches if no branch specified or --list flag
-  if (listOnly || positional.length === 0) {
+  if (listOnly || (positional.length === 0 && !createNew && !deleteFlag)) {
     await listBranches(pi, ctx, ja);
     return;
   }
 
   const branchName = positional[0];
 
-  if (createNew) {
+  if (deleteFlag) {
+    // Delete branch
+    await handleDeleteBranch(pi, ctx, branchName, ja);
+  } else if (createNew) {
     // Create and switch to new branch
     const result = await createAndSwitchBranch(pi, branchName, ctx.cwd);
     if (result.success) {
@@ -133,6 +141,68 @@ export async function handleSwitch(
         "error",
       );
     }
+  }
+}
+
+async function handleDeleteBranch(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  branchName: string,
+  ja: boolean,
+): Promise<void> {
+  // Check if trying to delete current branch
+  try {
+    const currentBranch = await getCurrentBranch(pi, ctx.cwd);
+    if (currentBranch === branchName) {
+      ctx.ui.notify(
+        ja
+          ? `現在のブランチ '${branchName}' は削除できません。まず他のブランチに切り替えてください`
+          : `Cannot delete the current branch '${branchName}'. Please switch to another branch first`,
+        "warning",
+      );
+      return;
+    }
+  } catch (error) {
+    ctx.ui.notify(
+      ja
+        ? `現在のブランチの取得に失敗しました: ${error instanceof Error ? error.message : String(error)}`
+        : `Failed to get current branch: ${error instanceof Error ? error.message : String(error)}`,
+      "error",
+    );
+    return;
+  }
+
+  // Confirm deletion
+  const confirmTitle = ja ? "ブランチ削除の確認" : "Confirm Branch Deletion";
+  const confirmMessage = ja
+    ? `ブランチ '${branchName}' を削除してもよろしいですか？`
+    : `Are you sure you want to delete branch '${branchName}'?`;
+
+  const confirmed = await ctx.ui.confirm(confirmTitle, confirmMessage);
+  if (!confirmed) {
+    ctx.ui.notify(
+      ja ? "削除をキャンセルしました" : "Deletion cancelled",
+      "info",
+    );
+    return;
+  }
+
+  // Delete branch
+  const result = await deleteBranch(pi, branchName, ctx.cwd);
+  if (result.success) {
+    ctx.ui.notify(
+      ja
+        ? `ブランチ '${branchName}' を削除しました`
+        : `Deleted branch '${branchName}'`,
+      "info",
+    );
+  } else {
+    ctx.ui.notify(
+      ja
+        ? `ブランチの削除に失敗しました: ${result.message}`
+        : `Failed to delete branch: ${result.message}`,
+      "error",
+    );
   }
 }
 

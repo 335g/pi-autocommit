@@ -141,3 +141,19 @@ export async function createAndSwitchBranch(
   }
   return { success: true, message: stdout };
 }
+
+export async function deleteBranch(
+  pi: ExtensionAPI,
+  branch: string,
+  cwd?: string,
+): Promise<{ success: boolean; message: string }> {
+  const { stdout, stderr, code } = await pi.exec(
+    "git",
+    ["branch", "-d", branch],
+    { cwd },
+  );
+  if (code !== 0) {
+    return { success: false, message: stderr || stdout };
+  }
+  return { success: true, message: stdout };
+}

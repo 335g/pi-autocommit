@@ -7,8 +7,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { handleAggCommit } from "./commands/agg-commit.js";
 import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
+import { handleBranch } from "./commands/branch.js";
 import { handleConfig } from "./commands/config.js";
-import { handleSwitch } from "./commands/switch.js";
 import { handleAutoCommit } from "./core/auto-commit.js";
 import { getAutoAggCommit } from "./utils/settings.js";
 import { updateAutoAggCommitStatus } from "./utils/status.js";
@@ -42,10 +42,10 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("git-switch", {
-    description: "Switch between git branches",
+  pi.registerCommand("git-branch", {
+    description: "Manage git branches: list, switch, create, and delete",
     handler: async (args, ctx) => {
-      await handleSwitch(pi, ctx, args);
+      await handleBranch(pi, ctx, args);
     },
   });
 
