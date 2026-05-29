@@ -26,12 +26,12 @@ _Avoid_: batch review, bulk commit
 
 > **Dev**: I'm working on the new login feature and I also fixed a typo in the README. Should I commit them together?
 >
-> **Domain Expert**: Run `/git-diff`. The analyzer will probably split those into two hunks — one for the login feature and one for the docs fix. You can review each hunk in the file tree, move files between hunks if needed, and commit them separately through 逐次承認.
+> **Domain Expert**: Run `/git-diff`. The analyzer will split those into two hunks — one for the login feature and one for the docs fix. You'll review each hunk one at a time, check the diff, and approve or skip. Each approved hunk gets committed immediately through 逐次承認.
 >
-> **Dev**: What if the analyzer groups something I don't want together?
+> **Dev**: What if the analyzer puts something in a hunk I don't want there?
 >
-> **Domain Expert**: Select the file in the tree and toggle it out of the current hunk. It becomes an 未割り当てファイル and will be re-evaluated for the next hunk. After the current hunk is committed, the remaining changes are re-analyzed.
+> **Domain Expert**: You can exclude the file from the current hunk — it becomes an 未割り当てファイル. After you finish reviewing all hunks, any unassigned files are listed and left in the working tree for you to handle later.
 >
-> **Dev**: And if I approve a hunk but want to tweak the commit message?
+> **Dev**: And if the commit message doesn't look right?
 >
-> **Domain Expert**: You can edit the message before committing. The AI-generated message is just a starting point.
+> **Domain Expert**: Hit edit and the message gets sent to your editor. Fix it there and send it back. Once you approve the hunk, it's committed with your edited message.
