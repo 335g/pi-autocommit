@@ -1,4 +1,7 @@
-import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionUIContext,
+} from "@earendil-works/pi-coding-agent";
 import { isJapanese } from "./lang.js";
 import { getAutoAggCommit, getSettings } from "./settings.js";
 
@@ -32,22 +35,31 @@ const AUTO_AGG_COMMIT_STATUS_KEY = "pi-git-agg-commit";
 
 /**
  * Update the footer status indicator for auto-agg-commit.
- * Shows a label when enabled, clears it when disabled.
+ * Shows on/off combined with clean/changed state when inside a git repo,
+ * or on/off only when outside a git repo.
  */
-export function updateAutoAggCommitStatus(
+export async function updateAutoAggCommitStatus(
+  pi: ExtensionAPI,
   ui: ExtensionUIContext,
   enabled: boolean,
   cwd?: string,
-): void {
-  const lang = getSettings(cwd).lang ?? "en";
-  if (enabled) {
-    const text = isJapanese(lang)
-      ? "[pi-git] auto-commit: 有効"
-      : "[pi-git] auto-commit: ON";
-    ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, text);
-  } else {
-    ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, undefined);
+): Promise<void> {
+  const onOff = enabled ? "on" : "off";
+
+  // Check if inside a git repository
+  const { code } = await pi.exec("git", ["rev-parse", "--git-dir"], { cwd });
+  if (code !== 0) {
+    ui.setStatus(AUTO_AGG_COMMIT_STATUS_KEY, `auto-commit: ${onOff}`);
+    return;
   }
+
+  // Evaluate clean/changed state
+  const { stdout } = await pi.exec("git", ["status", "--porcelain"], { cwd });
+  const state = stdout.trim().length > 0 ? "changed" : "clean";
+  ui.setStatus(
+    AUTO_AGG_COMMIT_STATUS_KEY,
+    `auto-commit: ${onOff} (${state})`,
+  );
 }
 
 /** Clear the auto-agg-commit status from footer (e.g., before running agg-commit). */
@@ -56,9 +68,10 @@ export function clearAutoAggCommitStatus(ui: ExtensionUIContext): void {
 }
 
 /** Restore the auto-agg-commit status based on current settings. */
-export function restoreAutoAggCommitStatus(
+export async function restoreAutoAggCommitStatus(
+  pi: ExtensionAPI,
   ui: ExtensionUIContext,
   cwd?: string,
-): void {
-  updateAutoAggCommitStatus(ui, getAutoAggCommit(cwd), cwd);
+): Promise<void> {
+  await updateAutoAggCommitStatus(pi, ui, getAutoAggCommit(cwd), cwd);
 }

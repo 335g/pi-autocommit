@@ -44,7 +44,7 @@ function _getToggledMessage(enabled: boolean, lang: string): string {
 }
 
 export async function handleAutoAggCommit(
-  _pi: ExtensionAPI,
+  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: string,
 ): Promise<void> {
@@ -122,7 +122,7 @@ export async function handleAutoAggCommit(
     saveGlobalSettings({ auto_agg_commit: next });
   }
 
-  updateAutoAggCommitStatus(ctx.ui, next);
+  await updateAutoAggCommitStatus(pi, ctx.ui, next, ctx.cwd);
 
   const ja = isJapanese(lang);
   if (localPath) {

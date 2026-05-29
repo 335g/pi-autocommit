@@ -213,7 +213,7 @@ export async function handleAggCommit(
   } finally {
     isAggCommitRunning = false;
     if (autoCommit) {
-      restoreAutoAggCommitStatus(ctx.ui, ctx.cwd);
+      await restoreAutoAggCommitStatus(pi, ctx.ui, ctx.cwd);
     }
   }
 }

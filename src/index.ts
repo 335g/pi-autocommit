@@ -18,7 +18,12 @@ import { updateAutoAggCommitStatus } from "./utils/status.js";
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (ctx.hasUI) {
-      updateAutoAggCommitStatus(ctx.ui, getAutoAggCommit(ctx.cwd), ctx.cwd);
+      await updateAutoAggCommitStatus(
+        pi,
+        ctx.ui,
+        getAutoAggCommit(ctx.cwd),
+        ctx.cwd,
+      );
     }
   });
 

@@ -15,6 +15,7 @@ import {
 } from "../commands/agg-commit.js";
 import { isJapanese } from "../utils/lang.js";
 import { getAutoAggCommit, getLanguage } from "../utils/settings.js";
+import { updateAutoAggCommitStatus } from "../utils/status.js";
 import { generateAutoCommitMessage } from "./auto-commit-message.js";
 import {
   hasChanges,
@@ -39,7 +40,13 @@ export async function handleAutoCommit(
     return;
   }
 
-  if (!getAutoAggCommit(ctx.cwd)) {
+  const autoCommitEnabled = getAutoAggCommit(ctx.cwd);
+
+  // Always update footer with clean/changed status (even when disabled)
+  await updateAutoAggCommitStatus(pi, ctx.ui, autoCommitEnabled, ctx.cwd);
+
+  // If auto-commit is disabled, we're done
+  if (!autoCommitEnabled) {
     return;
   }
 
@@ -118,7 +125,8 @@ export async function handleAutoCommit(
       );
     }
   } finally {
-    ctx.ui.setStatus(STATUS_ID, "");
+    // Update footer to reflect post-commit state
+    await updateAutoAggCommitStatus(pi, ctx.ui, autoCommitEnabled, ctx.cwd);
     setAggCommitRunning(false);
   }
 }
