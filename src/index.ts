@@ -11,6 +11,7 @@ import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
 import { handleBranch } from "./commands/branch.js";
 import { handleConfig } from "./commands/config.js";
 import { handleGitDiff } from "./commands/git-diff.js";
+import { handleGitLog } from "./commands/git-log.js";
 import { handleAutoCommit } from "./core/auto-commit.js";
 import { footerManager } from "./utils/footer-manager.js";
 
@@ -56,6 +57,13 @@ export default function (pi: ExtensionAPI) {
       "Interactively review AI-generated hunks and commit approved ones",
     handler: async (args, ctx) => {
       await handleGitDiff(pi, ctx, args);
+    },
+  });
+
+  pi.registerCommand("git-log", {
+    description: "Display git log in oneline format",
+    handler: async (args, ctx) => {
+      await handleGitLog(pi, ctx, args);
     },
   });
 

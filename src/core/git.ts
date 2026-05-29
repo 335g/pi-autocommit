@@ -176,6 +176,39 @@ export async function ensureReadyToCommit(
 }
 
 /**
+ * Get git log with specified options
+ */
+export async function getLog(
+  pi: ExtensionAPI,
+  options: {
+    maxCount?: number | "all";
+    all?: boolean;
+    graph?: boolean;
+  },
+  cwd?: string,
+): Promise<string> {
+  const args = ["log", "--oneline"];
+
+  if (options.maxCount !== "all" && options.maxCount !== undefined) {
+    args.push(`-n`, String(options.maxCount));
+  }
+
+  if (options.all) {
+    args.push("--all");
+  }
+
+  if (options.graph) {
+    args.push("--graph");
+  }
+
+  const { stdout, code } = await pi.exec("git", args, { cwd });
+  if (code !== 0) {
+    throw new GitError("Failed to get git log", `git ${args.join(" ")}`, code);
+  }
+  return stdout;
+}
+
+/**
  * Collect the full working tree diff by stashing changes (including untracked
  * files), capturing the stash diff, and popping the stash to restore the
  * working tree. This "freezes" the diff so concurrent edits do not affect
