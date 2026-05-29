@@ -9,13 +9,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentEndEvent } from "../types.js";
-import {
-  isAggCommitRunning,
-  setAggCommitRunning,
-} from "../commands/agg-commit.js";
 import { isJapanese } from "../utils/lang.js";
 import { getAutoAggCommit, getLanguage } from "../utils/settings.js";
-import { updateAutoAggCommitStatus } from "../utils/status.js";
+import { footerManager } from "../utils/footer-manager.js";
 import { generateAutoCommitMessage } from "./auto-commit-message.js";
 import {
   hasChanges,
@@ -36,14 +32,14 @@ export async function handleAutoCommit(
     return;
   }
 
-  if (isAggCommitRunning) {
+  if (footerManager.isRunning()) {
     return;
   }
 
   const autoCommitEnabled = getAutoAggCommit(ctx.cwd);
 
   // Always update footer with clean/changed status (even when disabled)
-  await updateAutoAggCommitStatus(pi, ctx.ui, autoCommitEnabled, ctx.cwd);
+  await footerManager.refresh();
 
   // If auto-commit is disabled, we're done
   if (!autoCommitEnabled) {
@@ -58,17 +54,10 @@ export async function handleAutoCommit(
     return;
   }
 
-  const STATUS_ID = "pi-git-agg-commit";
   const lang = getLanguage(ctx.cwd);
   const ja = isJapanese(lang);
 
-  setAggCommitRunning(true);
-  ctx.ui.setStatus(
-    STATUS_ID,
-    ja
-      ? "[pi-git: auto-commit] コミットメッセージ生成中..."
-      : "[pi-git: auto-commit] Generating commit message...",
-  );
+  await footerManager.setRunning("auto-commit", "generateMessage");
 
   try {
     const { stdout: statusOutput } = await pi.exec(
@@ -84,7 +73,7 @@ export async function handleAutoCommit(
       .filter(Boolean);
 
     if (changedFiles.length === 0) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       return;
     }
 
@@ -96,12 +85,7 @@ export async function handleAutoCommit(
       changedFiles,
     );
 
-    ctx.ui.setStatus(
-      STATUS_ID,
-      ja
-        ? "[pi-git: auto-commit] コミット実行中..."
-        : "[pi-git: auto-commit] Committing...",
-    );
+    await footerManager.setPhase("commit");
 
     await stageFiles(pi, changedFiles, ctx.cwd);
     const { code: exitCode, stderr } = await pi.exec(
@@ -125,8 +109,6 @@ export async function handleAutoCommit(
       );
     }
   } finally {
-    // Update footer to reflect post-commit state
-    await updateAutoAggCommitStatus(pi, ctx.ui, autoCommitEnabled, ctx.cwd);
-    setAggCommitRunning(false);
+    await footerManager.clearRunning();
   }
 }

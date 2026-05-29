@@ -12,18 +12,13 @@ import { handleBranch } from "./commands/branch.js";
 import { handleConfig } from "./commands/config.js";
 import { handleGitDiff } from "./commands/git-diff.js";
 import { handleAutoCommit } from "./core/auto-commit.js";
-import { getAutoAggCommit } from "./utils/settings.js";
-import { updateAutoAggCommitStatus } from "./utils/status.js";
+import { footerManager } from "./utils/footer-manager.js";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (ctx.hasUI) {
-      await updateAutoAggCommitStatus(
-        pi,
-        ctx.ui,
-        getAutoAggCommit(ctx.cwd),
-        ctx.cwd,
-      );
+      footerManager.initialize(pi, ctx.ui, ctx.cwd);
+      await footerManager.refresh();
     }
   });
 

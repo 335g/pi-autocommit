@@ -17,21 +17,8 @@ import {
   stageFiles,
 } from "../core/git.js";
 import { isJapanese } from "../utils/lang.js";
-import { getAutoAggCommit, getLanguage } from "../utils/settings.js";
-import {
-  clearAutoAggCommitStatus,
-  phaseStatusText,
-  restoreAutoAggCommitStatus,
-} from "../utils/status.js";
-
-export let isAggCommitRunning = false;
-
-/** Set the agg-commit running flag from external modules */
-export function setAggCommitRunning(value: boolean): void {
-  isAggCommitRunning = value;
-}
-
-const STATUS_ID = "pi-git-agg-commit";
+import { getLanguage } from "../utils/settings.js";
+import { footerManager } from "../utils/footer-manager.js";
 
 function parseLangArg(args: string): string | undefined {
   const match = args.match(/--lang(?:uage)?[=\s]+(\S+)/);
@@ -80,7 +67,7 @@ export async function handleAggCommit(
     return;
   }
 
-  if (isAggCommitRunning) {
+  if (footerManager.isRunning()) {
     ctx.ui.notify(
       isJapanese(runLang)
         ? "git-agg-commit 実行中です。完了してから再度実行してください。"
@@ -90,21 +77,12 @@ export async function handleAggCommit(
     return;
   }
 
-  isAggCommitRunning = true;
-  const autoCommit = getAutoAggCommit(ctx.cwd);
-
-  // Hide the persistent auto-commit indicator while agg-commit runs
-  // to avoid duplicate status display
-  if (autoCommit) {
-    clearAutoAggCommitStatus(ctx.ui);
-  }
+  await footerManager.setRunning("agg-commit", "prepare", runLang);
 
   try {
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "prepare", autoCommit));
-
     const preCheck = await ensureReadyToCommit(pi, ctx.cwd);
     if (preCheck) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify(
         preCheck === "not_git_repo"
           ? "Not a git repository"
@@ -115,37 +93,34 @@ export async function handleAggCommit(
     }
 
     // Snapshot changes via stash to freeze the diff
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "collectDiff", autoCommit));
+    await footerManager.setPhase("collectDiff", runLang);
     const diff = await collectDiff(pi, ctx.cwd);
     if (diff === null) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify("Failed to stash changes", "warning");
       return;
     }
     if (!diff.trim()) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify("No changes to commit", "info");
       return;
     }
 
     // Analyze diff into logical hunks
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "analyze", autoCommit));
+    await footerManager.setPhase("analyze", runLang);
     let hunks = await analyzeDiff(pi, ctx, diff);
     if (hunks.length === 0) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify("No hunks found to commit", "info");
       return;
     }
 
     // Sanitize, deduplicate, and filter hunks
-    ctx.ui.setStatus(
-      STATUS_ID,
-      phaseStatusText(runLang, "generateMessage", autoCommit),
-    );
+    await footerManager.setPhase("generateMessage", runLang);
     hunks = processHunks(hunks);
 
     // Stage and commit each hunk
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "commit", autoCommit));
+    await footerManager.setPhase("commit", runLang);
     let committedCount = 0;
     let failedCount = 0;
     let skippedCount = 0;
@@ -191,10 +166,6 @@ export async function handleAggCommit(
       committedCount++;
     }
 
-    // Notify completion
-    if (!autoCommit) {
-      ctx.ui.setStatus(STATUS_ID, "");
-    }
     const parts: string[] = [];
     if (committedCount > 0)
       parts.push(
@@ -211,9 +182,6 @@ export async function handleAggCommit(
       ctx.ui.notify(parts.join(", "), "info");
     }
   } finally {
-    isAggCommitRunning = false;
-    if (autoCommit) {
-      await restoreAutoAggCommitStatus(pi, ctx.ui, ctx.cwd);
-    }
+    await footerManager.clearRunning();
   }
 }

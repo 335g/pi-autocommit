@@ -17,7 +17,7 @@ import {
   saveGlobalSettings,
   saveLocalSettings,
 } from "../utils/settings.js";
-import { updateAutoAggCommitStatus } from "../utils/status.js";
+import { footerManager } from "../utils/footer-manager.js";
 
 function getStatusMessage(enabled: boolean, lang: string): string {
   const ja = isJapanese(lang);
@@ -122,7 +122,7 @@ export async function handleAutoAggCommit(
     saveGlobalSettings({ auto_agg_commit: next });
   }
 
-  await updateAutoAggCommitStatus(pi, ctx.ui, next, ctx.cwd);
+  await footerManager.refresh();
 
   const ja = isJapanese(lang);
   if (localPath) {

@@ -24,15 +24,12 @@ import {
 } from "../core/git.js";
 import { isJapanese } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
-import { phaseStatusText } from "../utils/status.js";
-import { isAggCommitRunning } from "./agg-commit.js";
+import { footerManager } from "../utils/footer-manager.js";
 import {
   HunkReviewComponent,
   type HunkReviewAction,
 } from "../tui/hunk-review.js";
 import type { FileStats, Hunk } from "../types.js";
-
-const STATUS_ID = "pi-git-diff";
 
 /**
  * Review a single hunk using the TUI component
@@ -119,7 +116,7 @@ export async function handleGitDiff(
   }
 
   // Check if agg-commit is running
-  if (isAggCommitRunning) {
+  if (footerManager.isRunning()) {
     ctx.ui.notify(
       ja
         ? "git-agg-commit 実行中です。完了してから再度実行してください。"
@@ -129,12 +126,12 @@ export async function handleGitDiff(
     return;
   }
 
-  ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "prepare"));
+  await footerManager.setRunning("diff", "prepare");
 
   try {
     const preCheck = await ensureReadyToCommit(pi, ctx.cwd);
     if (preCheck) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify(
         preCheck === "not_git_repo"
           ? ja ? "Gitリポジトリではありません" : "Not a git repository"
@@ -145,10 +142,10 @@ export async function handleGitDiff(
     }
 
     // Collect diff via stash to freeze the working tree
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "collectDiff"));
+    await footerManager.setPhase("collectDiff");
     const diff = await collectDiff(pi, ctx.cwd);
     if (diff === null) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify(
         ja ? "変更のstashに失敗しました" : "Failed to stash changes",
         "warning",
@@ -156,7 +153,7 @@ export async function handleGitDiff(
       return;
     }
     if (!diff.trim()) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify(
         ja ? "コミットする変更がありません" : "No changes to commit",
         "info",
@@ -169,10 +166,10 @@ export async function handleGitDiff(
     const fileStats = parseDiffStats(diff);
 
     // Analyze diff into hunks
-    ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "analyze"));
+    await footerManager.setPhase("analyze");
     let hunks = await analyzeDiff(pi, ctx, diff);
     if (hunks.length === 0) {
-      ctx.ui.setStatus(STATUS_ID, "");
+      await footerManager.clearRunning();
       ctx.ui.notify(
         ja ? "コミット可能なhunkがありません" : "No hunks found to commit",
         "info",
@@ -183,7 +180,7 @@ export async function handleGitDiff(
     // Sanitize, deduplicate, and filter hunks
     hunks = processHunks(hunks);
 
-    ctx.ui.setStatus(STATUS_ID, "");
+    await footerManager.clearRunning();
 
     // Review each hunk sequentially
     const unassignedFiles: string[] = [];
@@ -337,6 +334,6 @@ export async function handleGitDiff(
       ctx.ui.notify(lines.join("\n"), "info");
     }
   } finally {
-    ctx.ui.setStatus(STATUS_ID, "");
+    await footerManager.clearRunning();
   }
 }
