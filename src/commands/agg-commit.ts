@@ -9,11 +9,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { sanitizeHunk } from "../core/commit-message.js";
-import { analyzeDiff } from "../core/diff-analyzer.js";
+import { analyzeDiff, processHunks } from "../core/diff-analyzer.js";
 import {
-  hasChanges,
-  isGitRepository,
+  collectDiff,
+  ensureReadyToCommit,
   resetStaging,
   stageFiles,
 } from "../core/git.js";
@@ -21,6 +20,7 @@ import { isJapanese } from "../utils/lang.js";
 import { getAutoAggCommit, getLanguage } from "../utils/settings.js";
 import {
   clearAutoAggCommitStatus,
+  phaseStatusText,
   restoreAutoAggCommitStatus,
 } from "../utils/status.js";
 
@@ -36,29 +36,6 @@ const STATUS_ID = "pi-git-agg-commit";
 function parseLangArg(args: string): string | undefined {
   const match = args.match(/--lang(?:uage)?[=\s]+(\S+)/);
   return match?.[1];
-}
-
-function statusText(
-  lang: string,
-  key: "prepare" | "collectDiff" | "analyze" | "generateMessage" | "commit",
-  autoCommit: boolean,
-): string {
-  const ja = isJapanese(lang);
-  const prefix = autoCommit ? "[pi-git: auto-commit]" : "[pi-git]";
-  switch (key) {
-    case "prepare":
-      return ja ? `${prefix} 準備中...` : `${prefix} Preparing...`;
-    case "collectDiff":
-      return ja ? `${prefix} diff収集中...` : `${prefix} Collecting diff...`;
-    case "analyze":
-      return ja ? `${prefix} hunk解析中...` : `${prefix} Analyzing hunks...`;
-    case "generateMessage":
-      return ja
-        ? `${prefix} コミットメッセージ生成中...`
-        : `${prefix} Generating messages...`;
-    case "commit":
-      return ja ? `${prefix} コミット実行中...` : `${prefix} Committing...`;
-  }
 }
 
 export async function handleAggCommit(
@@ -123,55 +100,28 @@ export async function handleAggCommit(
   }
 
   try {
-    ctx.ui.setStatus(STATUS_ID, statusText(runLang, "prepare", autoCommit));
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "prepare", autoCommit));
 
-    if (!(await isGitRepository(pi, ctx.cwd))) {
+    const preCheck = await ensureReadyToCommit(pi, ctx.cwd);
+    if (preCheck) {
       ctx.ui.setStatus(STATUS_ID, "");
-      ctx.ui.notify("Not a git repository", "warning");
-      return;
-    }
-
-    if (!(await hasChanges(pi, ctx.cwd))) {
-      ctx.ui.setStatus(STATUS_ID, "");
-      ctx.ui.notify("No changes to commit", "info");
+      ctx.ui.notify(
+        preCheck === "not_git_repo"
+          ? "Not a git repository"
+          : "No changes to commit",
+        preCheck === "not_git_repo" ? "warning" : "info",
+      );
       return;
     }
 
     // Snapshot changes via stash to freeze the diff
-    ctx.ui.setStatus(STATUS_ID, statusText(runLang, "collectDiff", autoCommit));
-    const { code: stashCode } = await pi.exec(
-      "git",
-      ["stash", "push", "-u", "-m", "pi-git-agg-commit"],
-      { cwd: ctx.cwd },
-    );
-    if (stashCode !== 0) {
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "collectDiff", autoCommit));
+    const diff = await collectDiff(pi, ctx.cwd);
+    if (diff === null) {
       ctx.ui.setStatus(STATUS_ID, "");
       ctx.ui.notify("Failed to stash changes", "warning");
       return;
     }
-
-    let diff = "";
-    try {
-      const { stdout: stashDiff } = await pi.exec(
-        "git",
-        ["stash", "show", "-p", "stash@{0}"],
-        { cwd: ctx.cwd },
-      );
-      diff = stashDiff;
-
-      // stash@{0}^3 contains untracked files when -u was used
-      const { stdout: untrackedDiff, code: untrackedCode } = await pi.exec(
-        "git",
-        ["diff", "HEAD", "stash@{0}^3"],
-        { cwd: ctx.cwd },
-      );
-      if (untrackedCode === 0 && untrackedDiff.trim()) {
-        diff += (diff ? "\n" : "") + untrackedDiff;
-      }
-    } finally {
-      await pi.exec("git", ["stash", "pop"], { cwd: ctx.cwd });
-    }
-
     if (!diff.trim()) {
       ctx.ui.setStatus(STATUS_ID, "");
       ctx.ui.notify("No changes to commit", "info");
@@ -179,7 +129,7 @@ export async function handleAggCommit(
     }
 
     // Analyze diff into logical hunks
-    ctx.ui.setStatus(STATUS_ID, statusText(runLang, "analyze", autoCommit));
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "analyze", autoCommit));
     let hunks = await analyzeDiff(pi, ctx, diff);
     if (hunks.length === 0) {
       ctx.ui.setStatus(STATUS_ID, "");
@@ -187,28 +137,15 @@ export async function handleAggCommit(
       return;
     }
 
-    // Sanitize commit messages
+    // Sanitize, deduplicate, and filter hunks
     ctx.ui.setStatus(
       STATUS_ID,
-      statusText(runLang, "generateMessage", autoCommit),
+      phaseStatusText(runLang, "generateMessage", autoCommit),
     );
-    hunks = hunks.map(sanitizeHunk);
-
-    // Deduplicate files across hunks: each file belongs only to its first hunk
-    const seenFiles = new Set<string>();
-    hunks = hunks
-      .map((hunk) => ({
-        ...hunk,
-        files: hunk.files.filter((f) => {
-          if (seenFiles.has(f)) return false;
-          seenFiles.add(f);
-          return true;
-        }),
-      }))
-      .filter((hunk) => hunk.files.length > 0);
+    hunks = processHunks(hunks);
 
     // Stage and commit each hunk
-    ctx.ui.setStatus(STATUS_ID, statusText(runLang, "commit", autoCommit));
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(runLang, "commit", autoCommit));
     let committedCount = 0;
     let failedCount = 0;
     let skippedCount = 0;

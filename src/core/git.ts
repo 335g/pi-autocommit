@@ -157,3 +157,67 @@ export async function deleteBranch(
   }
   return { success: true, message: stdout };
 }
+
+/**
+ * Check that the working directory is a git repository with pending changes.
+ * Returns null if ready, or a failure reason string.
+ */
+export async function ensureReadyToCommit(
+  pi: ExtensionAPI,
+  cwd?: string,
+): Promise<"not_git_repo" | "no_changes" | null> {
+  if (!(await isGitRepository(pi, cwd))) {
+    return "not_git_repo";
+  }
+  if (!(await hasChanges(pi, cwd))) {
+    return "no_changes";
+  }
+  return null;
+}
+
+/**
+ * Collect the full working tree diff by stashing changes (including untracked
+ * files), capturing the stash diff, and popping the stash to restore the
+ * working tree. This "freezes" the diff so concurrent edits do not affect
+ * analysis.
+ *
+ * @returns The diff string, or `null` if the stash operation failed.
+ *          An empty string means there are no effective changes.
+ */
+export async function collectDiff(
+  pi: ExtensionAPI,
+  cwd?: string,
+): Promise<string | null> {
+  const { code: stashCode } = await pi.exec(
+    "git",
+    ["stash", "push", "-u", "-m", "pi-git"],
+    { cwd },
+  );
+  if (stashCode !== 0) {
+    return null;
+  }
+
+  let diff = "";
+  try {
+    const { stdout: stashDiff } = await pi.exec(
+      "git",
+      ["stash", "show", "-p", "stash@{0}"],
+      { cwd },
+    );
+    diff = stashDiff;
+
+    // stash@{0}^3 contains untracked files when -u was used
+    const { stdout: untrackedDiff, code: untrackedCode } = await pi.exec(
+      "git",
+      ["diff", "HEAD", "stash@{0}^3"],
+      { cwd },
+    );
+    if (untrackedCode === 0 && untrackedDiff.trim()) {
+      diff += (diff ? "\n" : "") + untrackedDiff;
+    }
+  } finally {
+    await pi.exec("git", ["stash", "pop"], { cwd });
+  }
+
+  return diff;
+}

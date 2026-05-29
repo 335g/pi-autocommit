@@ -10,97 +10,29 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
-import { sanitizeHunk } from "../core/commit-message.js";
-import { analyzeDiff } from "../core/diff-analyzer.js";
 import {
-  hasChanges,
-  isGitRepository,
+  analyzeDiff,
+  parseDiffStats,
+  processHunks,
+  splitDiffByFile,
+} from "../core/diff-analyzer.js";
+import {
+  collectDiff,
+  ensureReadyToCommit,
   resetStaging,
   stageFiles,
 } from "../core/git.js";
 import { isJapanese } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
+import { phaseStatusText } from "../utils/status.js";
 import { isAggCommitRunning } from "./agg-commit.js";
 import {
   HunkReviewComponent,
   type HunkReviewAction,
-  type FileStats,
 } from "../tui/hunk-review.js";
-import type { Hunk } from "../types.js";
+import type { FileStats, Hunk } from "../types.js";
 
 const STATUS_ID = "pi-git-diff";
-
-/**
- * Split a full diff into per-file diffs
- */
-function splitDiffByFile(fullDiff: string): Map<string, string[]> {
-  const result = new Map<string, string[]>();
-  const lines = fullDiff.split("\n");
-  let currentFile: string | null = null;
-  let currentLines: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith("diff --git")) {
-      // Save previous file
-      if (currentFile) {
-        result.set(currentFile, currentLines);
-      }
-      // Parse new file path
-      const match = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
-      if (match) {
-        currentFile = match[2];
-        currentLines = [line];
-      }
-    } else if (currentFile) {
-      currentLines.push(line);
-    }
-  }
-
-  // Save last file
-  if (currentFile) {
-    result.set(currentFile, currentLines);
-  }
-
-  return result;
-}
-
-/**
- * Parse diff stats (additions/deletions) for each file
- */
-function parseDiffStats(fullDiff: string): Map<string, FileStats> {
-  const result = new Map<string, FileStats>();
-  const lines = fullDiff.split("\n");
-  let currentFile: string | null = null;
-  let additions = 0;
-  let deletions = 0;
-
-  for (const line of lines) {
-    if (line.startsWith("diff --git")) {
-      // Save previous file
-      if (currentFile) {
-        result.set(currentFile, { path: currentFile, additions, deletions });
-      }
-      // Parse new file path
-      const match = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
-      if (match) {
-        currentFile = match[2];
-        additions = 0;
-        deletions = 0;
-      }
-    } else if (line.startsWith("+") && !line.startsWith("+++")) {
-      additions++;
-    } else if (line.startsWith("-") && !line.startsWith("---")) {
-      deletions++;
-    }
-  }
-
-  // Save last file
-  if (currentFile) {
-    result.set(currentFile, { path: currentFile, additions, deletions });
-  }
-
-  return result;
-}
 
 /**
  * Review a single hunk using the TUI component
@@ -197,41 +129,25 @@ export async function handleGitDiff(
     return;
   }
 
-  ctx.ui.setStatus(STATUS_ID, ja ? "[pi-git] 準備中..." : "[pi-git] Preparing...");
+  ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "prepare"));
 
   try {
-    // Check git repository
-    if (!(await isGitRepository(pi, ctx.cwd))) {
+    const preCheck = await ensureReadyToCommit(pi, ctx.cwd);
+    if (preCheck) {
       ctx.ui.setStatus(STATUS_ID, "");
       ctx.ui.notify(
-        ja ? "Gitリポジトリではありません" : "Not a git repository",
-        "warning",
+        preCheck === "not_git_repo"
+          ? ja ? "Gitリポジトリではありません" : "Not a git repository"
+          : ja ? "コミットする変更がありません" : "No changes to commit",
+        preCheck === "not_git_repo" ? "warning" : "info",
       );
       return;
     }
 
-    // Check for changes
-    if (!(await hasChanges(pi, ctx.cwd))) {
-      ctx.ui.setStatus(STATUS_ID, "");
-      ctx.ui.notify(
-        ja ? "コミットする変更がありません" : "No changes to commit",
-        "info",
-      );
-      return;
-    }
-
-    // Collect diff using stash pattern
-    ctx.ui.setStatus(
-      STATUS_ID,
-      ja ? "[pi-git] diff収集中..." : "[pi-git] Collecting diff...",
-    );
-
-    const { code: stashCode } = await pi.exec(
-      "git",
-      ["stash", "push", "-u", "-m", "pi-git-diff"],
-      { cwd: ctx.cwd },
-    );
-    if (stashCode !== 0) {
+    // Collect diff via stash to freeze the working tree
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "collectDiff"));
+    const diff = await collectDiff(pi, ctx.cwd);
+    if (diff === null) {
       ctx.ui.setStatus(STATUS_ID, "");
       ctx.ui.notify(
         ja ? "変更のstashに失敗しました" : "Failed to stash changes",
@@ -239,29 +155,6 @@ export async function handleGitDiff(
       );
       return;
     }
-
-    let diff = "";
-    try {
-      const { stdout: stashDiff } = await pi.exec(
-        "git",
-        ["stash", "show", "-p", "stash@{0}"],
-        { cwd: ctx.cwd },
-      );
-      diff = stashDiff;
-
-      // Include untracked files
-      const { stdout: untrackedDiff, code: untrackedCode } = await pi.exec(
-        "git",
-        ["diff", "HEAD", "stash@{0}^3"],
-        { cwd: ctx.cwd },
-      );
-      if (untrackedCode === 0 && untrackedDiff.trim()) {
-        diff += (diff ? "\n" : "") + untrackedDiff;
-      }
-    } finally {
-      await pi.exec("git", ["stash", "pop"], { cwd: ctx.cwd });
-    }
-
     if (!diff.trim()) {
       ctx.ui.setStatus(STATUS_ID, "");
       ctx.ui.notify(
@@ -276,11 +169,7 @@ export async function handleGitDiff(
     const fileStats = parseDiffStats(diff);
 
     // Analyze diff into hunks
-    ctx.ui.setStatus(
-      STATUS_ID,
-      ja ? "[pi-git] hunk解析中..." : "[pi-git] Analyzing hunks...",
-    );
-
+    ctx.ui.setStatus(STATUS_ID, phaseStatusText(lang, "analyze"));
     let hunks = await analyzeDiff(pi, ctx, diff);
     if (hunks.length === 0) {
       ctx.ui.setStatus(STATUS_ID, "");
@@ -291,21 +180,8 @@ export async function handleGitDiff(
       return;
     }
 
-    // Sanitize commit messages
-    hunks = hunks.map(sanitizeHunk);
-
-    // Deduplicate files across hunks
-    const seenFiles = new Set<string>();
-    hunks = hunks
-      .map((hunk) => ({
-        ...hunk,
-        files: hunk.files.filter((f) => {
-          if (seenFiles.has(f)) return false;
-          seenFiles.add(f);
-          return true;
-        }),
-      }))
-      .filter((hunk) => hunk.files.length > 0);
+    // Sanitize, deduplicate, and filter hunks
+    hunks = processHunks(hunks);
 
     ctx.ui.setStatus(STATUS_ID, "");
 

@@ -11,9 +11,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Hunk } from "../types.js";
+import type { FileStats, Hunk } from "../types.js";
 import { isJapanese } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
+import { sanitizeHunk } from "./commit-message.js";
 import { resolveModel } from "./resolve-model.js";
 
 function getSystemPrompt(lang: string): string {
@@ -184,4 +185,89 @@ export async function analyzeDiff(
   } catch {
     return fallbackFileBasedHunks(diff);
   }
+}
+
+/**
+ * Post-process AI-generated hunks: sanitize commit messages, deduplicate files
+ * across hunks (each file belongs only to its first hunk), and remove empty hunks.
+ */
+export function processHunks(hunks: Hunk[]): Hunk[] {
+  const sanitized = hunks.map(sanitizeHunk);
+  const seenFiles = new Set<string>();
+  return sanitized
+    .map((hunk) => ({
+      ...hunk,
+      files: hunk.files.filter((f) => {
+        if (seenFiles.has(f)) return false;
+        seenFiles.add(f);
+        return true;
+      }),
+    }))
+    .filter((hunk) => hunk.files.length > 0);
+}
+
+/**
+ * Split a full diff into per-file diff line arrays, keyed by file path.
+ */
+export function splitDiffByFile(fullDiff: string): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  const lines = fullDiff.split("\n");
+  let currentFile: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git")) {
+      if (currentFile) {
+        result.set(currentFile, currentLines);
+      }
+      const match = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+      if (match) {
+        currentFile = match[2];
+        currentLines = [line];
+      }
+    } else if (currentFile) {
+      currentLines.push(line);
+    }
+  }
+
+  if (currentFile) {
+    result.set(currentFile, currentLines);
+  }
+
+  return result;
+}
+
+/**
+ * Parse addition/deletion counts for each file from a full diff.
+ */
+export function parseDiffStats(fullDiff: string): Map<string, FileStats> {
+  const result = new Map<string, FileStats>();
+  const lines = fullDiff.split("\n");
+  let currentFile: string | null = null;
+  let additions = 0;
+  let deletions = 0;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git")) {
+      if (currentFile) {
+        result.set(currentFile, { path: currentFile, additions, deletions });
+      }
+      const match = line.match(/diff --git a\/(.+?) b\/(.+?)$/);
+      if (match) {
+        currentFile = match[2];
+        additions = 0;
+        deletions = 0;
+      }
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      additions++;
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      deletions++;
+    }
+  }
+
+  if (currentFile) {
+    result.set(currentFile, { path: currentFile, additions, deletions });
+  }
+
+  return result;
 }

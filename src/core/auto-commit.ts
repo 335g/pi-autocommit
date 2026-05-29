@@ -8,6 +8,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { AgentEndEvent } from "../types.js";
 import {
   isAggCommitRunning,
   setAggCommitRunning,
@@ -21,13 +22,6 @@ import {
   resetStaging,
   stageFiles,
 } from "./git.js";
-
-interface AgentEndEvent {
-  messages?: Array<{
-    role: string;
-    content: unknown;
-  }>;
-}
 
 /**
  * Handle auto-commit after agent response

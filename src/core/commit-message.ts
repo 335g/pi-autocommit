@@ -38,14 +38,6 @@ export function isConventionalCommit(message: string): boolean {
 }
 
 /**
- * Extract the subject part (after type/scope) from a conventional commit message.
- */
-function _extractSubject(message: string): string | undefined {
-  const match = CONVENTIONAL_COMMIT_PATTERN.exec(message);
-  return match?.[4];
-}
-
-/**
  * Build a conventional commit message with a valid type.
  */
 function buildMessage(

@@ -17,19 +17,13 @@ import {
   truncateToWidth,
 } from "@earendil-works/pi-tui";
 import { DynamicBorder } from "@earendil-works/pi-coding-agent";
-import type { Hunk } from "../types.js";
+import type { FileStats, Hunk } from "../types.js";
 
 export type HunkReviewAction =
   | { type: "approve"; message: string; excludedFiles: string[] }
   | { type: "edit_message"; currentMessage: string; excludedFiles: string[] }
   | { type: "skip"; excludedFiles: string[] }
   | { type: "quit" };
-
-export interface FileStats {
-  path: string;
-  additions: number;
-  deletions: number;
-}
 
 export class HunkReviewComponent implements Component {
   private container: Container;

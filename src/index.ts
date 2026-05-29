@@ -5,6 +5,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { AgentEndEvent } from "./types.js";
 import { handleAggCommit } from "./commands/agg-commit.js";
 import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
 import { handleBranch } from "./commands/branch.js";
@@ -61,11 +62,4 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     await handleAutoCommit(pi, ctx, event as AgentEndEvent);
   });
-}
-
-interface AgentEndEvent {
-  messages?: Array<{
-    role: string;
-    content: unknown;
-  }>;
 }
