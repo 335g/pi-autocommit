@@ -21,7 +21,10 @@ import { resolveModel } from "./resolve-model.js";
 const MAX_DIFF_BYTES = 30_000;
 
 /** Files threshold: skip AI analysis when ≤ this many files changed */
-const FAST_PATH_FILE_LIMIT = 3;
+const FAST_PATH_FILE_LIMIT = 5;
+
+/** Maximum output tokens for the AI completion (hunk JSON is small) */
+const MAX_OUTPUT_TOKENS = 1024;
 
 function getSystemPrompt(lang: string): string {
   if (isJapanese(lang)) {
@@ -142,6 +145,37 @@ function truncateDiff(diff: string, maxBytes: number): string {
   return lastNewline > 0 ? slice.substring(0, lastNewline) : slice;
 }
 
+/** Strip noise lines from diff that don't help AI analysis */
+function stripDiffNoise(diff: string): string {
+  const lines = diff.split("\n");
+  const result: string[] = [];
+  let inBinary = false;
+
+  for (const line of lines) {
+    // Skip git index lines (object hash metadata, no semantic value)
+    if (/^index [0-9a-f]+\.\.[0-9a-f]+/.test(line)) continue;
+
+    // Detect binary diff content start
+    if (line.startsWith("GIT binary patch") || line.startsWith("literal ")) {
+      inBinary = true;
+      result.push(line); // keep the header for context
+      continue;
+    }
+
+    // Skip binary diff payload (base64 lines, incomprehensible to AI)
+    if (inBinary) {
+      if (line.trim() === "" || /^[A-Za-z0-9+/=]+$/.test(line.trim())) {
+        continue;
+      }
+      inBinary = false;
+    }
+
+    result.push(line);
+  }
+
+  return result.join("\n");
+}
+
 export async function analyzeDiff(
   _pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -162,8 +196,9 @@ export async function analyzeDiff(
     return fallbackFileBasedHunks(diff);
   }
 
-  // Truncate oversized diffs to avoid slow inference on huge payloads
-  const analysisDiff = truncateDiff(diff, MAX_DIFF_BYTES);
+  // Strip noise and truncate oversized diffs
+  const cleanedDiff = stripDiffNoise(diff);
+  const analysisDiff = truncateDiff(cleanedDiff, MAX_DIFF_BYTES);
 
   try {
     const lang = getLanguage();
@@ -183,6 +218,8 @@ export async function analyzeDiff(
       headers: auth.headers,
       signal: ctx.signal,
       reasoning: "minimal",
+      temperature: 0,
+      maxTokens: MAX_OUTPUT_TOKENS,
     });
 
     const text = result.content
