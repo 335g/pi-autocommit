@@ -5,13 +5,14 @@
  * logical hunks with Conventional Commits messages.
  */
 
-import type { Context } from "@earendil-works/pi-ai";
+import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { FileStats, Hunk } from "../types.js";
+import { footerManager } from "../utils/footer-manager.js";
 import { isJapanese } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
 import { sanitizeHunk } from "./commit-message.js";
@@ -22,6 +23,9 @@ const MAX_DIFF_BYTES = 30_000;
 
 /** Files threshold: skip AI analysis when ≤ this many files changed */
 const FAST_PATH_FILE_LIMIT = 5;
+
+/** Max files per AI analysis batch (split large diffs for progress visibility) */
+const FILES_PER_BATCH = 8;
 
 /** Maximum output tokens for the AI completion (hunk JSON is small) */
 const MAX_OUTPUT_TOKENS = 1024;
@@ -176,13 +180,111 @@ function stripDiffNoise(diff: string): string {
   return result.join("\n");
 }
 
+/**
+ * Split a full diff into per-batch diff strings, each containing ≤ batchSize files.
+ * Groups files by parent directory first so related files stay in the same batch.
+ */
+function splitDiffIntoBatches(diff: string, batchSize: number): string[] {
+  const fileDiffs = splitDiffByFile(diff);
+  const files = [...fileDiffs.keys()];
+
+  // Group files by parent directory (files in same dir are likely related)
+  const dirGroups = new Map<string, string[]>();
+  for (const file of files) {
+    const lastSlash = file.lastIndexOf("/");
+    const dir = lastSlash >= 0 ? file.substring(0, lastSlash) : ".";
+    if (!dirGroups.has(dir)) dirGroups.set(dir, []);
+    dirGroups.get(dir)!.push(file);
+  }
+
+  // Pack directory groups into batches, keeping groups together when possible
+  const fileBatches: string[][] = [];
+  let current: string[] = [];
+
+  for (const groupFiles of dirGroups.values()) {
+    // If this group would overflow the current batch, start a new one
+    if (current.length > 0 && current.length + groupFiles.length > batchSize) {
+      fileBatches.push(current);
+      current = [];
+    }
+    // If a single group exceeds batchSize, split it (files in same dir are
+    // highly related, so this is the least-damaging place to split)
+    for (let i = 0; i < groupFiles.length; i += batchSize) {
+      const chunk = groupFiles.slice(i, i + batchSize);
+      if (chunk.length === groupFiles.length && current.length === 0) {
+        // Single group fits entirely in one batch
+        current.push(...chunk);
+      } else if (current.length + chunk.length <= batchSize) {
+        current.push(...chunk);
+      } else {
+        if (current.length > 0) fileBatches.push(current);
+        current = [...chunk];
+      }
+    }
+  }
+  if (current.length > 0) fileBatches.push(current);
+
+  // Convert batches of file names to diff strings
+  return fileBatches.map((batchFiles) => {
+    const lines: string[] = [];
+    for (const file of batchFiles) {
+      const diffLines = fileDiffs.get(file);
+      if (diffLines) lines.push(...diffLines);
+    }
+    return lines.join("\n");
+  });
+}
+
+/**
+ * Send a single batch of diff to the AI and return parsed hunks.
+ */
+async function callAIForDiff(
+  model: Model<Api>,
+  auth: { apiKey?: string; headers?: Record<string, string> },
+  ctx: ExtensionContext,
+  diff: string,
+): Promise<Hunk[]> {
+  const lang = getLanguage();
+  const cleaned = stripDiffNoise(diff);
+  const truncated = truncateDiff(cleaned, MAX_DIFF_BYTES);
+
+  const context: Context = {
+    systemPrompt: getSystemPrompt(lang),
+    messages: [
+      {
+        role: "user",
+        content: buildPrompt(truncated, lang),
+        timestamp: Date.now(),
+      },
+    ],
+  };
+
+  const result = await completeSimple(model, context, {
+    apiKey: auth.apiKey,
+    headers: auth.headers,
+    signal: ctx.signal,
+    reasoning: "minimal",
+    temperature: 0,
+    maxTokens: MAX_OUTPUT_TOKENS,
+  });
+
+  const text = result.content
+    .filter((c): c is { type: "text"; text: string } => c.type === "text")
+    .map((c) => c.text)
+    .join("");
+
+  return parseHunks(text);
+}
+
 export async function analyzeDiff(
   _pi: ExtensionAPI,
   ctx: ExtensionContext,
   diff: string,
 ): Promise<Hunk[]> {
+  const fileCount = countFilesInDiff(diff);
+
   // Fast path: few files → instant fallback, skip AI call entirely
-  if (countFilesInDiff(diff) <= FAST_PATH_FILE_LIMIT) {
+  if (fileCount <= FAST_PATH_FILE_LIMIT) {
     return fallbackFileBasedHunks(diff);
   }
 
@@ -196,38 +298,36 @@ export async function analyzeDiff(
     return fallbackFileBasedHunks(diff);
   }
 
-  // Strip noise and truncate oversized diffs
-  const cleanedDiff = stripDiffNoise(diff);
-  const analysisDiff = truncateDiff(cleanedDiff, MAX_DIFF_BYTES);
+  // Split into batches if many files (for progress visibility + smaller payloads)
+  if (fileCount > FILES_PER_BATCH) {
+    const batches = splitDiffIntoBatches(diff, FILES_PER_BATCH);
+    const allHunks: Hunk[] = [];
 
+    for (let i = 0; i < batches.length; i++) {
+      void footerManager.setCommitProgress(i + 1, batches.length);
+
+      try {
+        const hunks = await callAIForDiff(model, auth, ctx, batches[i]);
+        if (hunks.length > 0) {
+          allHunks.push(...hunks);
+        } else {
+          // Empty batch result → use fallback for these files
+          allHunks.push(...fallbackFileBasedHunks(batches[i]));
+        }
+      } catch {
+        allHunks.push(...fallbackFileBasedHunks(batches[i]));
+      }
+    }
+
+    if (allHunks.length === 0) {
+      return fallbackFileBasedHunks(diff);
+    }
+    return allHunks;
+  }
+
+  // Single batch: standard path
   try {
-    const lang = getLanguage();
-    const context: Context = {
-      systemPrompt: getSystemPrompt(lang),
-      messages: [
-        {
-          role: "user",
-          content: buildPrompt(analysisDiff, lang),
-          timestamp: Date.now(),
-        },
-      ],
-    };
-
-    const result = await completeSimple(model, context, {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      signal: ctx.signal,
-      reasoning: "minimal",
-      temperature: 0,
-      maxTokens: MAX_OUTPUT_TOKENS,
-    });
-
-    const text = result.content
-      .filter((c): c is { type: "text"; text: string } => c.type === "text")
-      .map((c) => c.text)
-      .join("");
-
-    const hunks = parseHunks(text);
+    const hunks = await callAIForDiff(model, auth, ctx, diff);
     if (hunks.length === 0) {
       return fallbackFileBasedHunks(diff);
     }

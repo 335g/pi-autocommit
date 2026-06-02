@@ -33,8 +33,17 @@ class FooterManager {
   private pi: ExtensionAPI | null = null;
   private ui: ExtensionUIContext | null = null;
   private cwd: string | undefined;
-  private running: { command: string; phase: Phase; lang?: string } | null =
-    null;
+  private running: {
+    command: string;
+    phase: Phase;
+    lang?: string;
+    phaseStartedAt: number;
+    /** Commit progress: current hunk index (1-based) */
+    commitCurrent?: number;
+    /** Commit progress: total hunks */
+    commitTotal?: number;
+  } | null = null;
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Initialize the manager with pi API, UI context, and working directory.
@@ -102,7 +111,8 @@ class FooterManager {
     lang?: string,
   ): Promise<void> {
     if (!this.ui) return;
-    this.running = { command, phase, lang };
+    this.running = { command, phase, lang, phaseStartedAt: Date.now() };
+    this.startElapsedTimer();
     this.renderPhase();
   }
 
@@ -116,6 +126,9 @@ class FooterManager {
   async setPhase(phase: Phase, lang?: string): Promise<void> {
     if (!this.ui || !this.running) return;
     this.running.phase = phase;
+    this.running.phaseStartedAt = Date.now();
+    this.running.commitCurrent = undefined;
+    this.running.commitTotal = undefined;
     if (lang !== undefined) {
       this.running.lang = lang;
     }
@@ -123,9 +136,22 @@ class FooterManager {
   }
 
   /**
+   * Set commit progress for the current phase.
+   * @param current - Current hunk index (1-based)
+   * @param total - Total number of hunks
+   */
+  async setCommitProgress(current: number, total: number): Promise<void> {
+    if (!this.ui || !this.running) return;
+    this.running.commitCurrent = current;
+    this.running.commitTotal = total;
+    this.renderPhase();
+  }
+
+  /**
    * End the running display. Clears the running flag and refreshes base display.
    */
   async clearRunning(): Promise<void> {
+    this.stopElapsedTimer();
     this.running = null;
     await this.refresh();
   }
@@ -137,10 +163,38 @@ class FooterManager {
     if (!this.ui || !this.running) return;
     const lang = this.running.lang ?? getLanguage(this.cwd);
     const autoCommit = this.running.command === "auto-commit";
-    this.ui.setStatus(
-      STATUS_KEY,
-      phaseStatusText(lang, this.running.phase, autoCommit),
-    );
+    const elapsed = Math.floor((Date.now() - this.running.phaseStartedAt) / 1000);
+
+    let status = phaseStatusText(lang, this.running.phase, autoCommit);
+
+    // Append commit progress if available
+    if (
+      this.running.commitCurrent !== undefined &&
+      this.running.commitTotal !== undefined
+    ) {
+      status += ` (${this.running.commitCurrent}/${this.running.commitTotal})`;
+    } else {
+      // Show elapsed time for phases that take a while
+      status += ` (${elapsed}s)`;
+    }
+
+    this.ui.setStatus(STATUS_KEY, status);
+  }
+
+  /** Start a periodic timer to refresh the elapsed-time display */
+  private startElapsedTimer(): void {
+    this.stopElapsedTimer();
+    this.elapsedTimer = setInterval(() => {
+      if (this.running) this.renderPhase();
+    }, 1000);
+  }
+
+  /** Stop the elapsed-time refresh timer */
+  private stopElapsedTimer(): void {
+    if (this.elapsedTimer !== null) {
+      clearInterval(this.elapsedTimer);
+      this.elapsedTimer = null;
+    }
   }
 }
 

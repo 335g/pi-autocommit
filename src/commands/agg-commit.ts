@@ -125,7 +125,10 @@ export async function handleAggCommit(
     let failedCount = 0;
     let skippedCount = 0;
 
-    for (const hunk of hunks) {
+    for (let i = 0; i < hunks.length; i++) {
+      const hunk = hunks[i];
+      await footerManager.setCommitProgress(i + 1, hunks.length);
+
       try {
         await stageFiles(pi, hunk.files, ctx.cwd);
       } catch {
