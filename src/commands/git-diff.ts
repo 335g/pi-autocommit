@@ -167,7 +167,7 @@ export async function handleGitDiff(
 
     // Analyze diff into hunks
     await footerManager.setPhase("analyze");
-    let hunks = await analyzeDiff(pi, ctx, diff);
+    let hunks = await analyzeDiff(pi, ctx, diff, lang);
     if (hunks.length === 0) {
       await footerManager.clearRunning();
       ctx.ui.notify(

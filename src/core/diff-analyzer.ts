@@ -243,8 +243,9 @@ async function callAIForDiff(
   auth: { apiKey?: string; headers?: Record<string, string> },
   ctx: ExtensionContext,
   diff: string,
+  langOverride?: string,
 ): Promise<Hunk[]> {
-  const lang = getLanguage();
+  const lang = langOverride ?? getLanguage(ctx.cwd);
   const cleaned = stripDiffNoise(diff);
   const truncated = truncateDiff(cleaned, MAX_DIFF_BYTES);
 
@@ -280,8 +281,10 @@ export async function analyzeDiff(
   _pi: ExtensionAPI,
   ctx: ExtensionContext,
   diff: string,
+  langOverride?: string,
 ): Promise<Hunk[]> {
   const fileCount = countFilesInDiff(diff);
+  const lang = langOverride ?? getLanguage(ctx.cwd);
 
   // Fast path: few files → instant fallback, skip AI call entirely
   if (fileCount <= FAST_PATH_FILE_LIMIT) {
@@ -307,7 +310,7 @@ export async function analyzeDiff(
       void footerManager.setCommitProgress(i + 1, batches.length);
 
       try {
-        const hunks = await callAIForDiff(model, auth, ctx, batches[i]);
+        const hunks = await callAIForDiff(model, auth, ctx, batches[i], lang);
         if (hunks.length > 0) {
           allHunks.push(...hunks);
         } else {
@@ -327,7 +330,7 @@ export async function analyzeDiff(
 
   // Single batch: standard path
   try {
-    const hunks = await callAIForDiff(model, auth, ctx, diff);
+    const hunks = await callAIForDiff(model, auth, ctx, diff, lang);
     if (hunks.length === 0) {
       return fallbackFileBasedHunks(diff);
     }

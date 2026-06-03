@@ -108,7 +108,7 @@ export async function handleAggCommit(
 
     // Analyze diff into logical hunks
     await footerManager.setPhase("analyze", runLang);
-    let hunks = await analyzeDiff(pi, ctx, diff);
+    let hunks = await analyzeDiff(pi, ctx, diff, runLang);
     if (hunks.length === 0) {
       await footerManager.clearRunning();
       ctx.ui.notify("No hunks found to commit", "info");
