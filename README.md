@@ -45,9 +45,6 @@ pi install /path/to/pi-git
 | [`/git-agg-commit`](#git-agg-commit) | Auto stage and commit changes with AI-generated Conventional Commits messages |
 | [`/git-auto-agg-commit`](#git-auto-agg-commit) | Toggle automatic `git-agg-commit` after assistant responses |
 | [`/git-config`](#git-config) | Get, set, or list pi-git configuration values |
-| [`/git-branch`](#git-branch) | Manage git branches: list, switch, create, and delete |
-| [`/git-diff`](#git-diff) | Interactively review AI-generated hunks and commit approved ones |
-| [`/git-log`](#git-log) | Display git log in oneline format |
 
 ### `/git-agg-commit`
 
@@ -71,30 +68,6 @@ Gets, sets, or lists pi-git configuration values. Supports global (`~/.config/pi
 
 ```
 /git-config <key> [value] [--global] [--list] [--show-origin]
-```
-
-### `/git-branch`
-
-Manages git branches: list, switch, create, and delete.
-
-```
-/git-branch [<branch>] [-c|--create] [-d|--delete] [--list] [--help]
-```
-
-### `/git-diff`
-
-Interactive diff review with AI-assisted hunk decomposition. Displays a file tree and unified diff side-by-side, letting you review, adjust, and commit changes one logical hunk at a time.
-
-```
-/git-diff [--lang=<code>]
-```
-
-### `/git-log`
-
-Displays git log in oneline format with branch names and HEAD position.
-
-```
-/git-log [-n <count>] [--all] [--graph]
 ```
 
 ---
