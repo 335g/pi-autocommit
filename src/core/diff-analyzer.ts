@@ -21,9 +21,6 @@ import { resolveModel } from "./resolve-model.js";
 /** Maximum diff bytes to send to the AI (truncated if larger) */
 const MAX_DIFF_BYTES = 30_000;
 
-/** Files threshold: skip AI analysis when ≤ this many files changed */
-const FAST_PATH_FILE_LIMIT = 5;
-
 /** Max files per AI analysis batch (split large diffs for progress visibility) */
 const FILES_PER_BATCH = 8;
 
@@ -283,11 +280,6 @@ export async function analyzeDiff(
 ): Promise<Hunk[]> {
   const fileCount = countFilesInDiff(diff);
   const lang = langOverride ?? getLanguage(ctx.cwd);
-
-  // Fast path: few files → instant fallback, skip AI call entirely
-  if (fileCount <= FAST_PATH_FILE_LIMIT) {
-    return fallbackFileBasedHunks(diff);
-  }
 
   const model = resolveModel(ctx);
   if (!model) {
