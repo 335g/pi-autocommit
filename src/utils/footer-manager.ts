@@ -12,7 +12,7 @@ import type {
   ExtensionAPI,
   ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
-import { isJapanese } from "./lang.js";
+import { t } from "./lang.js";
 import { getAutoAggCommit, getLanguage } from "./settings.js";
 
 const STATUS_KEY = "pi-git-agg-commit";
@@ -206,21 +206,21 @@ function phaseStatusText(
   key: Phase,
   autoCommit: boolean,
 ): string {
-  const ja = isJapanese(lang);
   const prefix = autoCommit ? "[pi-git: auto-commit]" : "[pi-git]";
   switch (key) {
     case "prepare":
-      return ja ? `${prefix} 準備中...` : `${prefix} Preparing...`;
+      return t(lang, `${prefix} 準備中...`, `${prefix} Preparing...`);
     case "collectDiff":
-      return ja ? `${prefix} diff収集中...` : `${prefix} Collecting diff...`;
+      return t(lang, `${prefix} diff収集中...`, `${prefix} Collecting diff...`);
     case "analyze":
-      return ja ? `${prefix} hunk解析中...` : `${prefix} Analyzing hunks...`;
+      return t(lang, `${prefix} hunk解析中...`, `${prefix} Analyzing hunks...`);
     case "generateMessage":
-      return ja
-        ? `${prefix} コミットメッセージ生成中...`
-        : `${prefix} Generating messages...`;
+      return t(lang,
+        `${prefix} コミットメッセージ生成中...`,
+        `${prefix} Generating messages...`,
+      );
     case "commit":
-      return ja ? `${prefix} コミット実行中...` : `${prefix} Committing...`;
+      return t(lang, `${prefix} コミット実行中...`, `${prefix} Committing...`);
   }
 }
 

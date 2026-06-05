@@ -10,8 +10,9 @@ export function isJapanese(lang: string): boolean {
 }
 
 /**
- * Get localized message based on language
+ * Get localized message based on language.
+ * Usage: t(lang)`日本語|English` or t(lang, "日本語", "English")
  */
-export function localize<T>(lang: string, ja: T, en: T): T {
+export function t(lang: string, ja: string, en: string): string {
   return isJapanese(lang) ? ja : en;
 }
