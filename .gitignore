@@ -11,6 +11,5 @@ apm_modules/
 .agents
 .claude
 
-.pi/
 .pi-git/
 .npmrc
