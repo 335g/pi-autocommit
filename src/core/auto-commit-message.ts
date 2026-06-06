@@ -12,6 +12,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { diagIncr } from "../utils/diagnostics.js";
 import { t } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
 import { sanitizeCommitMessage } from "./commit-message.js";
@@ -138,6 +139,8 @@ async function refineMessageIfGeneric(
     return generatedMessage;
   }
 
+  diagIncr("msgIsGeneric");
+
   // Get the last user message
   const userMessages = collectMessagesByRole(messages, "user");
   if (userMessages.length === 0) {
@@ -157,6 +160,7 @@ async function refineMessageIfGeneric(
   if (genScore > userScore + 5) return generatedMessage;
 
   // Scores are close — ask AI to decide
+  diagIncr("msgRefineUsedAI");
   try {
     const comparisonPrompt = t(
       lang,
@@ -375,6 +379,7 @@ export async function generateAutoCommitMessage(
 
     // If the generated message is too generic, compare with a user-message
     // candidate and pick the more specific one (heuristic → AI comparison)
+    diagIncr("msgRefineTriggered");
     return await refineMessageIfGeneric(
       model,
       auth,

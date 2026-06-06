@@ -1,4 +1,13 @@
-# P0 効果測定計画
+# P0 効果測定計画（実装済: 2026-06-06）
+
+## 実装済み
+
+| # | 項目 | 状態 |
+|---|------|------|
+| 診断カウンター | `src/utils/diagnostics.ts` + 全分岐点への設置 | ✅ |
+| `/git-diagnostics` コマンド | `src/commands/diagnostics.ts` → `index.ts` に登録 | ✅ |
+| parseHunks 単体テスト | `review/test-parse-hunks.ts` (12 tests, all passing) | ✅ |
+| Git 履歴分析スクリプト | `review/measure-commit-quality.sh` (未作成、以下に仕様) | ⬜ |
 
 ## 測定対象
 

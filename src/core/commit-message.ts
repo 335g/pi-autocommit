@@ -5,6 +5,7 @@
  * this module focuses on post-processing: validation, cleanup, and fallback.
  */
 
+import { diagIncr } from "../utils/diagnostics.js";
 import type { Hunk } from "../types.js";
 
 /** Valid Conventional Commits types */
@@ -82,6 +83,7 @@ export function sanitizeCommitMessage(
   message: string,
   files?: string[],
 ): string {
+  diagIncr("msgSanitized");
   let sanitized = message.trim();
 
   // Remove trailing period from subject
@@ -113,6 +115,7 @@ export function sanitizeCommitMessage(
 
   // Not a conventional commit - try to fix or fallback
   // If it has a colon, maybe it's an unknown format
+  diagIncr("msgSanitizeChanged");
   const colonIndex = sanitized.indexOf(":");
   if (colonIndex > 0) {
     const possibleSubject = sanitized.slice(colonIndex + 1).trim();

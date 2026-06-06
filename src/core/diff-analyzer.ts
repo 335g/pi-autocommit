@@ -12,6 +12,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { FileStats, Hunk } from "../types.js";
+import { diagIncr } from "../utils/diagnostics.js";
 import { footerManager } from "../utils/footer-manager.js";
 import { t } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
@@ -37,7 +38,7 @@ function buildPrompt(diff: string, lang: string): string {
 }
 
 /** Pattern to extract {files, message} pairs from broken JSON */
-const HUNK_PAIR_PATTERN = /\{\s*"files"\s*:\s*\[([^\]]*)\]\s*,\s*"message"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/gs;
+const HUNK_PAIR_PATTERN = /\{\s*"files"\s*:\s*\[([^\]]*)\]\s*,?\s*"message"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/gs;
 
 /** Try JSON.parse and return typed Hunks, or null on any failure */
 function tryParseHunkJSON(text: string): Hunk[] | null {
@@ -98,20 +99,21 @@ function parseHunks(text: string): Hunk[] {
 
   // Layer 2: Direct JSON.parse
   const direct = tryParseHunkJSON(jsonText);
-  if (direct) return direct;
+  if (direct) { diagIncr("parseLayer2_directJSON"); return direct; }
 
   // Layer 3: Strip trailing non-JSON text and retry
   const lastBracket = jsonText.lastIndexOf("]");
   if (lastBracket > 0) {
     const trimmed = jsonText.substring(0, lastBracket + 1).trim();
     const trimmedResult = tryParseHunkJSON(trimmed);
-    if (trimmedResult) return trimmedResult;
+    if (trimmedResult) { diagIncr("parseLayer3_trailingStrip"); return trimmedResult; }
   }
 
   // Layer 4: Regex pair extraction from malformed JSON
   const regexResult = tryRegexExtractHunks(jsonText);
-  if (regexResult.length > 0) return regexResult;
+  if (regexResult.length > 0) { diagIncr("parseLayer4_regexExtract"); return regexResult; }
 
+  diagIncr("parseFallback_fileBased");
   return [];
 }
 

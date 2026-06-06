@@ -9,6 +9,7 @@ import type { AgentEndEvent } from "./types.js";
 import { handleAggCommit } from "./commands/agg-commit.js";
 import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
 import { handleConfig } from "./commands/config.js";
+import { handleDiagnostics } from "./commands/diagnostics.js";
 import { handleAutoCommit } from "./core/auto-commit.js";
 import { footerManager } from "./utils/footer-manager.js";
 
@@ -43,6 +44,13 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle automatic git-agg-commit after assistant responses",
     handler: async (args, ctx) => {
       await handleAutoAggCommit(pi, ctx, args);
+    },
+  });
+
+  pi.registerCommand("git-diagnostics", {
+    description: "Show P0 effectiveness measurement counters",
+    handler: async (args, ctx) => {
+      await handleDiagnostics(pi, ctx, args);
     },
   });
 
