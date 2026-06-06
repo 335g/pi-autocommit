@@ -32,37 +32,87 @@ function getSystemPrompt(lang: string): string {
 }
 
 function buildPrompt(diff: string, lang: string): string {
-  return t(lang, "diffAnalyzer.buildPrompt", { diff });
+  const examples = t(lang, "diffAnalyzer.examples");
+  return t(lang, "diffAnalyzer.buildPrompt", { diff, examples });
+}
+
+/** Pattern to extract {files, message} pairs from broken JSON */
+const HUNK_PAIR_PATTERN = /\{\s*"files"\s*:\s*\[([^\]]*)\]\s*,\s*"message"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/gs;
+
+/** Try JSON.parse and return typed Hunks, or null on any failure */
+function tryParseHunkJSON(text: string): Hunk[] | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) return null;
+    return parsed
+      .map((item: unknown) => {
+        if (typeof item !== "object" || item === null) return null;
+        const hunk = item as Record<string, unknown>;
+        const files = Array.isArray(hunk.files)
+          ? hunk.files.filter((f): f is string => typeof f === "string")
+          : [];
+        const message =
+          typeof hunk.message === "string"
+            ? hunk.message
+            : "chore: update files";
+        return { files, message } as Hunk;
+      })
+      .filter((h): h is Hunk => h !== null);
+  } catch {
+    return null;
+  }
+}
+
+/** Regex-based extraction of hunk pairs from broken JSON */
+function tryRegexExtractHunks(text: string): Hunk[] {
+  const hunks: Hunk[] = [];
+  const pattern = new RegExp(HUNK_PAIR_PATTERN.source, "gs");
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const filesStr = match[1];
+    const message = match[2].replace(/\\"/g, '"');
+
+    // Parse file paths from the captured array segment
+    const fileMatches = filesStr.match(/"((?:[^"\\]|\\.)*)"/g);
+    const files = fileMatches
+      ? fileMatches.map((f) => f.slice(1, -1).replace(/\\"/g, '"'))
+      : [];
+
+    if (files.length > 0 && message.length > 0) {
+      hunks.push({ files, message });
+    }
+  }
+
+  return hunks;
 }
 
 function parseHunks(text: string): Hunk[] {
-  // Extract JSON from the response (handle code fences)
   let jsonText = text.trim();
+
+  // Layer 1: Extract JSON from code fences
   const codeFenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (codeFenceMatch) {
     jsonText = codeFenceMatch[1].trim();
   }
 
-  try {
-    const parsed = JSON.parse(jsonText);
-    if (!Array.isArray(parsed)) {
-      throw new Error("Response is not an array");
-    }
-    return parsed.map((item: unknown) => {
-      if (typeof item !== "object" || item === null) {
-        throw new Error("Invalid hunk item");
-      }
-      const hunk = item as Record<string, unknown>;
-      const files = Array.isArray(hunk.files)
-        ? hunk.files.filter((f): f is string => typeof f === "string")
-        : [];
-      const message =
-        typeof hunk.message === "string" ? hunk.message : "chore: update files";
-      return { files, message } as Hunk;
-    });
-  } catch {
-    return [];
+  // Layer 2: Direct JSON.parse
+  const direct = tryParseHunkJSON(jsonText);
+  if (direct) return direct;
+
+  // Layer 3: Strip trailing non-JSON text and retry
+  const lastBracket = jsonText.lastIndexOf("]");
+  if (lastBracket > 0) {
+    const trimmed = jsonText.substring(0, lastBracket + 1).trim();
+    const trimmedResult = tryParseHunkJSON(trimmed);
+    if (trimmedResult) return trimmedResult;
   }
+
+  // Layer 4: Regex pair extraction from malformed JSON
+  const regexResult = tryRegexExtractHunks(jsonText);
+  if (regexResult.length > 0) return regexResult;
+
+  return [];
 }
 
 function fallbackFileBasedHunks(diff: string): Hunk[] {

@@ -69,17 +69,25 @@ export const messages = {
     "diffAnalyzer.systemPrompt":
       "Split git diff into logical hunks.\n\nRules:\n- Each hunk = single logical change (e.g., \"add feature X\", \"fix bug Y\")\n- Group related file changes together\n- Split independent changes within one file into separate hunks\n- Write commit message subjects in English\n\nReturn ONLY a JSON array:\n[\n  {\"files\": [\"path/to/file1.ts\", \"path/to/file2.ts\"], \"message\": \"feat(scope): add feature\"},\n  {\"files\": [\"path/to/file3.ts\"], \"message\": \"fix: resolve null check\"}\n]\n\nMessage format: Conventional Commits (feat, fix, docs, style, refactor, test, chore).\nKeep subject under 50 chars. Use imperative mood. Write in English.",
 
+    // ── diff-analyzer.ts: few-shot examples ────────────────────
+    "diffAnalyzer.examples":
+      "Examples of correct output:\n\nInput: diff with src/auth/login.ts (added login function), src/auth/types.ts (added User type)\nOutput: [{\"files\": [\"src/auth/login.ts\", \"src/auth/types.ts\"], \"message\": \"feat(auth): add login functionality\"}]\n\nInput: diff with README.md (fixed typo in installation section), package.json (version bump)\nOutput: [{\"files\": [\"README.md\"], \"message\": \"docs: fix typo in README\"}, {\"files\": [\"package.json\"], \"message\": \"chore: bump version to 1.2.0\"}]",
+
     // ── diff-analyzer.ts: user prompt ──────────────────────────
     "diffAnalyzer.buildPrompt":
-      "Here is the git diff to analyze. Split it into logical hunks:\n\n```diff\n{diff}\n```\n\nWrite commit message subjects in English.\nRespond with ONLY a JSON array of hunks as specified.",
+      "{examples}\n\nHere is the git diff to analyze. Split it into logical hunks:\n\n```diff\n{diff}\n```\n\nWrite commit message subjects in English.\nRespond with ONLY a JSON array of hunks as specified.",
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":
       "You are a commit message generator. From the following information, understand what the user requested and what changes were made as a result, then generate a single Conventional Commit message.\n\nThe most important input is the \"user's request\". Use it as the primary driver for the commit message. The assistant's response and changed files list are supplementary - they describe how the request was fulfilled.\n\nRules:\n- Choose type from: feat, fix, docs, style, refactor, test, chore\n- Write the subject in English\n- Keep subject under 50 characters\n- Use imperative mood\n- Include scope only if clearly inferable\n\nReturn ONLY the commit message string. No explanations or code fences.",
 
+    // ── auto-commit-message.ts: few-shot examples ──────────────
+    "autoCommitMsg.examples":
+      "Examples:\n\nUser request: \"Add a login form to the auth page\"\nAssistant response: \"I've added login.tsx with form validation and connected it to the auth API.\"\nChanged files: src/auth/login.tsx, src/auth/api.ts\n→ feat(auth): add login form\n\nUser request: \"Fix the null pointer error in the payment flow\"\nAssistant response: \"Added null check in PaymentProcessor.handle(). The error should be resolved now.\"\nChanged files: src/payment/processor.ts\n→ fix(payment): add null check in processor",
+
     // ── auto-commit-message.ts: user prompt ────────────────────
     "autoCommitMsg.buildPrompt":
-      "=== USER REQUEST (primary) ===\n{userSection}\n\n=== ASSISTANT RESPONSE (reference) ===\n{assistantSection}\n\n=== CHANGED FILES ===\n{filesSection}\n\nBased primarily on the USER REQUEST above, generate a single Conventional Commit message in English that best captures the intent of the changes.",
+      "{examples}\n\n=== USER REQUEST (primary) ===\n{userSection}\n\n=== ASSISTANT RESPONSE (reference) ===\n{assistantSection}\n\n=== CHANGED FILES ===\n{filesSection}\n\nBased primarily on the USER REQUEST above, generate a single Conventional Commit message in English that best captures the intent of the changes.",
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":
@@ -157,17 +165,25 @@ export const messages = {
     "diffAnalyzer.systemPrompt":
       "git diffを論理的なhunkに分割してください。\n\nルール:\n- 各hunk = 単一の論理的な変更（例：「機能Xを追加」「バグYを修正」）\n- 関連するファイル変更はグループ化する\n- 1ファイルに独立した複数の変更がある場合は分割する\n- コミットメッセージのサブジェクトは必ず日本語で記述する\n\n以下のJSON配列のみを返してください:\n[\n  {\"files\": [\"path/to/file1.ts\", \"path/to/file2.ts\"], \"message\": \"feat: 機能を追加\"},\n  {\"files\": [\"path/to/file3.ts\"], \"message\": \"fix: バグを修正\"}\n]\n\nメッセージ形式: Conventional Commits (feat, fix, docs, style, refactor, test, chore)。\nサブジェクトは50文字以内。",
 
+    // ── diff-analyzer.ts: few-shot examples ────────────────────
+    "diffAnalyzer.examples":
+      "正しい出力の例:\n\n入力: src/auth/login.ts（ログイン機能を追加）, src/auth/types.ts（User型を追加）のdiff\n出力: [{\"files\": [\"src/auth/login.ts\", \"src/auth/types.ts\"], \"message\": \"feat(auth): ログイン機能を追加\"}]\n\n入力: README.md（インストール手順の誤字を修正）, package.json（バージョン更新）のdiff\n出力: [{\"files\": [\"README.md\"], \"message\": \"docs: READMEの誤字を修正\"}, {\"files\": [\"package.json\"], \"message\": \"chore: バージョンを1.2.0に更新\"}]",
+
     // ── diff-analyzer.ts: user prompt ──────────────────────────
     "diffAnalyzer.buildPrompt":
-      "以下のgit diffを分析し、論理的なhunkに分割してください:\n\n```diff\n{diff}\n```\n\nコミットメッセージのサブジェクトは必ず日本語で記述してください。\n指定された形式のJSON配列のみを返してください。",
+      "{examples}\n\n以下のgit diffを分析し、論理的なhunkに分割してください:\n\n```diff\n{diff}\n```\n\nコミットメッセージのサブジェクトは必ず日本語で記述してください。\n指定された形式のJSON配列のみを返してください。",
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":
       "あなたはコミットメッセージ生成ツールです。以下の情報から、ユーザーが**何を依頼し、その結果どのような変更が行われたか**を読み取り、Conventional Commit メッセージを1つ生成してください。\n\n最も重要なのは「ユーザーのリクエスト」です。ユーザーが何を求めていたのかを主軸に、コミットメッセージを決定してください。アシスタントの応答と変更ファイル一覧は、そのリクエストがどのように実現されたかを補完する情報です。\n\nルール:\n- type は feat, fix, docs, style, refactor, test, chore から選択\n- サブジェクトは必ず日本語で記述する\n- サブジェクトは50文字以内\n- 命令形を使用する\n- スコープは推測できる場合のみ含める\n\n返答はメッセージ文字列のみ。説明やコードフェンスは不要。",
 
+    // ── auto-commit-message.ts: few-shot examples ──────────────
+    "autoCommitMsg.examples":
+      "例:\n\nユーザーの依頼: 「認証ページにログインフォームを追加して」\nアシスタントの応答: 「login.tsx にバリデーション付きのフォームを追加し、認証APIに接続しました」\n変更ファイル: src/auth/login.tsx, src/auth/api.ts\n→ feat(auth): ログインフォームを追加\n\nユーザーの依頼: 「支払いフローのnullポインタエラーを修正して」\nアシスタントの応答: 「PaymentProcessor.handle() にnullチェックを追加しました」\n変更ファイル: src/payment/processor.ts\n→ fix(payment): nullチェックを追加",
+
     // ── auto-commit-message.ts: user prompt ────────────────────
     "autoCommitMsg.buildPrompt":
-      "=== ユーザーのリクエスト（最重要） ===\n{userSection}\n\n=== アシスタントの応答（参考） ===\n{assistantSection}\n\n=== 変更されたファイル ===\n{filesSection}\n\n上記の「ユーザーのリクエスト」を主軸に、変更の意図を最もよく表す Conventional Commit メッセージを1つ、**必ず日本語で**生成してください。",
+      "{examples}\n\n=== ユーザーのリクエスト（最重要） ===\n{userSection}\n\n=== アシスタントの応答（参考） ===\n{assistantSection}\n\n=== 変更されたファイル ===\n{filesSection}\n\n上記の「ユーザーのリクエスト」を主軸に、変更の意図を最もよく表す Conventional Commit メッセージを1つ、**必ず日本語で**生成してください。",
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":

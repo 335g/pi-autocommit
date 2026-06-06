@@ -303,10 +303,12 @@ function buildPrompt(
   const filesStr = truncate(changedFiles.join(", "), MAX_FILES_CHARS);
   const filesSection = filesStr || noData;
 
+  const examples = t(lang, "autoCommitMsg.examples");
   return t(lang, "autoCommitMsg.buildPrompt", {
     userSection,
     assistantSection,
     filesSection,
+    examples,
   });
 }
 
