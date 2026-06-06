@@ -303,7 +303,7 @@ export async function analyzeDiff(
     const allHunks: Hunk[] = [];
 
     for (let i = 0; i < batches.length; i++) {
-      void footerManager.setCommitProgress(i + 1, batches.length);
+      await footerManager.setCommitProgress(i + 1, batches.length);
 
       try {
         const hunks = await callAIForDiff(model, auth, ctx, batches[i], lang);

@@ -5,7 +5,7 @@
     "bug",
     "pi-git"
   ],
-  "status": "open",
+  "status": "closed",
   "created_at": "2026-06-06T09:19:33.036Z"
 }
 
