@@ -10,6 +10,7 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { MessageKey } from "../i18n/messages.js";
 
 export interface PiGitSettings {
   /** Display and commit message language (e.g., "en", "ja") */
@@ -27,10 +28,8 @@ export interface KeyMeta {
   key: string;
   /** Display type (e.g., "string", "boolean") */
   type: string;
-  /** Japanese description */
-  description_ja: string;
-  /** English description */
-  description_en: string;
+  /** Message key for localized description */
+  messageKey: MessageKey;
   /** Valid values hint (optional) */
   valid_values?: string;
 }
@@ -40,24 +39,19 @@ export const VALID_KEYS_META: KeyMeta[] = [
   {
     key: "lang",
     type: "string",
-    description_ja: "表示・コミットメッセージの言語設定",
-    description_en: "Display and commit message language",
+    messageKey: "config.keyDesc.lang",
     valid_values: '"en" or "ja"',
   },
   {
     key: "auto_agg_commit",
     type: "boolean",
-    description_ja: "アシスタント応答後の自動コミット有無",
-    description_en:
-      "Whether to automatically run git-agg-commit after assistant response",
+    messageKey: "config.keyDesc.auto_agg_commit",
     valid_values: "true or false",
   },
   {
     key: "analysis_model",
     type: "string",
-    description_ja: "diff分析に使用するAIモデル（形式: provider/model-id）",
-    description_en:
-      "AI model to use for diff analysis (format: provider/model-id)",
+    messageKey: "config.keyDesc.analysis_model",
     valid_values: "e.g., anthropic/claude-3-5-sonnet-20241022",
   },
 ];

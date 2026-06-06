@@ -87,36 +87,7 @@ export async function handleConfig(
   if (help) {
     ctx.ui.notify(
       t(lang,
-        [
-          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--help]",
-          "",
-          "サブコマンド:",
-          "  <key>           設定値を取得",
-          "  <key> <value>   設定値を変更",
-          "",
-          "フラグ:",
-          "  --global        グローバル設定に対して操作",
-          "  --list           すべての設定値を一覧表示",
-          "  --show-origin    値の取得元（default/global/local）を表示",
-          "  --keys           有効なキー一覧と説明を表示",
-          "  --models         analysis_model に設定可能なモデル一覧を表示",
-          "  --help           このヘルプを表示",
-        ].join("\n"),
-        [
-          "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--help]",
-          "",
-          "Subcommands:",
-          "  <key>           Get the value of a setting",
-          "  <key> <value>   Set the value of a setting",
-          "",
-          "Flags:",
-          "  --global        Operate on global settings",
-          "  --list           List all configured values",
-          "  --show-origin    Show value origin (default/global/local)",
-          "  --keys           Show valid keys with descriptions",
-          "  --models         Show available models for analysis_model",
-          "  --help           Show this help message",
-        ].join("\n"),
+        "config.help",
       ),
       "info",
     );
@@ -125,7 +96,7 @@ export async function handleConfig(
 
   if (keys) {
     const lines = VALID_KEYS_META.map((meta) => {
-      const desc = t(lang, meta.description_ja, meta.description_en);
+      const desc = t(lang, meta.messageKey);
       let line = `${meta.key} (${meta.type}) — ${desc}`;
       if (meta.valid_values) {
         line += ` [${meta.valid_values}]`;
@@ -140,7 +111,7 @@ export async function handleConfig(
     const availableModels = ctx.modelRegistry.getAvailable();
     if (availableModels.length === 0) {
       ctx.ui.notify(
-        t(lang, "利用可能なモデルが見つかりません", "No available models found"),
+        t(lang, "config.noModels"),
         "warning",
       );
       return;
@@ -155,8 +126,7 @@ export async function handleConfig(
     });
 
     const header = t(lang,
-      "analysis_model に設定可能なモデル一覧:",
-      "Available models for analysis_model:",
+      "config.modelsHeader",
     );
     ctx.ui.notify(`${header}\n${lines.join("\n")}`, "info");
     return;
@@ -177,7 +147,7 @@ export async function handleConfig(
       }
     }
     if (entries.length === 0) {
-      ctx.ui.notify(t(lang, "設定はありません", "No settings configured"), "info");
+      ctx.ui.notify(t(lang, "config.noSettings"), "info");
     } else {
       ctx.ui.notify(entries.join("\n"), "info");
     }
@@ -187,8 +157,7 @@ export async function handleConfig(
   if (positional.length === 0) {
     ctx.ui.notify(
       t(lang,
-        "使用方法: /git-config <key> [value] [--global] [--list] [--show-origin] [--keys]",
-        "Usage: /git-config <key> [value] [--global] [--list] [--show-origin] [--keys]",
+        "config.usageHint",
       ),
       "warning",
     );
@@ -200,8 +169,8 @@ export async function handleConfig(
   if (!isValidKey(key)) {
     ctx.ui.notify(
       t(lang,
-        `[pi-git] 不明な設定キー: ${key}`,
-        `[pi-git] Unknown config key: ${key}`,
+        "config.unknownKey",
+        { key },
       ),
       "warning",
     );
@@ -214,8 +183,8 @@ export async function handleConfig(
     if (value === undefined) {
       ctx.ui.notify(
         t(lang,
-          `[pi-git] ${key} は設定されていません`,
-          `[pi-git] ${key} is not set`,
+          "config.notSet",
+          { key },
         ),
         "info",
       );
@@ -244,8 +213,8 @@ export async function handleConfig(
       saveGlobalSettings({ [key]: parsed });
       ctx.ui.notify(
         t(lang,
-          `[pi-git] ${key}=${parsed} をグローバル設定に保存しました`,
-          `[pi-git] Saved ${key}=${parsed} to global config`,
+          "config.savedToGlobal",
+          { key, value: String(parsed) },
         ),
         "info",
       );
@@ -260,8 +229,8 @@ export async function handleConfig(
           saveLocalSettings({ ...DEFAULT_SETTINGS, [key]: parsed }, ctx.cwd);
           ctx.ui.notify(
             t(lang,
-              `[pi-git] ${key}=${parsed} をローカル設定に保存しました（デフォルト値で初期化）`,
-              `[pi-git] Saved ${key}=${parsed} to local config (initialized with defaults)`,
+              "config.savedToLocalInit",
+              { key, value: String(parsed) },
             ),
             "info",
           );
@@ -269,8 +238,8 @@ export async function handleConfig(
           saveLocalSettings({ [key]: parsed }, ctx.cwd);
           ctx.ui.notify(
             t(lang,
-              `[pi-git] ${key}=${parsed} をローカル設定に保存しました`,
-              `[pi-git] Saved ${key}=${parsed} to local config`,
+              "config.savedToLocal",
+              { key, value: String(parsed) },
             ),
             "info",
           );
@@ -280,8 +249,8 @@ export async function handleConfig(
         saveGlobalSettings({ [key]: parsed });
         ctx.ui.notify(
           t(lang,
-            `[pi-git] ${key}=${parsed} をグローバル設定に保存しました（Gitリポジトリ外のため）`,
-            `[pi-git] Saved ${key}=${parsed} to global config (outside git repo)`,
+            "config.savedToGlobalFallback",
+            { key, value: String(parsed) },
           ),
           "info",
         );
@@ -290,8 +259,8 @@ export async function handleConfig(
   } catch (err) {
     ctx.ui.notify(
       t(lang,
-        `[pi-git] 保存に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
-        `[pi-git] Failed to save: ${err instanceof Error ? err.message : String(err)}`,
+        "config.saveFailed",
+        { error: err instanceof Error ? err.message : String(err) },
       ),
       "error",
     );

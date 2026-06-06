@@ -37,32 +37,7 @@ export async function handleAutoAggCommit(
   if (trimmed === "--help") {
     ctx.ui.notify(
       t(lang,
-        [
-          "/git-auto-agg-commit [on|off|toggle] [--help]",
-          "",
-          "サブコマンド:",
-          "  on      自動 git-agg-commit を有効にする",
-          "  off     自動 git-agg-commit を無効にする",
-          "  toggle  自動 git-agg-commit の有効/無効を切り替える",
-          "",
-          "フラグ:",
-          "  --help  このヘルプを表示",
-          "",
-          "引数を省略すると、現在の状態を表示します。",
-        ].join("\n"),
-        [
-          "/git-auto-agg-commit [on|off|toggle] [--help]",
-          "",
-          "Subcommands:",
-          "  on      Enable auto git-agg-commit",
-          "  off     Disable auto git-agg-commit",
-          "  toggle  Toggle auto git-agg-commit",
-          "",
-          "Flags:",
-          "  --help  Show this help message",
-          "",
-          "When called without arguments, shows the current status.",
-        ].join("\n"),
+        "autoAggCommit.help",
       ),
       "info",
     );
@@ -83,8 +58,8 @@ export async function handleAutoAggCommit(
     case "":
       ctx.ui.notify(
         t(lang,
-          `${P} 自動 git-agg-commit は${current ? "有効" : "無効"}です`,
-          `${P} Auto git-agg-commit is ${current ? "enabled" : "disabled"}`,
+          "autoAggCommit.status",
+          { status: t(lang, current ? "autoAggCommit.enabled" : "autoAggCommit.disabled") },
         ),
         "info",
       );
@@ -92,8 +67,7 @@ export async function handleAutoAggCommit(
     default:
       ctx.ui.notify(
         t(lang,
-          `${P} 引数が不正です。on, off, toggle のいずれかを指定してください`,
-          `${P} Invalid argument. Use "on", "off", or "toggle"`,
+          "autoAggCommit.invalidArg",
         ),
         "warning",
       );
@@ -109,21 +83,20 @@ export async function handleAutoAggCommit(
 
   await footerManager.refresh();
 
-  const enabledJa = next ? "有効" : "無効";
-  const enabledEn = next ? "enabled" : "disabled";
+  const statusText = t(lang, next ? "autoAggCommit.enabled" : "autoAggCommit.disabled");
   if (localPath) {
     ctx.ui.notify(
       t(lang,
-        `${P} 自動 git-agg-commit を${enabledJa}にしました（ローカル設定）`,
-        `${P} Auto git-agg-commit ${enabledEn} (local config)`,
+        "autoAggCommit.enabledLocal",
+        { status: statusText },
       ),
       "info",
     );
   } else {
     ctx.ui.notify(
       t(lang,
-        `${P} 自動 git-agg-commit を${enabledJa}にしました（グローバル設定 — Gitリポジトリ外のため）`,
-        `${P} Auto git-agg-commit ${enabledEn} (global config — outside git repo)`,
+        "autoAggCommit.enabledGlobal",
+        { status: statusText },
       ),
       "info",
     );

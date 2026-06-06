@@ -209,18 +209,15 @@ function phaseStatusText(
   const prefix = autoCommit ? "[pi-git: auto-commit]" : "[pi-git]";
   switch (key) {
     case "prepare":
-      return t(lang, `${prefix} 準備中...`, `${prefix} Preparing...`);
+      return t(lang, "footer.prepare", { prefix });
     case "collectDiff":
-      return t(lang, `${prefix} diff収集中...`, `${prefix} Collecting diff...`);
+      return t(lang, "footer.collectDiff", { prefix });
     case "analyze":
-      return t(lang, `${prefix} hunk解析中...`, `${prefix} Analyzing hunks...`);
+      return t(lang, "footer.analyze", { prefix });
     case "generateMessage":
-      return t(lang,
-        `${prefix} コミットメッセージ生成中...`,
-        `${prefix} Generating messages...`,
-      );
+      return t(lang, "footer.generateMessage", { prefix });
     case "commit":
-      return t(lang, `${prefix} コミット実行中...`, `${prefix} Committing...`);
+      return t(lang, "footer.commit", { prefix });
   }
 }
 

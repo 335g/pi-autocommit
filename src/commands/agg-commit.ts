@@ -36,20 +36,7 @@ export async function handleAggCommit(
     if (ctx.hasUI) {
       ctx.ui.notify(
         t(lang,
-          [
-            "/git-agg-commit [--lang=<lang>] [--help]",
-            "",
-            "オプション:",
-            "  --lang=<lang>  一時的に言語を上書き（保存されません）",
-            "  --help         このヘルプを表示",
-          ].join("\n"),
-          [
-            "/git-agg-commit [--lang=<lang>] [--help]",
-            "",
-            "Options:",
-            "  --lang=<lang>  Temporarily override language (not saved)",
-            "  --help         Show this help message",
-          ].join("\n"),
+          "aggCommit.help",
         ),
         "info",
       );
@@ -71,8 +58,7 @@ export async function handleAggCommit(
   if (footerManager.isRunning()) {
     ctx.ui.notify(
       t(runLang,
-        "git-agg-commit 実行中です。完了してから再度実行してください。",
-        "git-agg-commit is already running. Please wait for it to complete.",
+        "aggCommit.alreadyRunning",
       ),
       "warning",
     );

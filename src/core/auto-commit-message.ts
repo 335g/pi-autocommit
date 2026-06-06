@@ -160,39 +160,16 @@ async function refineMessageIfGeneric(
   try {
     const comparisonPrompt = t(
       lang,
-      [
-        "あなたはコミットメッセージの品質評価ツールです。",
-        "同じ変更セットに対する2つの候補メッセージがあります。",
-        "",
-        `候補A（会話分析から生成）: "${generatedMessage}"`,
-        `候補B（ユーザーの依頼から抽出）: "${userCandidate}"`,
-        "",
-        `変更ファイル: ${changedFiles.join(", ")}`,
-        "",
-        "より**具体的で**、変更内容を正確に表している方を選び、",
-        "そのメッセージ文字列だけを返してください。",
-        "説明や補足は一切不要です。",
-      ].join("\n"),
-      [
-        "You are a commit message quality evaluator.",
-        "Two candidate messages exist for the same set of changes.",
-        "",
-        `Candidate A (generated from analysis): "${generatedMessage}"`,
-        `Candidate B (derived from user request): "${userCandidate}"`,
-        "",
-        `Changed files: ${changedFiles.join(", ")}`,
-        "",
-        "Choose the one that is MORE SPECIFIC and accurately describes the changes.",
-        "Return ONLY the chosen message string. No explanations.",
-      ].join("\n"),
+      "autoCommitMsg.comparePrompt",
+      {
+        candidateA: generatedMessage,
+        candidateB: userCandidate,
+        files: changedFiles.join(", "),
+      },
     );
 
     const context: Context = {
-      systemPrompt: t(
-        lang,
-        "コミットメッセージ候補から最も具体的なものを選び、その文字列のみを返してください。",
-        "Choose the most specific commit message candidate. Return only the chosen message string.",
-      ),
+      systemPrompt: t(lang, "autoCommitMsg.compareSystemPrompt"),
       messages: [
         {
           role: "user",
@@ -245,32 +222,7 @@ async function refineMessageIfGeneric(
 }
 
 function getSystemPrompt(lang: string): string {
-  return t(lang,
-    `あなたはコミットメッセージ生成ツールです。以下の情報から、ユーザーが**何を依頼し、その結果どのような変更が行われたか**を読み取り、Conventional Commit メッセージを1つ生成してください。
-
-最も重要なのは「ユーザーのリクエスト」です。ユーザーが何を求めていたのかを主軸に、コミットメッセージを決定してください。アシスタントの応答と変更ファイル一覧は、そのリクエストがどのように実現されたかを補完する情報です。
-
-ルール:
-- type は feat, fix, docs, style, refactor, test, chore から選択
-- サブジェクトは必ず日本語で記述する
-- サブジェクトは50文字以内
-- 命令形を使用する
-- スコープは推測できる場合のみ含める
-
-返答はメッセージ文字列のみ。説明やコードフェンスは不要。`,
-    `You are a commit message generator. From the following information, understand what the user requested and what changes were made as a result, then generate a single Conventional Commit message.
-
-The most important input is the "user's request". Use it as the primary driver for the commit message. The assistant's response and changed files list are supplementary - they describe how the request was fulfilled.
-
-Rules:
-- Choose type from: feat, fix, docs, style, refactor, test, chore
-- Write the subject in English
-- Keep subject under 50 characters
-- Use imperative mood
-- Include scope only if clearly inferable
-
-Return ONLY the commit message string. No explanations or code fences.`,
-  );
+  return t(lang, "autoCommitMsg.systemPrompt");
 }
 
 function extractTextContent(content: string | unknown): string {
@@ -331,7 +283,9 @@ function buildPrompt(
     userLines.push(truncated);
     userBudget -= truncated.length;
   }
-  const userSection = userLines.reverse().join("\n---\n");
+  const userStr = userLines.reverse().join("\n---\n");
+  const noData = t(lang, "autoCommitMsg.noData");
+  const userSection = userStr || noData;
 
   // Build assistant messages section
   const assistantLines: string[] = [];
@@ -342,33 +296,18 @@ function buildPrompt(
     assistantLines.push(truncated);
     assistantBudget -= truncated.length;
   }
-  const assistantSection = assistantLines.reverse().join("\n---\n");
+  const assistantStr = assistantLines.reverse().join("\n---\n");
+  const assistantSection = assistantStr || noData;
 
   // Build files section
   const filesStr = truncate(changedFiles.join(", "), MAX_FILES_CHARS);
+  const filesSection = filesStr || noData;
 
-  return t(lang,
-    `=== ユーザーのリクエスト（最重要） ===
-${userSection || "(なし)"}
-
-=== アシスタントの応答（参考） ===
-${assistantSection || "(なし)"}
-
-=== 変更されたファイル ===
-${filesStr || "(なし)"}
-
-上記の「ユーザーのリクエスト」を主軸に、変更の意図を最もよく表す Conventional Commit メッセージを1つ、**必ず日本語で**生成してください。`,
-    `=== USER REQUEST (primary) ===
-${userSection || "(none)"}
-
-=== ASSISTANT RESPONSE (reference) ===
-${assistantSection || "(none)"}
-
-=== CHANGED FILES ===
-${filesStr || "(none)"}
-
-Based primarily on the USER REQUEST above, generate a single Conventional Commit message in English that best captures the intent of the changes.`,
-  );
+  return t(lang, "autoCommitMsg.buildPrompt", {
+    userSection,
+    assistantSection,
+    filesSection,
+  });
 }
 
 export async function generateAutoCommitMessage(
@@ -377,24 +316,24 @@ export async function generateAutoCommitMessage(
   messages: SimpleMessage[],
   changedFiles: string[],
 ): Promise<string> {
+  const lang = getLanguage(ctx.cwd);
+
   const model = resolveModel(ctx);
   if (!model) {
-    return sanitizeCommitMessage("chore: apply changes", changedFiles);
+    return sanitizeCommitMessage(t(lang, "core.applyChanges"), changedFiles);
   }
 
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
-    return sanitizeCommitMessage("chore: apply changes", changedFiles);
+    return sanitizeCommitMessage(t(lang, "core.applyChanges"), changedFiles);
   }
-
-  const lang = getLanguage(ctx.cwd);
 
   // Collect ALL user messages and assistant messages for rich context
   const userMessages = collectMessagesByRole(messages, "user");
   const assistantMessages = collectMessagesByRole(messages, "assistant");
 
   if (userMessages.length === 0) {
-    return sanitizeCommitMessage("chore: apply changes", changedFiles);
+    return sanitizeCommitMessage(t(lang, "core.applyChanges"), changedFiles);
   }
 
   try {
@@ -428,7 +367,7 @@ export async function generateAutoCommitMessage(
       .trim();
 
     const commitMessage = sanitizeCommitMessage(
-      text || "chore: apply changes",
+      text || t(lang, "core.applyChanges"),
       changedFiles,
     );
 

@@ -97,16 +97,16 @@ export async function handleAutoCommit(
       await resetStaging(pi, ctx.cwd);
       ctx.ui.notify(
         t(lang,
-          `コミットに失敗しました: ${stderr}`,
-          `Commit failed: ${stderr}`,
+          "autoCommit.commitFailed",
+          { error: stderr },
         ),
         "warning",
       );
     } else {
       ctx.ui.notify(
         t(lang,
-          `コミットを作成しました: ${commitMessage}`,
-          `Created commit: ${commitMessage}`,
+          "autoCommit.commitCreated",
+          { message: commitMessage },
         ),
         "info",
       );
