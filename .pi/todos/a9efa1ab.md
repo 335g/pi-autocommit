@@ -5,6 +5,6 @@
     "fix",
     "prompt"
   ],
-  "status": "completed",
+  "status": "closed",
   "created_at": "2026-06-06T10:07:41.845Z"
 }
