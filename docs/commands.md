@@ -34,7 +34,7 @@ Automatically analyzes the working tree diff, splits changes into logical hunks,
 | Message generation | `[pi-git] Generating messages...` | `[pi-git] コミットメッセージ生成中...` |
 | Committing | `[pi-git] Committing...` | `[pi-git] コミット実行中...` |
 
-When `auto-agg-commit` is enabled, the prefix becomes `[pi-git: auto-commit]` and the persistent `[pi-git] auto-commit: ON` status indicator is temporarily hidden during execution to avoid duplicate status lines.
+When `auto-agg-commit` is enabled, the prefix becomes `[pi-git: auto-commit]` and the persistent `auto-commit: on (...)` status indicator is temporarily hidden during execution to avoid duplicate status lines.
 
 ### Behavior
 
@@ -76,8 +76,8 @@ Toggle the automatic `git-agg-commit` feature. When enabled, `pi-git` automatica
 
 ### Behavior
 
-- Saves the setting to the **global** config file (`~/.config/pi-git/settings.json`).
-- Updates the persistent footer indicator `[pi-git] auto-commit: ON` when enabled.
+- Saves the setting to the **local** config (`<repo-root>/.pi-git/settings.json`) when inside a git repository, or the **global** config (`~/.config/pi-git/settings.json`) as a fallback when outside a repo.
+- Updates the persistent footer indicator `auto-commit: on (clean)` or `auto-commit: on (changed)` based on working tree state when enabled.
 - The auto-commit trigger fires on the `agent_end` event.
 - Does not run if another `/git-agg-commit` is already in progress.
 
@@ -91,7 +91,7 @@ Get, set, or list `pi-git` configuration values. Supports both global and local 
 
 1. **Local config** — `<repo-root>/.pi-git/settings.json` (highest priority)
 2. **Global config** — `~/.config/pi-git/settings.json`
-3. **Built-in defaults** — `{"lang": "en", "auto_agg_commit": false}` (lowest priority)
+3. **Built-in defaults** — `{"lang": "en", "auto_agg_commit": false, "analysis_model": ""}` (lowest priority)
 
 Values from local config take precedence over global config. If a key is missing in local config, the global value (or default) is used.
 
@@ -101,6 +101,7 @@ Values from local config take precedence over global config. If a key is missing
 |-----|------|---------|-------------|
 | `lang` | `string` | `"en"` | Display and commit message language. `"en"` or `"ja"`. |
 | `auto_agg_commit` | `boolean` | `false` | Whether to automatically run `git-agg-commit` after assistant responses. |
+| `analysis_model` | `string` | `""` | AI model for diff analysis in `provider/model-id` format (e.g., `anthropic/claude-3-5-sonnet-20241022`). When empty, the current session model is used. |
 
 ### Usage
 
@@ -119,6 +120,12 @@ Values from local config take precedence over global config. If a key is missing
 
 # List with origin information
 /git-config --list --show-origin
+
+# Show all valid keys with descriptions
+/git-config --keys
+
+# List available AI models for analysis_model
+/git-config --models
 ```
 
 ### Scope Rules
@@ -148,6 +155,7 @@ Values from local config take precedence over global config. If a key is missing
 /git-config --list --show-origin
 # → lang=ja (local)
 # → auto_agg_commit=false (default)
+# → analysis_model=anthropic/claude-3-5-sonnet-20241022 (local)
 ```
 
 ---
