@@ -155,7 +155,11 @@ async function commitHunks(
     committedCount++;
   }
 
-  return { committed: committedCount, failed: failedCount, skipped: skippedCount };
+  return {
+    committed: committedCount,
+    failed: failedCount,
+    skipped: skippedCount,
+  };
 }
 
 export async function handleAggCommit(

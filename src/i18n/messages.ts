@@ -166,7 +166,8 @@ export const messages = {
     "review.keyHints": "Space:除外  e:編集  j/k:移動  Esc:キャンセル",
     "review.keyHintsEditing": "Enter:編集確定  Esc:編集キャンセル",
     "review.unstagedInfo": "{count}個の未割当ファイル: {files}",
-    "review.cancelled": "レビューをキャンセルしました。変更はコミットされていません。",
+    "review.cancelled":
+      "レビューをキャンセルしました。変更はコミットされていません。",
     "review.noHunksSelected": "コミットするHunkが選択されていません。",
 
     // ── agg-commit.ts ──────────────────────────────────────────

@@ -116,7 +116,11 @@ class ReviewOverlay implements Component {
     }
 
     // Render visible hunks
-    for (let i = scrollOffset; i < Math.min(scrollOffset + visibleHunks, this.reviewedHunks.length); i++) {
+    for (
+      let i = scrollOffset;
+      i < Math.min(scrollOffset + visibleHunks, this.reviewedHunks.length);
+      i++
+    ) {
       lines.push(this.renderHunkLine(i, width));
     }
 
@@ -176,8 +180,7 @@ class ReviewOverlay implements Component {
     // Edit mode: render Input inline
     if (index === this.editIndex && this.editInput) {
       const inputLines = this.editInput.render(width - 2);
-      const inputText =
-        inputLines.length > 0 ? `> ${inputLines[0]}` : "> ";
+      const inputText = inputLines.length > 0 ? `> ${inputLines[0]}` : "> ";
       return inputText.substring(0, width);
     }
 
