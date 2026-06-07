@@ -15,6 +15,7 @@ import { t } from "../utils/lang.js";
 import {
   DEFAULT_SETTINGS,
   GLOBAL_SETTINGS_FILE,
+  deleteGlobalSettings,
   getLanguage,
   getLocalSettingsPath,
   getSettings,
@@ -75,6 +76,7 @@ export async function handleConfig(
   let init = false;
   let force = false;
   let help = false;
+  let deleteGlobalFlag = false;
   const positional: string[] = [];
 
   for (const token of tokens) {
@@ -86,6 +88,7 @@ export async function handleConfig(
     else if (token === "--init") init = true;
     else if (token === "--force") force = true;
     else if (token === "--help") help = true;
+    else if (token === "--delete-global") deleteGlobalFlag = true;
     else positional.push(token);
   }
 
@@ -178,6 +181,21 @@ export async function handleConfig(
       ctx.ui.notify(t(lang, "config.noSettings"), "info");
     } else {
       ctx.ui.notify(entries.join("\n"), "info");
+    }
+    return;
+  }
+
+  if (deleteGlobalFlag) {
+    const { deleted, error } = deleteGlobalSettings();
+    if (deleted) {
+      ctx.ui.notify(t(lang, "config.deleteGlobalSuccess"), "info");
+    } else if (!error) {
+      ctx.ui.notify(t(lang, "config.deleteGlobalNotFound"), "info");
+    } else {
+      ctx.ui.notify(
+        t(lang, "config.deleteGlobalFailed", { error }),
+        "error",
+      );
     }
     return;
   }

@@ -128,6 +128,9 @@ Values from local config take precedence over global config. If a key is missing
 
 # List available AI models for analysis_model
 /git-config --models
+
+# Delete the global config file
+/git-config --delete-global
 ```
 
 ### Scope Rules
@@ -138,6 +141,7 @@ Values from local config take precedence over global config. If a key is missing
 | Inside a git repo, `--global` | Global | Saves to `~/.config/pi-git/settings.json` |
 | Outside a git repo, no `--global` | Global (fallback) | Saves to `~/.config/pi-git/settings.json` with a notice |
 | First write, both configs absent | Local (initialized with defaults) | Creates `pi-git.toml` with all default values plus the requested change |
+| `--delete-global` | Global | Deletes `~/.config/pi-git/settings.json` |
 
 ### Examples
 
@@ -152,6 +156,9 @@ Values from local config take precedence over global config. If a key is missing
 
 # Set globally (applies to all repos unless overridden locally)
 /git-config --global lang en
+
+# Delete the global config file
+/git-config --delete-global
 
 # List all settings with where they come from
 /git-config --list --show-origin

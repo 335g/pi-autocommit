@@ -37,7 +37,7 @@ export const messages = {
 
     // ── config.ts ──────────────────────────────────────────────
     "config.help":
-      "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--init] [--force] [--help]\n\nSubcommands:\n  <key>           Get the value of a setting\n  <key> <value>   Set the value of a setting\n\nFlags:\n  --global        Operate on global settings\n  --list           List all configured values\n  --show-origin    Show value origin (default/global/local)\n  --keys           Show valid keys with descriptions\n  --models         Show available models for analysis_model\n  --init           Create default pi-git.toml in the repository root\n  --force          Force overwrite when used with --init\n  --help           Show this help message",
+      "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--init] [--force] [--delete-global] [--help]\n\nSubcommands:\n  <key>           Get the value of a setting\n  <key> <value>   Set the value of a setting\n\nFlags:\n  --global        Operate on global settings\n  --list           List all configured values\n  --show-origin    Show value origin (default/global/local)\n  --keys           Show valid keys with descriptions\n  --models         Show available models for analysis_model\n  --init           Create default pi-git.toml in the repository root\n  --force          Force overwrite when used with --init\n  --delete-global  Delete global config file (~/.config/pi-git/settings.json)\n  --help           Show this help message",
     "config.noModels": "No available models found",
     "config.modelsHeader": "Available models for analysis_model:",
     "config.noSettings": "No settings configured",
@@ -60,6 +60,12 @@ export const messages = {
       "[pi-git] Overwritten pi-git.toml with default settings.",
     "config.initNotInRepo":
       "[pi-git] Not inside a git repository. Cannot create pi-git.toml.",
+    "config.deleteGlobalSuccess":
+      "[pi-git] Deleted global config file (~/.config/pi-git/settings.json).",
+    "config.deleteGlobalNotFound":
+      "[pi-git] Global config file not found. Nothing to delete.",
+    "config.deleteGlobalFailed":
+      "[pi-git] Failed to delete global config: {error}",
 
     // ── config.ts: VALID_KEYS_META descriptions ─────────────────
     "config.keyDesc.lang": "Display and commit message language",
@@ -138,7 +144,7 @@ export const messages = {
 
     // ── config.ts ──────────────────────────────────────────────
     "config.help":
-      "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--init] [--force] [--help]\n\nサブコマンド:\n  <key>           設定値を取得\n  <key> <value>   設定値を変更\n\nフラグ:\n  --global        グローバル設定に対して操作\n  --list           すべての設定値を一覧表示\n  --show-origin    値の取得元（default/global/local）を表示\n  --keys           有効なキー一覧と説明を表示\n  --models         analysis_model に設定可能なモデル一覧を表示\n  --init           リポジトリルートにデフォルトの pi-git.toml を作成\n  --force          --init と併用して強制的に上書き\n  --help           このヘルプを表示",
+      "/git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--init] [--force] [--delete-global] [--help]\n\nサブコマンド:\n  <key>           設定値を取得\n  <key> <value>   設定値を変更\n\nフラグ:\n  --global        グローバル設定に対して操作\n  --list           すべての設定値を一覧表示\n  --show-origin    値の取得元（default/global/local）を表示\n  --keys           有効なキー一覧と説明を表示\n  --models         analysis_model に設定可能なモデル一覧を表示\n  --init           リポジトリルートにデフォルトの pi-git.toml を作成\n  --force          --init と併用して強制的に上書き\n  --delete-global  グローバル設定ファイル (~/.config/pi-git/settings.json) を削除\n  --help           このヘルプを表示",
     "config.noModels": "利用可能なモデルが見つかりません",
     "config.modelsHeader": "analysis_model に設定可能なモデル一覧:",
     "config.noSettings": "設定はありません",
@@ -163,6 +169,12 @@ export const messages = {
       "[pi-git] pi-git.toml をデフォルト設定で上書きしました。",
     "config.initNotInRepo":
       "[pi-git] Git リポジトリ内ではありません。pi-git.toml を作成できません。",
+    "config.deleteGlobalSuccess":
+      "[pi-git] グローバル設定ファイル (~/.config/pi-git/settings.json) を削除しました。",
+    "config.deleteGlobalNotFound":
+      "[pi-git] グローバル設定ファイルが見つかりません。削除するものはありません。",
+    "config.deleteGlobalFailed":
+      "[pi-git] グローバル設定の削除に失敗しました: {error}",
 
     // ── config.ts: VALID_KEYS_META descriptions ─────────────────
     "config.keyDesc.lang": "表示・コミットメッセージの言語設定",

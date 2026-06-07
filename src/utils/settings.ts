@@ -7,7 +7,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -169,6 +169,22 @@ export function getSettings(cwd?: string): PiGitSettings {
 
 export function clearSettingsCache(): void {
   cache.clear();
+}
+
+export function deleteGlobalSettings(): { deleted: boolean; error?: string } {
+  if (!existsSync(GLOBAL_SETTINGS_FILE)) {
+    return { deleted: false };
+  }
+  try {
+    unlinkSync(GLOBAL_SETTINGS_FILE);
+    clearSettingsCache();
+    return { deleted: true };
+  } catch (err) {
+    return {
+      deleted: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 // ───────────────────────────────────────────────
