@@ -34,12 +34,7 @@ export async function handleAggCommit(
 
   if (/--help/.test(args)) {
     if (ctx.hasUI) {
-      ctx.ui.notify(
-        t(lang,
-          "aggCommit.help",
-        ),
-        "info",
-      );
+      ctx.ui.notify(t(lang, "aggCommit.help"), "info");
     }
     return;
   }
@@ -56,12 +51,7 @@ export async function handleAggCommit(
   }
 
   if (footerManager.isRunning()) {
-    ctx.ui.notify(
-      t(runLang,
-        "aggCommit.alreadyRunning",
-      ),
-      "warning",
-    );
+    ctx.ui.notify(t(runLang, "aggCommit.alreadyRunning"), "warning");
     return;
   }
 
@@ -70,9 +60,15 @@ export async function handleAggCommit(
 
     const preCheck = await ensureReadyToCommit(pi, ctx.cwd);
     if (preCheck) {
-      const messages: Record<string, { text: string; level: "warning" | "info" | "error" }> = {
+      const messages: Record<
+        string,
+        { text: string; level: "warning" | "info" | "error" }
+      > = {
         not_git_repo: { text: "Not a git repository", level: "warning" },
-        merge_conflict: { text: "Merge conflicts detected. Resolve conflicts before committing.", level: "error" },
+        merge_conflict: {
+          text: "Merge conflicts detected. Resolve conflicts before committing.",
+          level: "error",
+        },
         no_changes: { text: "No changes to commit", level: "info" },
       };
       const entry = messages[preCheck];
@@ -175,7 +171,11 @@ export async function handleAggCommit(
     }
   } finally {
     // Final cleanup: ensure staging area is clean
-    try { await resetStaging(pi, ctx.cwd); } catch { /* ignore */ }
+    try {
+      await resetStaging(pi, ctx.cwd);
+    } catch {
+      /* ignore */
+    }
     await footerManager.clearRunning();
   }
 }
