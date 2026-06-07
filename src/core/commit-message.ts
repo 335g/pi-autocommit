@@ -55,7 +55,7 @@ function buildMessage(
 /**
  * Infer commit type from file paths and content.
  */
-function inferTypeFromFiles(files: string[]): string {
+export function inferTypeFromFiles(files: string[]): string {
   const allPaths = files.join(" ").toLowerCase();
 
   if (/test|spec|\.test\.|\.spec\./.test(allPaths)) return "test";

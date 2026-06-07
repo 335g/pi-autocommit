@@ -86,9 +86,12 @@ export const messages = {
     "diffAnalyzer.examples":
       'Examples of correct output:\n\nInput: diff with src/auth/login.ts (added login function), src/auth/types.ts (added User type)\nOutput: [{"files": ["src/auth/login.ts", "src/auth/types.ts"], "message": "feat(auth): add login functionality"}]\n\nInput: diff with README.md (fixed typo in installation section), package.json (version bump)\nOutput: [{"files": ["README.md"], "message": "docs: fix typo in README"}, {"files": ["package.json"], "message": "chore: bump version to 1.2.0"}]',
 
+    // ── diff-analyzer.ts: type hints for cheap models ─────────
+    "diffAnalyzer.typeHints": "Type hints (based on file paths):",
+
     // ── diff-analyzer.ts: user prompt ──────────────────────────
     "diffAnalyzer.buildPrompt":
-      "{examples}\n\nHere is the git diff to analyze. Split it into logical hunks:\n\n```diff\n{diff}\n```\n\nWrite commit message subjects in English.\nRespond with ONLY a JSON array of hunks as specified.",
+      "{examples}\n\n{typeHints}Here is the git diff to analyze. Split it into logical hunks:\n\n```diff\n{diff}\n```\n\nWrite commit message subjects in English.\nRespond with ONLY a JSON array of hunks as specified.",
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":
@@ -194,9 +197,12 @@ export const messages = {
     "diffAnalyzer.examples":
       '正しい出力の例:\n\n入力: src/auth/login.ts（ログイン機能を追加）, src/auth/types.ts（User型を追加）のdiff\n出力: [{"files": ["src/auth/login.ts", "src/auth/types.ts"], "message": "feat(auth): ログイン機能を追加"}]\n\n入力: README.md（インストール手順の誤字を修正）, package.json（バージョン更新）のdiff\n出力: [{"files": ["README.md"], "message": "docs: READMEの誤字を修正"}, {"files": ["package.json"], "message": "chore: バージョンを1.2.0に更新"}]',
 
+    // ── diff-analyzer.ts: type hints for cheap models ─────────
+    "diffAnalyzer.typeHints": "型ヒント（ファイルパスに基づく）:",
+
     // ── diff-analyzer.ts: user prompt ──────────────────────────
     "diffAnalyzer.buildPrompt":
-      "{examples}\n\n以下のgit diffを分析し、論理的なhunkに分割してください:\n\n```diff\n{diff}\n```\n\nコミットメッセージのサブジェクトは必ず日本語で記述してください。\n指定された形式のJSON配列のみを返してください。",
+      "{examples}\n\n{typeHints}以下のgit diffを分析し、論理的なhunkに分割してください:\n\n```diff\n{diff}\n```\n\nコミットメッセージのサブジェクトは必ず日本語で記述してください。\n指定された形式のJSON配列のみを返してください。",
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":

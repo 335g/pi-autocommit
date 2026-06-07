@@ -64,8 +64,12 @@ function userMessageToCandidate(userMessage: string): string {
 
   // Infer Conventional Commit type from keywords
   let type = "chore";
-  if (/修正|fix|bug|バグ|不具合|error|エラー|直[しす]|訂正/i.test(text)) type = "fix";
-  else if (/追加|add|feature|機能|実装|implement|作[ってり]|作成|新規/i.test(text)) type = "feat";
+  if (/修正|fix|bug|バグ|不具合|error|エラー|直[しす]|訂正/i.test(text))
+    type = "fix";
+  else if (
+    /追加|add|feature|機能|実装|implement|作[ってり]|作成|新規/i.test(text)
+  )
+    type = "feat";
   else if (/docs|ドキュメント|readme|資料|文書/i.test(text)) type = "docs";
   else if (/refactor|リファクタ|整理|改善|改修/i.test(text)) type = "refactor";
   else if (/test|テスト|spec/i.test(text)) type = "test";
@@ -101,7 +105,8 @@ function specificityScore(message: string): number {
   score += Math.min(m.length, 30) * 0.3;
 
   // Penalize generic words
-  const genericWords = /\b(change|update|modify|fix|apply|commit|files?|stuff|things?)\b/gi;
+  const genericWords =
+    /\b(change|update|modify|fix|apply|commit|files?|stuff|things?)\b/gi;
   const genericCount = (m.match(genericWords) || []).length;
   score -= genericCount * 2;
 
@@ -158,15 +163,11 @@ async function refineMessageIfGeneric(
   // Scores are close — ask AI to decide
   diagIncr("msgRefineUsedAI");
   try {
-    const comparisonPrompt = t(
-      lang,
-      "autoCommitMsg.comparePrompt",
-      {
-        candidateA: generatedMessage,
-        candidateB: userCandidate,
-        files: changedFiles.join(", "),
-      },
-    );
+    const comparisonPrompt = t(lang, "autoCommitMsg.comparePrompt", {
+      candidateA: generatedMessage,
+      candidateB: userCandidate,
+      files: changedFiles.join(", "),
+    });
 
     const result = await aiComplete(ctx, {
       systemPrompt: t(lang, "autoCommitMsg.compareSystemPrompt"),

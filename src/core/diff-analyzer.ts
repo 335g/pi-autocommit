@@ -15,8 +15,7 @@ import { diagIncr } from "../utils/diagnostics.js";
 import { footerManager } from "../utils/footer-manager.js";
 import { t } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
-import { sanitizeHunk } from "./commit-message.js";
-
+import { sanitizeHunk, inferTypeFromFiles } from "./commit-message.js";
 
 /** Maximum diff bytes to send to the AI (truncated if larger) */
 const MAX_DIFF_BYTES = 30_000;
@@ -33,7 +32,46 @@ function getSystemPrompt(lang: string): string {
 
 function buildPrompt(diff: string, lang: string): string {
   const examples = t(lang, "diffAnalyzer.examples");
-  return t(lang, "diffAnalyzer.buildPrompt", { diff, examples });
+  const hintText = buildTypeHint(diff);
+  const typeHints = hintText
+    ? `${t(lang, "diffAnalyzer.typeHints")}\n${hintText}\n\n`
+    : "";
+  return t(lang, "diffAnalyzer.buildPrompt", { diff, examples, typeHints });
+}
+
+/**
+ * Build a type hint string from the files in a diff.
+ * Groups files by inferred Conventional Commit type to help cheap AI models
+ * choose the correct type. Empty string when no files are found.
+ */
+function buildTypeHint(diff: string): string {
+  const fileRegex = /^diff --git a\/(.+) b\/(.+)$/gm;
+  const files: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = fileRegex.exec(diff)) !== null) {
+    files.push(match[2]);
+  }
+
+  if (files.length === 0) return "";
+
+  // Group files by inferred type
+  const typeGroups = new Map<string, string[]>();
+  for (const file of files) {
+    const type = inferTypeFromFiles([file]);
+    if (!typeGroups.has(type)) typeGroups.set(type, []);
+    typeGroups.get(type)!.push(file);
+  }
+
+  // Build compact hint: one line per type
+  return [...typeGroups.entries()]
+    .map(([type, paths]) => {
+      if (paths.length === 1) return `${type}: ${paths[0]}`;
+      const shown = paths.slice(0, 3);
+      const suffix = paths.length > 3 ? ` ... (${paths.length} files)` : "";
+      return `${type}: ${shown.join(", ")}${suffix}`;
+    })
+    .join("\n");
 }
 
 /** Pattern to extract {files, message} pairs from broken JSON */
@@ -244,8 +282,6 @@ function splitDiffIntoBatches(diff: string, batchSize: number): string[] {
     return lines.join("\n");
   });
 }
-
-
 
 export async function analyzeDiff(
   _pi: ExtensionAPI,
