@@ -192,10 +192,7 @@ export async function handleConfig(
     } else if (!error) {
       ctx.ui.notify(t(lang, "config.deleteGlobalNotFound"), "info");
     } else {
-      ctx.ui.notify(
-        t(lang, "config.deleteGlobalFailed", { error }),
-        "error",
-      );
+      ctx.ui.notify(t(lang, "config.deleteGlobalFailed", { error }), "error");
     }
     return;
   }
