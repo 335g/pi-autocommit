@@ -5,7 +5,10 @@
  * are detected and auto-popped at session start.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 /**
  * Matches stash list entries created by pi-git (old and new format).
@@ -21,9 +24,9 @@ export async function recoverOrphanedStashes(
 ): Promise<void> {
   if (!ctx.hasUI) return;
 
-  const { stdout, code } = await pi.exec(
-    "git", ["stash", "list"], { cwd: ctx.cwd },
-  );
+  const { stdout, code } = await pi.exec("git", ["stash", "list"], {
+    cwd: ctx.cwd,
+  });
   if (code !== 0) return; // not a git repo, or git error — silently skip
 
   const lines = stdout.split("\n").filter(Boolean);
@@ -47,9 +50,9 @@ export async function recoverOrphanedStashes(
 
   for (const idx of orphanedIndices) {
     const ref = `stash@{${idx}}`;
-    const { code: popCode } = await pi.exec(
-      "git", ["stash", "pop", ref], { cwd: ctx.cwd },
-    );
+    const { code: popCode } = await pi.exec("git", ["stash", "pop", ref], {
+      cwd: ctx.cwd,
+    });
     if (popCode === 0) {
       recovered++;
     } else {
