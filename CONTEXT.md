@@ -9,14 +9,18 @@ A logical commit group consisting of related file changes and a single Conventio
 _Avoid_: chunk, patch, commit unit
 
 **Unstaged files**:
-Files in the working tree that were not assigned to any hunk by the AI analysis. They remain unstaged in the working tree after `/git-agg-commit` completes.
+Files in the working tree that were not assigned to any hunk by the AI analysis, or were excluded by the user during hunk review. They remain unstaged in the working tree after `/git-agg-commit` completes.
 _Avoid_: orphan file, leftover change
 
 ## Commit Workflow
 
 **一括コミット (Batch Commit)**:
-A fire-and-forget workflow where `/git-agg-commit` analyzes the full working tree diff, splits changes into hunks via AI, and commits all hunks automatically in sequence without interactive approval. Results are reported as committed/skipped/failed counts. If any commit fails (e.g., pre-commit hook rejection), staging is reset and the remaining hunks continue.
-_Avoid_: interactive review, step-by-step approval
+A workflow where `/git-agg-commit` analyzes the full working tree diff, splits changes into hunks via AI, and commits them. By default, commits all hunks automatically. With `--review`, the user can review, edit messages, and exclude hunks before committing. Results are reported as committed/skipped/failed counts. If any commit fails (e.g., pre-commit hook rejection), staging is reset and the remaining hunks continue.
+_Avoid_: interactive review, step-by-step approval (these are now supported via `--review`)
+
+**Hunk Review**:
+The interactive step in `/git-agg-commit --review` where the user inspects AI-generated hunks, edits commit messages, toggles hunk inclusion, and confirms which hunks to commit.
+_Avoid_: hunk confirmation, review mode
 
 ## Flagged ambiguities
 
@@ -30,12 +34,12 @@ _Avoid_: interactive review, step-by-step approval
 >
 > **Dev**: What if the AI splits things incorrectly?
 >
-> **Domain Expert**: The command commits all hunks automatically. If you need precise control over which files go into which commit, stage and commit them manually with standard git commands before running `/git-agg-commit`. Alternatively, run the command and then use `git rebase -i` to adjust the commits afterward.
+> **Domain Expert**: Use `/git-agg-commit --review`. You'll see each hunk with its proposed commit message. You can exclude hunks you don't want, edit messages, and confirm which ones to commit. If you need even more control, stage and commit manually with standard git commands beforehand.
 >
 > **Dev**: Can I change the commit messages or language?
 >
-> **Domain Expert**: Messages are AI-generated following Conventional Commits format. Use `/git-config lang ja` to set Japanese as the default language, or pass `--lang=ja` to `/git-agg-commit` for a one-off override. You can also configure which AI model performs the analysis with `/git-config analysis_model <provider/model-id>`.
+> **Domain Expert**: Messages are AI-generated following Conventional Commits format. You can edit them during review with `/git-agg-commit --review`. Use `/git-config lang ja` to set Japanese as the default language, or pass `--lang=ja` to `/git-agg-commit` for a one-off override. You can also configure which AI model performs the analysis with `/git-config analysis_model <provider/model-id>`.
 >
 > **Dev**: What happens if I have uncommitted changes when the assistant finishes responding?
 >
-> **Domain Expert**: Enable `/git-auto-agg-commit on` and pi-git will automatically run `/git-agg-commit` after each assistant response when there are uncommitted changes. The footer shows `auto-commit: on (clean)` or `auto-commit: on (changed)` to indicate the current state.
+> **Domain Expert**: Enable auto-commit with `/git-config auto_agg_commit true` and pi-git will automatically run `/git-agg-commit` after each assistant response when there are uncommitted changes. The footer shows `auto-commit: on (clean)` or `auto-commit: on (changed)` to indicate the current state.

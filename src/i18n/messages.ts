@@ -14,10 +14,21 @@ export const messages = {
     "footer.collectDiff": "{prefix} Collecting diff...",
     "footer.analyze": "{prefix} Analyzing hunks...",
     "footer.generateMessage": "{prefix} Generating messages...",
+    "footer.review": "{prefix} Reviewing hunks...",
     "footer.commit": "{prefix} Committing...",
     "footer.autoCommit.off": "auto-commit: off",
     "footer.autoCommit.onClean": "auto-commit: on (clean)",
     "footer.autoCommit.onChanged": "auto-commit: on (changed)",
+
+    // ── review.ts: review UI strings ───────────────────────────
+    "review.title": "Review Hunks",
+    "review.commitButton": "[ Commit ({count} hunks) ]",
+    "review.commitButtonNone": "[ Commit (no hunks selected) ]",
+    "review.keyHints": "Space:toggle  e:edit  j/k:move  Esc:cancel",
+    "review.keyHintsEditing": "Enter:confirm edit  Esc:cancel edit",
+    "review.unstagedInfo": "{count} unstaged file(s): {files}",
+    "review.cancelled": "Review cancelled. No changes committed.",
+    "review.noHunksSelected": "No hunks selected for commit.",
 
     // ── agg-commit.ts ──────────────────────────────────────────
     "aggCommit.help":
@@ -142,10 +153,21 @@ export const messages = {
     "footer.collectDiff": "{prefix} diff収集中...",
     "footer.analyze": "{prefix} hunk解析中...",
     "footer.generateMessage": "{prefix} コミットメッセージ生成中...",
+    "footer.review": "{prefix} hunkレビュー中...",
     "footer.commit": "{prefix} コミット実行中...",
     "footer.autoCommit.off": "auto-commit: off",
     "footer.autoCommit.onClean": "auto-commit: on (clean)",
     "footer.autoCommit.onChanged": "auto-commit: on (changed)",
+
+    // ── review.ts: review UI strings ───────────────────────────
+    "review.title": "Hunk レビュー",
+    "review.commitButton": "[ コミット ({count}件) ]",
+    "review.commitButtonNone": "[ コミット (選択なし) ]",
+    "review.keyHints": "Space:除外  e:編集  j/k:移動  Esc:キャンセル",
+    "review.keyHintsEditing": "Enter:編集確定  Esc:編集キャンセル",
+    "review.unstagedInfo": "{count}個の未割当ファイル: {files}",
+    "review.cancelled": "レビューをキャンセルしました。変更はコミットされていません。",
+    "review.noHunksSelected": "コミットするHunkが選択されていません。",
 
     // ── agg-commit.ts ──────────────────────────────────────────
     "aggCommit.help":

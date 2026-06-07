@@ -22,6 +22,7 @@ type Phase =
   | "collectDiff"
   | "analyze"
   | "generateMessage"
+  | "review"
   | "commit";
 
 /**
@@ -219,6 +220,8 @@ function phaseStatusText(
       return t(lang, "footer.analyze", { prefix });
     case "generateMessage":
       return t(lang, "footer.generateMessage", { prefix });
+    case "review":
+      return t(lang, "footer.review", { prefix });
     case "commit":
       return t(lang, "footer.commit", { prefix });
   }
