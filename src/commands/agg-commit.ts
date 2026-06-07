@@ -80,7 +80,7 @@ export async function handleAggCommit(
       return;
     }
 
-    // Snapshot changes via stash to freeze the diff
+    // Snapshot changes via stash (SHA-based diff capture — no reflog race)
     await footerManager.setPhase("collectDiff", runLang);
     const diff = await collectDiff(pi, ctx.cwd);
     if (diff === null) {

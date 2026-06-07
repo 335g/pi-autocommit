@@ -111,50 +111,94 @@ export async function ensureReadyToCommit(
 
 /**
  * Collect the full working tree diff by stashing changes (including untracked
- * files), capturing the stash diff, and popping the stash to restore the
- * working tree. This "freezes" the diff so concurrent edits do not affect
- * analysis.
+ * files), capturing the diff via the stash SHA, and popping the stash to
+ * restore the working tree.
  *
- * @returns The diff string, or `null` if the stash operation failed
- *          (push or show). An empty string means there are no effective changes.
+ * The stash SHA is captured immediately after push and used for all diff
+ * operations, eliminating any reflog-positional race conditions.
+ *
+ * @returns The diff string, or `null` if a git error occurred.
+ *          An empty string means there are no effective changes.
  */
 export async function collectDiff(
   pi: ExtensionAPI,
   cwd?: string,
 ): Promise<string | null> {
-  const { code: stashCode } = await pi.exec(
+  // Unique message per run — enables orphan stash identification and recovery.
+  const stashMessage = `pi-git-${Date.now()}`;
+
+  // Step 1 — push stash to snapshot the working tree (including untracked files).
+  const { code: pushCode } = await pi.exec(
     "git",
-    ["stash", "push", "-u", "-m", "pi-git"],
+    ["stash", "push", "-u", "-m", stashMessage],
     { cwd },
   );
-  if (stashCode !== 0) {
-    return null;
+  if (pushCode !== 0) return null;
+
+  // Step 2 — verify our stash was actually created.
+  // `git stash push` exits 0 even on "No local changes to save".
+  // Checking the stash list message is unambiguous.
+  const { stdout: topLine, code: listCode } = await pi.exec(
+    "git",
+    ["stash", "list", "-1"],
+    { cwd },
+  );
+  if (listCode !== 0 || !topLine.includes(stashMessage)) {
+    // Our stash was NOT created — "No local changes to save".
+    return "";
   }
 
+  // Step 3 — IMMEDIATELY capture the stash SHA.
+  // Race window: between push and this rev-parse is a single `await` (~10 ms).
+  // After this point, all operations use the SHA — reflog position is irrelevant.
+  const { stdout: shaOut, code: shaCode } = await pi.exec(
+    "git",
+    ["rev-parse", "stash@{0}"],
+    { cwd },
+  );
+  if (shaCode !== 0) return null;
+  const stashSha = shaOut.trim();
+
   let diff = "";
+  let popFailed = false;
   try {
-    const { stdout: stashDiff, code: showCode } = await pi.exec(
+    // Step 4 — capture tracked-file diff using the SHA (not stash@{0}).
+    // stashSha^1 = HEAD at stash creation time.
+    const { stdout: trackedDiff, code: trackedCode } = await pi.exec(
       "git",
-      ["stash", "show", "-p", "stash@{0}"],
+      ["diff", `${stashSha}^1`, stashSha],
       { cwd },
     );
-    if (showCode !== 0) {
-      return null;
-    }
-    diff = stashDiff;
+    if (trackedCode !== 0) return null;
+    diff = trackedDiff;
 
-    // stash@{0}^3 contains untracked files when -u was used
+    // Step 5 — capture untracked-file diff.
+    // stashSha^3 exists only when -u was used AND untracked files were present.
     const { stdout: untrackedDiff, code: untrackedCode } = await pi.exec(
       "git",
-      ["diff", "HEAD", "stash@{0}^3"],
+      ["diff", "HEAD", `${stashSha}^3`],
       { cwd },
     );
     if (untrackedCode === 0 && untrackedDiff.trim()) {
       diff += (diff ? "\n" : "") + untrackedDiff;
     }
   } finally {
-    await pi.exec("git", ["stash", "pop"], { cwd });
+    // Step 6 — restore the working tree.
+    // Diff was already captured via SHA, so even if pop fails, the stash
+    // remains as an orphan — orphan recovery handles it next session_start.
+    // But we must NOT proceed to commit if the working tree is corrupted.
+    const { code: popCode } = await pi.exec(
+      "git",
+      ["stash", "pop", "stash@{0}"],
+      { cwd },
+    );
+    if (popCode !== 0) {
+      // Pop failed (merge conflict, etc.).  The stash stays as an orphan.
+      // Signal the caller to abort — the working tree may be corrupted.
+      popFailed = true;
+    }
   }
 
+  if (popFailed) return null;
   return diff;
 }

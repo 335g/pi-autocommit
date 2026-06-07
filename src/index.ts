@@ -11,6 +11,7 @@ import { handleAutoAggCommit } from "./commands/auto-agg-commit.js";
 import { handleConfig } from "./commands/config.js";
 import { handleDiagnostics } from "./commands/diagnostics.js";
 import { handleAutoCommit } from "./core/auto-commit.js";
+import { recoverOrphanedStashes } from "./core/orphan-recovery.js";
 import { footerManager } from "./utils/footer-manager.js";
 
 export default function (pi: ExtensionAPI) {
@@ -18,6 +19,7 @@ export default function (pi: ExtensionAPI) {
     try {
       if (ctx.hasUI) {
         footerManager.initialize(pi, ctx.ui, ctx.cwd);
+        await recoverOrphanedStashes(pi, ctx);
         await footerManager.refresh();
       }
     } catch {
