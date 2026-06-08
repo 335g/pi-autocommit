@@ -53,13 +53,13 @@ function isGenericMessage(message: string): boolean {
  * be used verbatim as a commit subject.
  */
 const CONVERSATIONAL_MARKERS_JA: RegExp[] = [
-  /[てで]$/,                 // 「〜して」「〜で」終わり（未完了/列挙）
-  /[。、．，]/,              // 文中の句読点（複文の可能性）
+  /[てで]$/, // 「〜して」「〜で」終わり（未完了/列挙）
+  /[。、．，]/, // 文中の句読点（複文の可能性）
   /してください|お願い|ます|です/, // 敬語残り
-  /そして|あと|ついでに|あわせて/,   // 列挙接続詞
-  /も$/,                     // 「〜も」終わり（列挙の一部）
-  /たり$/,                   // 「〜たり」終わり
-  /など|とか/,               // ぼかし表現
+  /そして|あと|ついでに|あわせて/, // 列挙接続詞
+  /も$/, // 「〜も」終わり（列挙の一部）
+  /たり$/, // 「〜たり」終わり
+  /など|とか/, // ぼかし表現
 ];
 
 /**
@@ -199,10 +199,7 @@ async function refineMessageIfGeneric(
   }
 
   // Quality gate: reject userCandidate that looks like raw conversation
-  const userSubject = userCandidate.replace(
-    /^\w+(\(.*?\))?!?:\s*/,
-    "",
-  );
+  const userSubject = userCandidate.replace(/^\w+(\(.*?\))?!?:\s*/, "");
   if (!isValidCommitSubject(userSubject, lang)) {
     // User message is too conversational — keep the AI-generated message
     // even if it is generic. It's still better than raw user text.
