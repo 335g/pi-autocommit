@@ -48,6 +48,36 @@ function isGenericMessage(message: string): boolean {
   return GENERIC_MESSAGE_PATTERNS.some((p) => p.test(m));
 }
 
+/**
+ * Japanese conversational markers that signal a raw user message should NOT
+ * be used verbatim as a commit subject.
+ */
+const CONVERSATIONAL_MARKERS_JA: RegExp[] = [
+  /[てで]$/,                 // 「〜して」「〜で」終わり（未完了/列挙）
+  /[。、．，]/,              // 文中の句読点（複文の可能性）
+  /してください|お願い|ます|です/, // 敬語残り
+  /そして|あと|ついでに|あわせて/,   // 列挙接続詞
+  /も$/,                     // 「〜も」終わり（列挙の一部）
+  /たり$/,                   // 「〜たり」終わり
+  /など|とか/,               // ぼかし表現
+];
+
+/**
+ * Check whether body text (after Conventional Commit prefix) is acceptable
+ * as a commit subject, i.e. it does not contain conversational artifacts.
+ */
+function isValidCommitSubject(body: string, lang: string): boolean {
+  if (lang === "ja") {
+    // Truncated by maxBody limit — too long to be a good commit subject
+    if (body.endsWith("…")) return false;
+    // Too short to carry meaning
+    if (body.length < 3) return false;
+    // Contains conversational artifacts
+    if (CONVERSATIONAL_MARKERS_JA.some((p) => p.test(body))) return false;
+  }
+  return true;
+}
+
 /** Derive a commit-message candidate from the user's last message. */
 function userMessageToCandidate(userMessage: string): string {
   let text = userMessage
@@ -94,7 +124,7 @@ function userMessageToCandidate(userMessage: string): string {
 }
 
 /** Heuristic specificity score for a commit message. Higher = more specific. */
-function specificityScore(message: string): number {
+function specificityScore(message: string, lang?: string): number {
   let score = 0;
   const m = message.replace(
     /^(feat|fix|chore|docs|style|refactor|test|perf|ci|build|revert)(\(.+?\))?!?:\s*/i,
@@ -104,7 +134,7 @@ function specificityScore(message: string): number {
   // Length contributes (up to a point)
   score += Math.min(m.length, 30) * 0.3;
 
-  // Penalize generic words
+  // Penalize generic English words
   const genericWords =
     /\b(change|update|modify|fix|apply|commit|files?|stuff|things?)\b/gi;
   const genericCount = (m.match(genericWords) || []).length;
@@ -118,6 +148,20 @@ function specificityScore(message: string): number {
   const concreteVerbs =
     /\b(add|implement|create|remove|refactor|extract|rename|optimize|migrate|configure|integrate|replace|split|merge|enhance|introduce|deprecate|upgrade|downgrade|support|handle|prevent|allow|restrict|validate|sanitize|normalize|format|generate|bump|release|deploy|fix|resolve|address|correct|adjust|tweak|improve|streamline|simplify|reduce|increase|enable|disable|expose|hide|export|import|wire|connect|disconnect|setup|teardown)\b/gi;
   score += (m.match(concreteVerbs) || []).length * 2;
+
+  // Japanese-specific scoring
+  if (lang === "ja") {
+    // Reward kanji density (proxy for semantic richness)
+    const kanjiCount = (m.match(/[\u4e00-\u9faf]/g) || []).length;
+    score += Math.min(kanjiCount, 10) * 0.5;
+    // Reward katakana technical terms (e.g. ログイン, バリデーション, リファクタ)
+    const katakanaTerms = m.match(/[\u30a0-\u30ff]{2,}/g) || [];
+    score += katakanaTerms.length * 2;
+    // Penalize overly generic Japanese single-word subjects
+    if (/^(変更|修正|更新|対応|追加|削除|改善|実装|作成)$/.test(m.trim())) {
+      score -= 4;
+    }
+  }
 
   return score;
 }
@@ -154,9 +198,20 @@ async function refineMessageIfGeneric(
     return generatedMessage;
   }
 
+  // Quality gate: reject userCandidate that looks like raw conversation
+  const userSubject = userCandidate.replace(
+    /^\w+(\(.*?\))?!?:\s*/,
+    "",
+  );
+  if (!isValidCommitSubject(userSubject, lang)) {
+    // User message is too conversational — keep the AI-generated message
+    // even if it is generic. It's still better than raw user text.
+    return generatedMessage;
+  }
+
   // Quick heuristic guard: skip AI if one candidate is clearly better
-  const genScore = specificityScore(generatedMessage);
-  const userScore = specificityScore(userCandidate);
+  const genScore = specificityScore(generatedMessage, lang);
+  const userScore = specificityScore(userCandidate, lang);
   if (userScore > genScore + 5) return userCandidate;
   if (genScore > userScore + 5) return generatedMessage;
 
@@ -181,20 +236,21 @@ async function refineMessageIfGeneric(
       return userScore > genScore ? userCandidate : generatedMessage;
     }
 
-    const text = result.text
-      // Strip code fences if the model wraps the message
-      .replace(/^```[a-z]*\n?/i, "")
-      .replace(/\n?```$/i, "")
-      .trim();
+    const text = result.text.trim();
 
-    // Validate the AI's choice: if it contains the user candidate, prefer that
+    // Parse explicit "A" / "B" vote from the AI
+    const voteA = /\bA\b/i.test(text) && !/\bB\b/i.test(text);
+    const voteB = /\bB\b/i.test(text) && !/\bA\b/i.test(text);
+    if (voteA) return generatedMessage;
+    if (voteB) return userCandidate;
+
+    // Fallback: try substring matching (for models that echo the message)
     if (
       userCandidate.length >= 15 &&
       text.includes(userCandidate.substring(0, 15))
     ) {
       return userCandidate;
     }
-    // If it contains the generated message's subject, keep it
     if (
       generatedMessage.length >= 15 &&
       text.includes(generatedMessage.substring(0, 15))
@@ -202,7 +258,7 @@ async function refineMessageIfGeneric(
       return generatedMessage;
     }
 
-    // Fallback: use heuristic scores
+    // Last resort: use heuristic scores
     return userScore > genScore ? userCandidate : generatedMessage;
   } catch {
     // AI failed — fall back to heuristic scoring

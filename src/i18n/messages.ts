@@ -139,9 +139,9 @@ export const messages = {
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":
-      "Choose the most specific commit message candidate. Return only the chosen message string.",
+      "Return only 'A' or 'B' to indicate the better commit message candidate.",
     "autoCommitMsg.comparePrompt":
-      'You are a commit message quality evaluator.\nTwo candidate messages exist for the same set of changes.\n\nCandidate A (generated from analysis): "{candidateA}"\nCandidate B (derived from user request): "{candidateB}"\n\nChanged files: {files}\n\nChoose the one that is MORE SPECIFIC and accurately describes the changes.\nReturn ONLY the chosen message string. No explanations.',
+      'Two commit message candidates for the same changes:\n\nA: "{candidateA}"\nB: "{candidateB}"\n\nChanged files: {files}\n\nChoose the one that is MORE SPECIFIC and accurately describes the changes.\nReply with ONLY a single character: A or B.',
 
     // ── auto-commit-message.ts: fallback text for empty sections
     "autoCommitMsg.noData": "(none)",
@@ -283,9 +283,9 @@ export const messages = {
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":
-      "コミットメッセージ候補から最も具体的なものを選び、その文字列のみを返してください。",
+      "AまたはBの1文字だけを返し、より良いコミットメッセージ候補を示してください。",
     "autoCommitMsg.comparePrompt":
-      'あなたはコミットメッセージの品質評価ツールです。\n同じ変更セットに対する2つの候補メッセージがあります。\n\n候補A（会話分析から生成）: "{candidateA}"\n候補B（ユーザーの依頼から抽出）: "{candidateB}"\n\n変更ファイル: {files}\n\nより**具体的で**、変更内容を正確に表している方を選び、\nそのメッセージ文字列だけを返してください。\n説明や補足は一切不要です。',
+      '同じ変更に対する2つのコミットメッセージ候補:\n\nA: "{candidateA}"\nB: "{candidateB}"\n\n変更ファイル: {files}\n\nより**具体的で**、変更内容を正確に表している方を選び、\n**A または B の1文字だけ**を返してください。\n説明や補足は一切不要です。',
 
     // ── auto-commit-message.ts: fallback text for empty sections
     "autoCommitMsg.noData": "（なし）",
