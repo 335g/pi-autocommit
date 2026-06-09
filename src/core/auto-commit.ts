@@ -75,12 +75,21 @@ export async function handleAutoCommit(
       return;
     }
 
+    // Capture git diff for AI context (staged + unstaged changes vs HEAD)
+    const { stdout: diffOutput, code: diffCode } = await pi.exec(
+      "git",
+      ["diff", "HEAD", "--", ...changedFiles],
+      { cwd: ctx.cwd },
+    );
+    const diff = diffCode === 0 ? diffOutput : "";
+
     const messages = event.messages || [];
     const commitMessage = await generateAutoCommitMessage(
       pi,
       ctx,
       messages,
       changedFiles,
+      diff,
     );
 
     await footerManager.setPhase("commit");

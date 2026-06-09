@@ -104,7 +104,7 @@ export const messages = {
     "config.keyDesc.auto_agg_commit":
       "Whether to automatically run git-agg-commit after assistant response",
     "config.keyDesc.analysis_model":
-      "AI model to use for diff analysis (format: provider/model-id)",
+      "AI model to use for diff analysis (format: model-id or provider/model-id)",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "Commit failed: {error}",
@@ -127,7 +127,7 @@ export const messages = {
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":
-      "You are a commit message generator. From the following information, understand what the user requested and what changes were made as a result, then generate a single Conventional Commit message.\n\nThe most important input is the \"user's request\". Use it as the primary driver for the commit message. The assistant's response and changed files list are supplementary - they describe how the request was fulfilled.\n\nRules:\n- Choose type from: feat, fix, docs, style, refactor, test, chore\n- Write the subject in English\n- Keep subject under 50 characters\n- Use imperative mood\n- Include scope only if clearly inferable\n\nReturn ONLY the commit message string. No explanations or code fences.",
+      "You are a commit message generator. From the following information, understand what changes were made and generate a single Conventional Commit message.\n\nThe GIT DIFF is the most reliable source of what actually changed. Use it as the primary driver for the commit message. The user's request provides intent, and the assistant's response and changed files list are supplementary.\n\nRules:\n- Choose type from: feat, fix, docs, style, refactor, test, chore\n- Write the subject in English\n- Keep subject under 50 characters\n- Use imperative mood\n- Include scope only if clearly inferable from the diff\n\nReturn ONLY the commit message string. No explanations or code fences.",
 
     // ── auto-commit-message.ts: few-shot examples ──────────────
     "autoCommitMsg.examples":
@@ -135,13 +135,16 @@ export const messages = {
 
     // ── auto-commit-message.ts: user prompt ────────────────────
     "autoCommitMsg.buildPrompt":
-      "{examples}\n\n=== USER REQUEST (primary) ===\n{userSection}\n\n=== ASSISTANT RESPONSE (reference) ===\n{assistantSection}\n\n=== CHANGED FILES ===\n{filesSection}\n\nBased primarily on the USER REQUEST above, generate a single Conventional Commit message in English that best captures the intent of the changes.",
+      "{examples}\n\n=== USER REQUEST ===\n{userSection}\n\n=== ASSISTANT RESPONSE ===\n{assistantSection}\n\n=== CHANGED FILES ===\n{filesSection}\n\n=== GIT DIFF ===\n{diffSection}\n\nBased on the GIT DIFF and USER REQUEST above, generate a single Conventional Commit message in English that best captures the intent of the changes.",
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":
       "Return only 'A' or 'B' to indicate the better commit message candidate.",
     "autoCommitMsg.comparePrompt":
       'Two commit message candidates for the same changes:\n\nA: "{candidateA}"\nB: "{candidateB}"\n\nChanged files: {files}\n\nChoose the one that is MORE SPECIFIC and accurately describes the changes.\nReply with ONLY a single character: A or B.',
+
+    // ── auto-commit-message.ts: fallback text for empty diff
+    "autoCommitMsg.noDiffAvailable": "(no diff available — new files)",
 
     // ── auto-commit-message.ts: fallback text for empty sections
     "autoCommitMsg.noData": "(none)",
@@ -248,7 +251,7 @@ export const messages = {
     "config.keyDesc.lang": "表示・コミットメッセージの言語設定",
     "config.keyDesc.auto_agg_commit": "アシスタント応答後の自動コミット有無",
     "config.keyDesc.analysis_model":
-      "diff分析に使用するAIモデル（形式: provider/model-id）",
+      "diff分析に使用するAIモデル（形式: model-id または provider/model-id）",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "コミットに失敗しました: {error}",
@@ -271,7 +274,7 @@ export const messages = {
 
     // ── auto-commit-message.ts: system prompt ──────────────────
     "autoCommitMsg.systemPrompt":
-      "あなたはコミットメッセージ生成ツールです。以下の情報から、ユーザーが**何を依頼し、その結果どのような変更が行われたか**を読み取り、Conventional Commit メッセージを1つ生成してください。\n\n最も重要なのは「ユーザーのリクエスト」です。ユーザーが何を求めていたのかを主軸に、コミットメッセージを決定してください。アシスタントの応答と変更ファイル一覧は、そのリクエストがどのように実現されたかを補完する情報です。\n\nルール:\n- type は feat, fix, docs, style, refactor, test, chore から選択\n- サブジェクトは必ず日本語で記述する\n- サブジェクトは50文字以内\n- 命令形を使用する\n- スコープは推測できる場合のみ含める\n\n返答はメッセージ文字列のみ。説明やコードフェンスは不要。",
+      "あなたはコミットメッセージ生成ツールです。以下の情報から、どのような変更が行われたかを読み取り、Conventional Commit メッセージを1つ生成してください。\n\nGIT DIFF は実際に何が変更されたかを示す最も信頼できる情報源です。これを主軸にコミットメッセージを決定してください。ユーザーのリクエストは変更の意図を、アシスタントの応答と変更ファイル一覧は補完情報です。\n\nルール:\n- type は feat, fix, docs, style, refactor, test, chore から選択\n- サブジェクトは必ず日本語で記述する\n- サブジェクトは50文字以内\n- 命令形を使用する\n- スコープは推測できる場合のみ含める\n\n返答はメッセージ文字列のみ。説明やコードフェンスは不要。",
 
     // ── auto-commit-message.ts: few-shot examples ──────────────
     "autoCommitMsg.examples":
@@ -279,13 +282,16 @@ export const messages = {
 
     // ── auto-commit-message.ts: user prompt ────────────────────
     "autoCommitMsg.buildPrompt":
-      "{examples}\n\n=== ユーザーのリクエスト（最重要） ===\n{userSection}\n\n=== アシスタントの応答（参考） ===\n{assistantSection}\n\n=== 変更されたファイル ===\n{filesSection}\n\n上記の「ユーザーのリクエスト」を主軸に、変更の意図を最もよく表す Conventional Commit メッセージを1つ、**必ず日本語で**生成してください。",
+      "{examples}\n\n=== ユーザーのリクエスト ===\n{userSection}\n\n=== アシスタントの応答 ===\n{assistantSection}\n\n=== 変更されたファイル ===\n{filesSection}\n\n=== GIT DIFF ===\n{diffSection}\n\n上記の GIT DIFF とユーザーのリクエストを主軸に、変更の意図を最もよく表す Conventional Commit メッセージを1つ、**必ず日本語で**生成してください。",
 
     // ── auto-commit-message.ts: message comparison ─────────────
     "autoCommitMsg.compareSystemPrompt":
       "AまたはBの1文字だけを返し、より良いコミットメッセージ候補を示してください。",
     "autoCommitMsg.comparePrompt":
       '同じ変更に対する2つのコミットメッセージ候補:\n\nA: "{candidateA}"\nB: "{candidateB}"\n\n変更ファイル: {files}\n\nより**具体的で**、変更内容を正確に表している方を選び、\n**A または B の1文字だけ**を返してください。\n説明や補足は一切不要です。',
+
+    // ── auto-commit-message.ts: fallback text for empty diff
+    "autoCommitMsg.noDiffAvailable": "（新規ファイルのため diff はありません）",
 
     // ── auto-commit-message.ts: fallback text for empty sections
     "autoCommitMsg.noData": "（なし）",

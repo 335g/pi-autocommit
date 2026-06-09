@@ -198,7 +198,7 @@ function truncateDiff(diff: string, maxBytes: number): string {
 }
 
 /** Strip noise lines from diff that don't help AI analysis */
-function stripDiffNoise(diff: string): string {
+export function stripDiffNoise(diff: string): string {
   const lines = diff.split("\n");
   const result: string[] = [];
   let inBinary = false;

@@ -15,6 +15,7 @@ import { diagIncr } from "../utils/diagnostics.js";
 import { t } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
 import { sanitizeCommitMessage } from "./commit-message.js";
+import { stripDiffNoise } from "./diff-analyzer.js";
 
 interface SimpleMessage {
   role: string;
@@ -305,12 +306,14 @@ function buildPrompt(
   userMessages: string[],
   assistantMessages: string[],
   changedFiles: string[],
+  diff: string,
   lang: string,
 ): string {
-  // Budget: keep the whole prompt under ~4000 chars to leave room for system prompt + response
-  const MAX_USER_CHARS = 2000;
-  const MAX_ASSISTANT_CHARS = 800;
-  const MAX_FILES_CHARS = 800;
+  // Budget: keep the whole prompt under ~8000 chars
+  const MAX_USER_CHARS = 1500;
+  const MAX_ASSISTANT_CHARS = 600;
+  const MAX_FILES_CHARS = 500;
+  const MAX_DIFF_CHARS = 5000;
 
   // Build user messages section (newest first, most relevant last in display)
   const userLines: string[] = [];
@@ -341,11 +344,21 @@ function buildPrompt(
   const filesStr = truncate(changedFiles.join(", "), MAX_FILES_CHARS);
   const filesSection = filesStr || noData;
 
+  // Build diff section (strip noise first, then truncate)
+  let diffSection: string;
+  if (diff && diff.trim()) {
+    const cleaned = stripDiffNoise(diff);
+    diffSection = truncate(cleaned, MAX_DIFF_CHARS);
+  } else {
+    diffSection = t(lang, "autoCommitMsg.noDiffAvailable");
+  }
+
   const examples = t(lang, "autoCommitMsg.examples");
   return t(lang, "autoCommitMsg.buildPrompt", {
     userSection,
     assistantSection,
     filesSection,
+    diffSection,
     examples,
   });
 }
@@ -355,6 +368,7 @@ export async function generateAutoCommitMessage(
   ctx: ExtensionContext,
   messages: SimpleMessage[],
   changedFiles: string[],
+  diff: string,
 ): Promise<string> {
   const lang = getLanguage(ctx.cwd);
 
@@ -373,6 +387,7 @@ export async function generateAutoCommitMessage(
         userMessages,
         assistantMessages,
         changedFiles,
+        diff,
         lang,
       ),
     });
