@@ -84,7 +84,15 @@ export function sanitizeCommitMessage(
   files?: string[],
 ): string {
   diagIncr("msgSanitized");
-  let sanitized = message.trim();
+
+  // Defense-in-depth: take only the first non-empty line.
+  // Multi-line input should have been cleaned by callers (cleanCommitOutput,
+  // parseHunks), but this guards against future callers that forget.
+  const firstLine = message
+    .split("\n")
+    .find((l) => l.trim().length > 0)
+    ?.trim();
+  let sanitized = (firstLine ?? message).trim();
 
   // Remove trailing period from subject
   sanitized = sanitized.replace(/\.$/, "");

@@ -15,7 +15,7 @@ import { diagIncr } from "../utils/diagnostics.js";
 import { t } from "../utils/lang.js";
 import { getLanguage } from "../utils/settings.js";
 import { sanitizeCommitMessage, inferTypeFromFiles } from "./commit-message.js";
-import { stripDiffNoise } from "./diff-analyzer.js";
+import { stripDiffNoise, truncateDiff } from "./diff-analyzer.js";
 import { resolveModel } from "./resolve-model.js";
 
 interface SimpleMessage {
@@ -41,7 +41,7 @@ const GENERIC_MESSAGE_PATTERNS: RegExp[] = [
   /^chore:\s*commit\s*changes?\s*$/i,
   /^chore:\s*modify\s*(files?)?\s*$/i,
   /^chore:\s*update\s+\S+\s*$/i,
-  /^(feat|fix|chore|docs|style|refactor|test):\s*.{0,10}$/i,
+  /^(feat|fix|chore|docs|style|refactor|test):\s*[a-zA-Z0-9\s]{0,10}$/i,
   // Japanese patterns
   /^(feat|fix|chore|docs|style|refactor|test):\s*(変更|修正|更新|対応|追加|削除|改善|実装|作成|適用|反映|編集)(\s*(を|しました|しました。|を行いました|を実施|を反映|いたしました))?$/i,
   /^chore:\s*(変更を適用|ファイルを更新|更新しました|修正しました)\s*$/i,
@@ -49,21 +49,21 @@ const GENERIC_MESSAGE_PATTERNS: RegExp[] = [
 
 /** Model ID patterns for cheap/small models — single source of truth */
 const CHEAP_MODEL_PATTERNS: RegExp[] = [
-  /mini/i,
-  /flash/i,
-  /nano/i,
-  /lite/i,
-  /small/i,
-  /haiku/i,
+  /\bmini\b/i,
+  /\bflash\b/i,
+  /\bnano\b/i,
+  /\blite\b/i,
+  /\bsmall\b/i,
+  /\bhaiku\b/i,
 ];
 
 /** Check if a model ID indicates a small/cheap model */
-function isCheapModel(modelId: string): boolean {
+export function isCheapModel(modelId: string): boolean {
   return CHEAP_MODEL_PATTERNS.some((p) => p.test(modelId));
 }
 
 /** Determine budget tier for a model: small models get more assistant context */
-function getBudgetMultiplier(
+export function getBudgetMultiplier(
   modelId: string | undefined,
 ): "small" | "large" {
   if (!modelId) return "small"; // unknown model → conservative
@@ -71,7 +71,7 @@ function getBudgetMultiplier(
 }
 
 /** Clean AI output: extract a Conventional Commit message from chatty model output */
-function cleanCommitOutput(raw: string): string {
+export function cleanCommitOutput(raw: string): string {
   let text = raw.trim();
 
   // Layer 1: Extract from markdown fences (handles non-ASCII info strings)
@@ -116,7 +116,7 @@ function cleanCommitOutput(raw: string): string {
 }
 
 /** Heuristic: is this commit message too generic to be useful? */
-function isGenericMessage(message: string): boolean {
+export function isGenericMessage(message: string): boolean {
   const m = message.trim();
   if (m.length < 12) return true;
   return GENERIC_MESSAGE_PATTERNS.some((p) => p.test(m));
@@ -140,7 +140,7 @@ const CONVERSATIONAL_MARKERS_JA: RegExp[] = [
  * Check whether body text (after Conventional Commit prefix) is acceptable
  * as a commit subject, i.e. it does not contain conversational artifacts.
  */
-function isValidCommitSubject(body: string, lang: string): boolean {
+export function isValidCommitSubject(body: string, lang: string): boolean {
   if (lang === "ja") {
     // Truncated by maxBody limit — too long to be a good commit subject
     if (body.endsWith("…")) return false;
@@ -148,12 +148,28 @@ function isValidCommitSubject(body: string, lang: string): boolean {
     if (body.length < 3) return false;
     // Contains conversational artifacts
     if (CONVERSATIONAL_MARKERS_JA.some((p) => p.test(body))) return false;
+  } else {
+    // English conversational markers — patterns a user message starts with
+    if (CONVERSATIONAL_MARKERS_EN.some((p) => p.test(body))) return false;
+    // Question marks or exclamation marks indicate conversational tone
+    if (/[?!]$/.test(body)) return false;
+    // Too short to carry meaning
+    if (body.length < 3) return false;
   }
   return true;
 }
 
+/** English conversational markers — patterns a user message starts with */
+const CONVERSATIONAL_MARKERS_EN: RegExp[] = [
+  /^(can|could|would|will)\s+you\s/i,
+  /^please\s/i,
+  /^(i|we)\s+(would\s+like|want|need)\s+(you\s+)?to\s/i,
+  /^(i'?d\s+like\s+(you\s+)?to\s)/i,
+  /^let'?s\s/i,
+]
+
 /** Derive a commit-message candidate from the user's last message. */
-function userMessageToCandidate(userMessage: string): string {
+export function userMessageToCandidate(userMessage: string): string {
   let text = userMessage
     .replace(/[。.！!？?]$/, "")
     .replace(/お願いします$/, "")
@@ -198,7 +214,7 @@ function userMessageToCandidate(userMessage: string): string {
 }
 
 /** Heuristic specificity score for a commit message. Higher = more specific. */
-function specificityScore(message: string, lang?: string): number {
+export function specificityScore(message: string, lang?: string): number {
   let score = 0;
   const m = message.replace(
     /^(feat|fix|chore|docs|style|refactor|test|perf|ci|build|revert)(\(.+?\))?!?:\s*/i,
@@ -452,7 +468,7 @@ function buildPrompt(
   let diffSection: string;
   if (diff && diff.trim()) {
     const cleaned = stripDiffNoise(diff);
-    diffSection = truncate(cleaned, MAX_DIFF_CHARS);
+    diffSection = truncateDiff(cleaned, MAX_DIFF_CHARS);
   } else {
     diffSection = t(lang, "autoCommitMsg.noDiffAvailable");
   }
@@ -472,7 +488,7 @@ function buildPrompt(
 }
 
 /** Build a type hint string from changed file paths */
-function buildTypeHintForMessage(files: string[]): string {
+export function buildTypeHintForMessage(files: string[]): string {
   const type = inferTypeFromFiles(files);
   if (type === "chore") return ""; // skip if generic — let the AI decide
   return `Hint: based on file paths, the likely commit type is "${type}".\n`;

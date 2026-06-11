@@ -190,7 +190,7 @@ function countFilesInDiff(diff: string): number {
 }
 
 /** Truncate oversized diff at a clean line break */
-function truncateDiff(diff: string, maxBytes: number): string {
+export function truncateDiff(diff: string, maxBytes: number): string {
   if (diff.length <= maxBytes) return diff;
   const slice = diff.substring(0, maxBytes);
   const lastNewline = slice.lastIndexOf("\n");
