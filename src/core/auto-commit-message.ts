@@ -483,7 +483,8 @@ function buildPrompt(
   });
 
   // Prepend type hints for small models (reuses inferTypeFromFiles from commit-message.ts)
-  const typeHint = buildTypeHintForMessage(changedFiles);
+  const isCheap = modelId && isCheapModel(modelId);
+  const typeHint = isCheap ? buildTypeHintForMessage(changedFiles) : "";
   return typeHint + prompt;
 }
 
@@ -515,6 +516,7 @@ export async function generateAutoCommitMessage(
     // Resolve model before aiComplete (same path aiComplete uses internally).
     // Pass modelId to buildPrompt for budget gating.
     const modelId = resolveModel(ctx)?.id;
+    const isCheap = modelId && isCheapModel(modelId);
 
     const result = await aiComplete(ctx, {
       systemPrompt: getSystemPrompt(lang),
@@ -526,7 +528,7 @@ export async function generateAutoCommitMessage(
         lang,
         modelId,
       ),
-      maxTokens: 200,
+      maxTokens: isCheap ? 200 : 1024,
     });
 
     if (!result) {

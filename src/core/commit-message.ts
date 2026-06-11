@@ -58,7 +58,7 @@ function buildMessage(
 export function inferTypeFromFiles(files: string[]): string {
   const allPaths = files.join(" ").toLowerCase();
 
-  if (/test|spec|\.test\.|\.spec\./.test(allPaths)) return "test";
+  if (/\btest\b|spec|\.test\.|\.spec\./.test(allPaths)) return "test";
   if (/readme|\.md$|docs?\//.test(allPaths)) return "docs";
   if (/\.css$|\.scss$|\.less$|\.svg$|\.png$|\.jpg$/.test(allPaths))
     return "style";
