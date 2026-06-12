@@ -13,6 +13,8 @@ import type { AgentEndEvent } from "../types.js";
 import { t } from "../utils/lang.js";
 import {
   getAutoAggCommit,
+  getAutoAggCommitSkipConfirmFiles,
+  getAutoAggCommitSkipConfirmLines,
   getLanguage,
 } from "../utils/settings.js";
 import { footerManager } from "../utils/footer-manager.js";
@@ -105,17 +107,35 @@ export async function handleAutoCommit(
     changedFiles,
   );
 
-  // ── Confirmation dialog (always shown; default = skip) ──
-  const confirmed = await showConfirmDialog(ctx, {
-    changedFiles,
-    untrackedFiles: countResult.untrackedFiles,
-    totalLines: countResult.totalLines,
-    hasBinary: countResult.hasBinary,
-    lang,
-  });
-  if (!confirmed) {
-    ctx.ui.notify(t(lang, "autoCommit.confirmSkipped"), "info");
-    return;
+  // ── Skip confirmation for very small, non-binary changes ──
+  const skipFiles = getAutoAggCommitSkipConfirmFiles(ctx.cwd);
+  const skipLines = getAutoAggCommitSkipConfirmLines(ctx.cwd);
+  const smallChange =
+    !countResult.hasBinary &&
+    ((skipFiles > 0 && changedFiles.length <= skipFiles) ||
+      (skipLines > 0 && countResult.totalLines <= skipLines));
+
+  // ── Confirmation dialog (skipped for small changes; default = skip) ──
+  if (smallChange) {
+    ctx.ui.notify(
+      t(lang, "autoCommit.skippedSmallChange", {
+        files: String(changedFiles.length),
+        lines: String(countResult.totalLines),
+      }),
+      "info",
+    );
+  } else {
+    const confirmed = await showConfirmDialog(ctx, {
+      changedFiles,
+      untrackedFiles: countResult.untrackedFiles,
+      totalLines: countResult.totalLines,
+      hasBinary: countResult.hasBinary,
+      lang,
+    });
+    if (!confirmed) {
+      ctx.ui.notify(t(lang, "autoCommit.confirmSkipped"), "info");
+      return;
+    }
   }
 
   // ── Proceed with auto-commit ──

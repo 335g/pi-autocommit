@@ -30,6 +30,10 @@ export interface PiGitSettings {
   auto_agg_commit_min_files?: number;
   /** Maximum changed lines to trigger auto-commit confirmation (0 = skip) */
   auto_agg_commit_min_lines?: number;
+  /** Maximum changed files to skip confirmation (0 = never skip) */
+  auto_agg_commit_skip_confirm_files?: number;
+  /** Maximum changed lines to skip confirmation (0 = never skip) */
+  auto_agg_commit_skip_confirm_lines?: number;
 }
 
 export type SettingOrigin = "default" | "global" | "local";
@@ -77,6 +81,18 @@ export const VALID_KEYS_META: KeyMeta[] = [
     messageKey: "config.keyDesc.auto_agg_commit_min_lines",
     valid_values: "non-negative integer (deprecated — confirmation is now always shown)",
   },
+  {
+    key: "auto_agg_commit_skip_confirm_files",
+    type: "number",
+    messageKey: "config.keyDesc.auto_agg_commit_skip_confirm_files",
+    valid_values: "non-negative integer (0 = never skip confirmation)",
+  },
+  {
+    key: "auto_agg_commit_skip_confirm_lines",
+    type: "number",
+    messageKey: "config.keyDesc.auto_agg_commit_skip_confirm_lines",
+    valid_values: "non-negative integer (0 = never skip confirmation)",
+  },
 ];
 
 export const DEFAULT_SETTINGS: PiGitSettings = {
@@ -85,6 +101,8 @@ export const DEFAULT_SETTINGS: PiGitSettings = {
   analysis_model: "",
   auto_agg_commit_min_files: 2,
   auto_agg_commit_min_lines: 10,
+  auto_agg_commit_skip_confirm_files: 0,
+  auto_agg_commit_skip_confirm_lines: 0,
 };
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
@@ -256,6 +274,14 @@ export function getAutoAggCommitMinFiles(cwd?: string): number {
 
 export function getAutoAggCommitMinLines(cwd?: string): number {
   return getSettings(cwd).auto_agg_commit_min_lines ?? 10;
+}
+
+export function getAutoAggCommitSkipConfirmFiles(cwd?: string): number {
+  return getSettings(cwd).auto_agg_commit_skip_confirm_files ?? 0;
+}
+
+export function getAutoAggCommitSkipConfirmLines(cwd?: string): number {
+  return getSettings(cwd).auto_agg_commit_skip_confirm_lines ?? 0;
 }
 
 // ───────────────────────────────────────────────

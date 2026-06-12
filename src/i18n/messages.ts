@@ -109,6 +109,10 @@ export const messages = {
       "Maximum changed files to trigger confirmation (deprecated: confirmation is now always shown)",
     "config.keyDesc.auto_agg_commit_min_lines":
       "Maximum changed lines to trigger confirmation (deprecated: confirmation is now always shown)",
+    "config.keyDesc.auto_agg_commit_skip_confirm_files":
+      "Maximum changed files to skip confirmation (0 = never skip, always confirm)",
+    "config.keyDesc.auto_agg_commit_skip_confirm_lines":
+      "Maximum changed lines to skip confirmation (0 = never skip, always confirm)",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "Commit failed: {error}",
@@ -125,6 +129,7 @@ export const messages = {
     "autoCommit.confirmMoreFiles": "...and {count} more files",
     "autoCommit.confirmNewFile": "(new)",
     "autoCommit.confirmSkipped": "Auto-commit skipped",
+    "autoCommit.skippedSmallChange": "Auto-committing (small change — {files} file(s), {lines} lines)",
     "autoCommit.confirmTimedOut":
       "Auto-commit confirmation timed out — skipped",
 
@@ -274,6 +279,10 @@ export const messages = {
       "確認をトリガーする最大変更ファイル数（非推奨: 現在は常に確認ダイアログが表示されます）",
     "config.keyDesc.auto_agg_commit_min_lines":
       "確認をトリガーする最大変更行数（非推奨: 現在は常に確認ダイアログが表示されます）",
+    "config.keyDesc.auto_agg_commit_skip_confirm_files":
+      "確認をスキップする最大変更ファイル数（0 = 常に確認。どちらかの条件を満たせば確認をスキップ）",
+    "config.keyDesc.auto_agg_commit_skip_confirm_lines":
+      "確認をスキップする最大変更行数（0 = 常に確認。どちらかの条件を満たせば確認をスキップ）",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "コミットに失敗しました: {error}",
@@ -291,6 +300,7 @@ export const messages = {
     "autoCommit.confirmNewFile": "（新規）",
     "autoCommit.confirmSkipped":
       "自動コミットをスキップしました",
+    "autoCommit.skippedSmallChange": "小規模変更のため確認をスキップします（{files}ファイル, {lines}行）",
     "autoCommit.confirmTimedOut":
       "自動コミット確認がタイムアウトしました — スキップ",
 
