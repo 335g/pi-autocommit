@@ -13,8 +13,6 @@ import type { AgentEndEvent } from "../types.js";
 import { t } from "../utils/lang.js";
 import {
   getAutoAggCommit,
-  getAutoAggCommitMinFiles,
-  getAutoAggCommitMinLines,
   getLanguage,
 } from "../utils/settings.js";
 import { footerManager } from "../utils/footer-manager.js";
@@ -99,7 +97,7 @@ export async function handleAutoCommit(
   );
   const diff = diffCode === 0 ? diffOutput : "";
 
-  // ── Count changed lines (for confirmation threshold) ──
+  // ── Count changed lines (for confirmation dialog) ──
   const countResult = await countChangedLines(
     pi,
     ctx.cwd,
@@ -107,24 +105,17 @@ export async function handleAutoCommit(
     changedFiles,
   );
 
-  // ── Threshold check + confirmation dialog ──
-  const minFiles = getAutoAggCommitMinFiles(ctx.cwd);
-  const minLines = getAutoAggCommitMinLines(ctx.cwd);
-  const filesBelow = minFiles > 0 && changedFiles.length <= minFiles;
-  const linesBelow = minLines > 0 && countResult.totalLines <= minLines;
-
-  if (filesBelow || linesBelow) {
-    const confirmed = await showConfirmDialog(ctx, {
-      changedFiles,
-      untrackedFiles: countResult.untrackedFiles,
-      totalLines: countResult.totalLines,
-      hasBinary: countResult.hasBinary,
-      lang,
-    });
-    if (!confirmed) {
-      ctx.ui.notify(t(lang, "autoCommit.confirmSkipped"), "info");
-      return;
-    }
+  // ── Confirmation dialog (always shown; default = skip) ──
+  const confirmed = await showConfirmDialog(ctx, {
+    changedFiles,
+    untrackedFiles: countResult.untrackedFiles,
+    totalLines: countResult.totalLines,
+    hasBinary: countResult.hasBinary,
+    lang,
+  });
+  if (!confirmed) {
+    ctx.ui.notify(t(lang, "autoCommit.confirmSkipped"), "info");
+    return;
   }
 
   // ── Proceed with auto-commit ──

@@ -69,13 +69,13 @@ export const VALID_KEYS_META: KeyMeta[] = [
     key: "auto_agg_commit_min_files",
     type: "number",
     messageKey: "config.keyDesc.auto_agg_commit_min_files",
-    valid_values: "non-negative integer (0 = skip files check)",
+    valid_values: "non-negative integer (deprecated — confirmation is now always shown)",
   },
   {
     key: "auto_agg_commit_min_lines",
     type: "number",
     messageKey: "config.keyDesc.auto_agg_commit_min_lines",
-    valid_values: "non-negative integer (0 = skip lines check)",
+    valid_values: "non-negative integer (deprecated — confirmation is now always shown)",
   },
 ];
 

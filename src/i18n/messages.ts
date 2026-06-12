@@ -106,9 +106,9 @@ export const messages = {
     "config.keyDesc.analysis_model":
       "AI model to use for diff analysis (format: model-id or provider/model-id)",
     "config.keyDesc.auto_agg_commit_min_files":
-      "Maximum changed files to trigger confirmation (0 = skip files check)",
+      "Maximum changed files to trigger confirmation (deprecated: confirmation is now always shown)",
     "config.keyDesc.auto_agg_commit_min_lines":
-      "Maximum changed lines to trigger confirmation (0 = skip lines check)",
+      "Maximum changed lines to trigger confirmation (deprecated: confirmation is now always shown)",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "Commit failed: {error}",
@@ -271,9 +271,9 @@ export const messages = {
     "config.keyDesc.analysis_model":
       "diff分析に使用するAIモデル（形式: model-id または provider/model-id）",
     "config.keyDesc.auto_agg_commit_min_files":
-      "確認をトリガーする最大変更ファイル数（0 = ファイル数チェックなし）",
+      "確認をトリガーする最大変更ファイル数（非推奨: 現在は常に確認ダイアログが表示されます）",
     "config.keyDesc.auto_agg_commit_min_lines":
-      "確認をトリガーする最大変更行数（0 = 行数チェックなし）",
+      "確認をトリガーする最大変更行数（非推奨: 現在は常に確認ダイアログが表示されます）",
 
     // ── auto-commit.ts ─────────────────────────────────────────
     "autoCommit.commitFailed": "コミットに失敗しました: {error}",
