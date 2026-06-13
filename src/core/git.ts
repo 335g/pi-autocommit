@@ -171,25 +171,13 @@ export async function stageDiffHunks(
       fileHunks.sort((a, b) => b.hunkIndexInFile - a.hunkIndexInFile);
 
       // Build a minimal patch: file header + selected hunk contents
-      const sourceHunks = diffHunks.filter((h) => h.file === file);
-      const patchLines: string[] = [];
+      // Sort by descending hunkIndexInFile (committing later hunks first avoids line-number drift)
+      fileHunks.sort((a, b) => b.hunkIndexInFile - a.hunkIndexInFile);
 
-      // Reconstruct the file header from the first hunk's content
-      for (const h of sourceHunks) {
-        if (h.content.includes("diff --git")) {
-          // Find the diff header lines in the original content
-          const headerLines = h.content.split("\n").filter(
-            (l) =>
-              l.startsWith("diff --git") ||
-              l.startsWith("--- ") ||
-              l.startsWith("+++ ") ||
-              l.startsWith("index "),
-          );
-          patchLines.push(...headerLines);
-          break;
-        }
-      }
+      // Use the file header from the first selected hunk
+      const fileHeader = fileHunks[0].fileHeader;
 
+      const patchLines: string[] = [...fileHeader];
       for (const h of fileHunks) {
         patchLines.push(h.content);
       }
