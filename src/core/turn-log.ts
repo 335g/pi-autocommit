@@ -147,7 +147,7 @@ export class TurnLog {
       ),
       assistantExcerpt: stripConversationalMarkers(assistantMsg).slice(
         0,
-        300,
+        500,
       ),
       filesChanged: changedFiles.slice(0, 20),
     });
@@ -163,26 +163,71 @@ export class TurnLog {
 
   /**
    * Serialize for AI prompt injection.
+   *
+   * Outputs structured blocks with 【依頼】【応答】【ファイル】markers.
+   * Computes newFilesThisTurn and continuedFilesThisTurn dynamically
+   * by comparing each entry against previous entries (no schema change).
+   *
    * Returns "" when empty (caller should omit the section).
    */
   formatForPrompt(): string {
     if (this.entries.length === 0) return "";
 
+    // Compute file-increment sets for each entry.
+    // "new" = files that first appeared in this turn (not in any prior turn).
+    // "continued" = files that also appeared in at least one prior turn.
+    const seenFiles = new Set<string>();
+    const increments: Array<{
+      newFiles: string[];
+      continuedFiles: string[];
+    }> = [];
+
+    for (const e of this.entries) {
+      const newFiles: string[] = [];
+      const continuedFiles: string[] = [];
+      for (const f of e.filesChanged) {
+        if (seenFiles.has(f)) {
+          continuedFiles.push(f);
+        } else {
+          newFiles.push(f);
+          seenFiles.add(f);
+        }
+      }
+      increments.push({ newFiles, continuedFiles });
+    }
+
     const lines: string[] = [];
     let totalChars = 0;
 
     // Most recent entries first (recency matters more for AI attention)
-    for (const e of [...this.entries].reverse()) {
-      const block = [
-        `### Turn ${e.index}`,
-        `User: ${e.userMessage}`,
-        `Assistant: ${e.assistantExcerpt}`,
-        e.filesChanged.length
-          ? `Files: ${e.filesChanged.join(", ")}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+    const reversed = [...this.entries].reverse();
+    const reversedInc = [...increments].reverse();
+
+    for (let i = 0; i < reversed.length; i++) {
+      const e = reversed[i];
+      const inc = reversedInc[i];
+
+      const parts: string[] = [
+        `### Turn ${e.index} ━━━━━━━━━━━━━━━━━━━━━━`,
+        `【依頼】${e.userMessage}`,
+        `【応答】${e.assistantExcerpt}`,
+      ];
+
+      // File section with new/continued annotation
+      const fileParts: string[] = [];
+      if (inc.newFiles.length > 0) {
+        fileParts.push(`新規: ${inc.newFiles.join(", ")}`);
+      }
+      if (inc.continuedFiles.length > 0) {
+        fileParts.push(`継続: ${inc.continuedFiles.join(", ")}`);
+      }
+      if (fileParts.length > 0) {
+        parts.push(`【ファイル】${fileParts.join(" | ")}`);
+      } else if (e.filesChanged.length > 0) {
+        parts.push(`【ファイル】${e.filesChanged.join(", ")}`);
+      }
+
+      const block = parts.join("\n");
 
       if (totalChars + block.length > TurnLog.MAX_CHARS) break;
       lines.push(block);
