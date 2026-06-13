@@ -3,6 +3,10 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { DiffHunk, DiffHunkRef } from "../types.js";
+import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 class GitError extends Error {
   constructor(
@@ -86,6 +90,156 @@ export async function resetStaging(
   const { code } = await pi.exec("git", ["reset"], { cwd });
   if (code !== 0) {
     throw new GitError("Failed to reset staging area", "git reset", code);
+  }
+}
+
+/**
+ * Stage specific @@-hunks within files without touching other hunks in the same file.
+ *
+ * Strategy:
+ * - Files where ALL hunks are included → "git add" (fast path)
+ * - Files where only SOME hunks are included → construct patch with only those hunks
+ *   sorted in descending line-number order → "git apply --cached"
+ *
+ * Descending order avoids line-number staleness: committing a later hunk first
+ * never affects the context lines of an earlier hunk in the same file.
+ *
+ * Atomic files (binary, rename, mode-only) are always staged as a whole file.
+ */
+export async function stageDiffHunks(
+  pi: ExtensionAPI,
+  diffHunks: DiffHunk[],
+  hunkRefs: DiffHunkRef[],
+  cwd?: string,
+): Promise<void> {
+  if (hunkRefs.length === 0) return;
+
+  // Build a map: file → hunk.globalIndex set (what we want to stage)
+  const fileToWanted = new Map<string, Set<number>>();
+  for (const ref of hunkRefs) {
+    const h = diffHunks.find((dh) => dh.globalIndex === ref.globalIndex);
+    if (!h) continue;
+    ref.file = h.file; // enrich the ref
+    if (!fileToWanted.has(h.file)) fileToWanted.set(h.file, new Set());
+    fileToWanted.get(h.file)!.add(h.globalIndex);
+  }
+
+  // Classify files: full-stage or partial-stage
+  const fullFiles: string[] = [];
+  const partialFiles = new Map<string, number[]>(); // file → hunkIndices (descending)
+
+  for (const [file, wantedIndices] of fileToWanted) {
+    const allFileHunks = diffHunks.filter((h) => h.file === file);
+
+    // Atomic files always go full-stage
+    if (allFileHunks.length === 0 || allFileHunks[0].isAtomic) {
+      fullFiles.push(file);
+      continue;
+    }
+
+    const allFileIndices = new Set(allFileHunks.map((h) => h.globalIndex));
+    const isFullStage = [...allFileIndices].every((idx) => wantedIndices.has(idx));
+
+    if (isFullStage) {
+      fullFiles.push(file);
+    } else {
+      // Partial: collect in descending line order for stable patch application
+      const wantedHunks = allFileHunks
+        .filter((h) => wantedIndices.has(h.globalIndex))
+        .sort((a, b) => b.hunkIndexInFile - a.hunkIndexInFile);
+      partialFiles.set(file, wantedHunks.map((h) => h.globalIndex));
+    }
+  }
+
+  // Fast path: stage full files
+  if (fullFiles.length > 0) {
+    await stageFiles(pi, fullFiles, cwd);
+  }
+
+  // Partial path: construct patches for each file
+  if (partialFiles.size === 0) return;
+
+  const tmpDir = mkdtempSync(join(tmpdir(), "pi-git-"));
+
+  try {
+    for (const [file, wantedGlobalIndices] of partialFiles) {
+      const fileHunks = diffHunks.filter(
+        (h) => h.file === file && wantedGlobalIndices.includes(h.globalIndex),
+      );
+
+      // Sort by descending hunkIndexInFile (committing later hunks first avoids line-number drift)
+      fileHunks.sort((a, b) => b.hunkIndexInFile - a.hunkIndexInFile);
+
+      // Build a minimal patch: file header + selected hunk contents
+      const sourceHunks = diffHunks.filter((h) => h.file === file);
+      const patchLines: string[] = [];
+
+      // Reconstruct the file header from the first hunk's content
+      for (const h of sourceHunks) {
+        if (h.content.includes("diff --git")) {
+          // Find the diff header lines in the original content
+          const headerLines = h.content.split("\n").filter(
+            (l) =>
+              l.startsWith("diff --git") ||
+              l.startsWith("--- ") ||
+              l.startsWith("+++ ") ||
+              l.startsWith("index "),
+          );
+          patchLines.push(...headerLines);
+          break;
+        }
+      }
+
+      for (const h of fileHunks) {
+        patchLines.push(h.content);
+      }
+
+      const patchContent = patchLines.join("\n");
+      if (!patchContent.trim()) continue;
+
+      const patchPath = join(tmpDir, `${file.replace(/[/\s:]/g, "_")}.patch`);
+      writeFileSync(patchPath, patchContent + "\n", "utf-8");
+
+      const { code, stderr } = await pi.exec(
+        "git",
+        ["apply", "--cached", "--verbose", patchPath],
+        { cwd },
+      );
+      if (code !== 0) {
+        throw new GitError(
+          `Failed to apply partial patch for ${file}: ${stderr.trim()}`,
+          "git apply --cached",
+          code,
+        );
+      }
+    }
+  } finally {
+    // Cleanup temp files
+    try {
+      for (const [, wantedGlobalIndices] of partialFiles) {
+        const fileHunks = diffHunks.filter(
+          (h) => wantedGlobalIndices.includes(h.globalIndex),
+        );
+        for (const h of fileHunks) {
+          const patchPath = join(
+            tmpDir,
+            `${h.file.replace(/[/\s:]/g, "_")}.patch`,
+          );
+          try {
+            unlinkSync(patchPath);
+          } catch {
+            /* best-effort cleanup */
+          }
+        }
+      }
+      try {
+        rmdirSync(tmpDir);
+      } catch {
+        /* may not be empty — fine */
+      }
+    } catch {
+      /* best-effort cleanup */
+    }
   }
 }
 
