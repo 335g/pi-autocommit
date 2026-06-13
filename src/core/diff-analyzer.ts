@@ -10,7 +10,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { Hunk } from "../types.js";
+import type { Hunk, DiffHunk, CommitGroup, HunkGroupingResult, DiffHunkRef } from "../types.js";
 import { diagIncr } from "../utils/diagnostics.js";
 import { footerManager } from "../utils/footer-manager.js";
 import { t } from "../utils/lang.js";
@@ -28,8 +28,8 @@ const MAX_DIFF_BYTES = 30_000;
 /** Max files per AI analysis batch (split large diffs for progress visibility) */
 const FILES_PER_BATCH = 8;
 
-/** Maximum output tokens for the AI completion (hunk JSON is small) */
-const MAX_OUTPUT_TOKENS = 1024;
+/** Maximum output tokens for the AI completion (hunk JSON can be large with many indices) */
+const MAX_OUTPUT_TOKENS = 2048;
 
 function getSystemPrompt(lang: string): string {
   return t(lang, "diffAnalyzer.systemPrompt");
@@ -386,6 +386,200 @@ export async function analyzeDiff(
   }
 }
 
+// ───────────────────────────────────────────────
+// Intent-based hunk analysis (new)
+// ───────────────────────────────────────────────
+
+function getIntentSystemPrompt(lang: string): string {
+  return t(lang, "diffAnalyzer.intentSystemPrompt");
+}
+
+function buildIntentPrompt(
+  turnLogText: string,
+  numberedHunksText: string,
+  lang: string,
+): string {
+  return t(lang, "diffAnalyzer.intentBuildPrompt", {
+    turnLogText,
+    numberedHunksText,
+  });
+}
+
+/**
+ * Parse AI response into HunkGroupingResult.
+ * Handles JSON objects with nested groups arrays.
+ * Falls back gracefully on parse failures.
+ */
+function parseHunkGroupingResult(text: string): HunkGroupingResult | null {
+  let jsonText = text.trim();
+
+  // Layer 1: Extract JSON from code fences
+  const codeFenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeFenceMatch) {
+    jsonText = codeFenceMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const overallConfidence = parsed.overallConfidence;
+    if (
+      overallConfidence !== "high" &&
+      overallConfidence !== "medium" &&
+      overallConfidence !== "low"
+    ) {
+      return null;
+    }
+
+    if (!Array.isArray(parsed.groups)) return null;
+
+    const groups: CommitGroup[] = [];
+    for (const g of parsed.groups) {
+      if (typeof g !== "object" || g === null) continue;
+      if (!Array.isArray(g.hunks) || typeof g.message !== "string") continue;
+
+      const hunks: DiffHunkRef[] = [];
+      for (const idx of g.hunks as number[]) {
+        if (typeof idx === "number" && Number.isInteger(idx) && idx > 0) {
+          hunks.push({ globalIndex: idx, file: "" });
+        }
+      }
+      if (hunks.length === 0) continue;
+
+      const confidence =
+        g.confidence === "high" || g.confidence === "medium" || g.confidence === "low"
+          ? g.confidence
+          : "medium";
+
+      groups.push({
+        hunks,
+        message: (g.message as string) || "chore: update files",
+        confidence,
+        turnIndices: Array.isArray(g.turnIndices)
+          ? (g.turnIndices as number[]).filter(
+              (t: unknown) => typeof t === "number",
+            )
+          : undefined,
+        note: typeof g.note === "string" ? g.note : undefined,
+      });
+    }
+
+    if (groups.length === 0) return null;
+
+    return { overallConfidence, groups };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Analyze a git diff using intent-based hunk splitting.
+ *
+ * Uses conversation history (TurnLog) as the primary source for commit
+ * boundaries, with diff hunks for verification and precise grouping.
+ *
+ * Includes an implicit consistency check: AI assigns confidence levels
+ * to each group, and overallConfidence drives the fallback strategy.
+ *
+ * @returns HunkGroupingResult, or null if AI analysis failed (caller should fall back)
+ */
+export async function analyzeDiffIntent(
+  _pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  diff: string,
+  turnLogText: string,
+  langOverride?: string,
+): Promise<HunkGroupingResult | null> {
+  const lang = langOverride ?? getLanguage(ctx.cwd);
+
+  // Parse diff into numbered hunks
+  const diffHunks = parseDiffHunks(diff);
+  if (diffHunks.length === 0) return null;
+
+  const numberedHunksText = formatNumberedHunks(diffHunks);
+
+  // Build prompt
+  const systemPrompt = getIntentSystemPrompt(lang);
+  const userMessage = buildIntentPrompt(turnLogText, numberedHunksText, lang);
+
+  try {
+    const result = await aiComplete(ctx, {
+      systemPrompt,
+      userMessage,
+      maxTokens: MAX_OUTPUT_TOKENS,
+      temperature: 0,
+    });
+
+    if (!result) return null;
+
+    const grouping = parseHunkGroupingResult(result.text);
+    if (!grouping) return null;
+
+    // Enrich DiffHunkRef with file paths from the parsed DiffHunk array
+    const hunkMap = new Map<number, DiffHunk>();
+    for (const h of diffHunks) {
+      hunkMap.set(h.globalIndex, h);
+    }
+
+    for (const group of grouping.groups) {
+      for (const ref of group.hunks) {
+        const h = hunkMap.get(ref.globalIndex);
+        if (h) ref.file = h.file;
+      }
+    }
+
+    return grouping;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate that every DiffHunk is assigned to exactly one commit group.
+ * Unassigned hunks are collected into a catch-all group.
+ * Out-of-range indices are silently dropped.
+ */
+export function validateHunkCoverage(
+  groups: CommitGroup[],
+  totalHunks: number,
+): CommitGroup[] {
+  const assigned = new Set<number>();
+  const result: CommitGroup[] = [];
+
+  for (const g of groups) {
+    const validHunks = g.hunks.filter((ref) => {
+      if (ref.globalIndex < 1 || ref.globalIndex > totalHunks) return false;
+      if (assigned.has(ref.globalIndex)) return false;
+      assigned.add(ref.globalIndex);
+      return true;
+    });
+    if (validHunks.length > 0) {
+      result.push({ ...g, hunks: validHunks });
+    }
+  }
+
+  const unassigned: DiffHunkRef[] = [];
+  for (let i = 1; i <= totalHunks; i++) {
+    if (!assigned.has(i)) {
+      unassigned.push({ globalIndex: i, file: "" });
+    }
+  }
+
+  if (unassigned.length > 0) {
+    result.push({
+      hunks: unassigned,
+      message: "chore: その他の変更を適用",
+      confidence: "low",
+      note: "AIがグループ化できなかったhunkの自動回収",
+    });
+  }
+
+  return result;
+}
+
 /**
  * Post-process AI-generated hunks: sanitize commit messages, deduplicate files
  * across hunks (each file belongs only to its first hunk), and remove empty hunks.
@@ -410,6 +604,161 @@ export function processHunks(hunks: Hunk[]): Hunk[] {
       }),
     }))
     .filter((hunk) => hunk.files.length > 0);
+}
+
+// ───────────────────────────────────────────────
+// Intent-based diff-hunk parsing
+// ───────────────────────────────────────────────
+
+/** Pattern for @@ hunk header: @@ -oldStart,oldCount +newStart,newCount @@ [context] */
+const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
+/**
+ * Parse a unified git diff into numbered DiffHunks (one per @@ block).
+ *
+ * Non-splittable files (binary, rename-only, mode-only) produce a single
+ * atomic DiffHunk with `isAtomic: true`. All hunks are assigned 1-based
+ * global indices for AI prompt reference.
+ */
+export function parseDiffHunks(fullDiff: string): DiffHunk[] {
+  const fileDiffs = splitDiffByFile(fullDiff);
+  const result: DiffHunk[] = [];
+  let globalIndex = 0;
+
+  for (const [file, lines] of fileDiffs) {
+    const hunks = extractHunksFromFile(file, lines);
+
+    if (hunks.length === 0) {
+      // Atomic change: binary, rename-only, mode-only, or deleted file.
+      const content = lines.join("\n");
+      const isNew = lines.some((l) => l.startsWith("--- /dev/null"));
+      const isDeleted = lines.some((l) => l.startsWith("+++ /dev/null"));
+      const summary =
+        lines
+          .find((l) => !l.startsWith("diff ") && !l.startsWith("--- ") &&
+            !l.startsWith("+++ ") && !l.startsWith("index ") &&
+            !l.startsWith("similarity ") && !l.startsWith("rename ") &&
+            !l.startsWith("old mode ") && !l.startsWith("new mode ") &&
+            !l.startsWith("GIT binary ") && !l.startsWith("literal ") &&
+            l.trim() !== "") || isDeleted
+            ? "(deleted)"
+            : isNew
+              ? "(new file)"
+              : "(binary/mode/rename)";
+
+      globalIndex++;
+      result.push({
+        globalIndex,
+        file,
+        hunkIndexInFile: 0,
+        header: lines[0] || `diff --git a/${file} b/${file}`,
+        content,
+        summary,
+        isNewFile: isNew,
+        isDeletedFile: isDeleted,
+        isAtomic: true,
+      });
+      continue;
+    }
+
+    // Regular hunks: assign per-file and global indices
+    for (let i = 0; i < hunks.length; i++) {
+      const hunkLines = hunks[i];
+      const headerLine = hunkLines[0];
+      const headerMatch = HUNK_HEADER_RE.exec(headerLine);
+
+      // Extract a one-line summary from the @@ context text
+      const contextHint = headerMatch?.[5]?.trim() || "";
+      // Take the first non-context-line diff line as additional hint
+      const firstChangeLine =
+        hunkLines
+          .slice(1)
+          .find((l) => l.startsWith("+") || l.startsWith("-"))
+          ?.slice(1)
+          ?.trim() || "";
+      const summary = contextHint || firstChangeLine || file;
+
+      // Line range for display
+      const newStart = headerMatch ? parseInt(headerMatch[3], 10) : 0;
+      const newCount = headerMatch?.[4]
+        ? parseInt(headerMatch[4], 10)
+        : headerMatch
+          ? 1
+          : 0;
+
+      globalIndex++;
+      result.push({
+        globalIndex,
+        file,
+        hunkIndexInFile: i,
+        header: `@@ ${newStart}-${newStart + newCount - 1}`,
+        content: hunkLines.join("\n"),
+        summary,
+        isNewFile: lines.some((l) => l.startsWith("--- /dev/null")),
+        isDeletedFile: lines.some((l) => l.startsWith("+++ /dev/null")),
+        isAtomic: false,
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Extract individual @@ hunks from a single file's diff lines.
+ * Returns an array of hunk-line-arrays, or empty array for atomic files.
+ */
+function extractHunksFromFile(
+  _file: string,
+  lines: string[],
+): string[][] {
+  const hunks: string[][] = [];
+  let current: string[] = [];
+  let hasAnyHunk = false;
+
+  for (const line of lines) {
+    if (HUNK_HEADER_RE.test(line)) {
+      if (current.length > 0) {
+        hunks.push(current);
+        current = [];
+      }
+      hasAnyHunk = true;
+      current.push(line);
+    } else if (hasAnyHunk && current.length > 0) {
+      current.push(line);
+    }
+  }
+  if (current.length > 0 && hasAnyHunk) {
+    hunks.push(current);
+  }
+
+  return hunks;
+}
+
+/**
+ * Format DiffHunks for AI prompt injection.
+ * Each hunk gets a [HN] label with file path, line range, and first-line summary.
+ */
+export function formatNumberedHunks(hunks: DiffHunk[]): string {
+  if (hunks.length === 0) return "";
+
+  const lines: string[] = [];
+
+  for (const h of hunks) {
+    const tag = h.isAtomic
+      ? h.isDeletedFile
+        ? " (削除)"
+        : h.isNewFile
+          ? " (新規)"
+          : " (バイナリ等)"
+      : "";
+
+    const lineRef = h.isAtomic ? "" : ` (L${h.header.replace("@@ ", "")})`;
+    const display = `[H${h.globalIndex}] ${h.file}${lineRef}${tag}: ${h.summary.substring(0, 60)}`;
+    lines.push(display);
+  }
+
+  return lines.join("\n");
 }
 
 /**
