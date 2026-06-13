@@ -79,7 +79,6 @@ Values from local config take precedence over global config. If a key is missing
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `lang` | `string` | `"en"` | Display and commit message language. `"en"` or `"ja"`. |
-| `auto_agg_commit` | `boolean` | `false` | Whether to automatically run `git-agg-commit` after assistant responses. |
 | `analysis_model` | `string` | `""` | AI model for diff analysis in `provider/model-id` format (e.g., `anthropic/claude-3-5-sonnet-20241022`). When empty, the current session model is used. |
 
 ### Usage
