@@ -22,22 +22,8 @@ import type { MessageKey } from "../i18n/messages.js";
 export interface PiGitSettings {
   /** Display and commit message language (e.g., "en", "ja") */
   lang?: string;
-  /** Whether to automatically run git-agg-commit after assistant response */
-  auto_agg_commit?: boolean;
   /** Model to use for diff analysis (format: "provider/model-id") */
   analysis_model?: string;
-  /** Maximum changed files to trigger auto-commit confirmation (0 = skip) */
-  auto_agg_commit_min_files?: number;
-  /** Maximum changed lines to trigger auto-commit confirmation (0 = skip) */
-  auto_agg_commit_min_lines?: number;
-  /** Maximum changed files to skip confirmation (0 = never skip) */
-  auto_agg_commit_skip_confirm_files?: number;
-  /** Maximum changed lines to skip confirmation (0 = never skip) */
-  auto_agg_commit_skip_confirm_lines?: number;
-  /** Commit mode: "per_turn" (immediate) or "accumulate" (batch via /git-agg-commit) */
-  auto_agg_commit_mode?: "per_turn" | "accumulate";
-  /** Number of accumulated turns before showing a commit reminder (0 = disabled) */
-  batch_warn_turns?: number;
 }
 
 export type SettingOrigin = "default" | "global" | "local";
@@ -62,63 +48,16 @@ export const VALID_KEYS_META: KeyMeta[] = [
     valid_values: '"en" or "ja"',
   },
   {
-    key: "auto_agg_commit",
-    type: "boolean",
-    messageKey: "config.keyDesc.auto_agg_commit",
-    valid_values: "true or false",
-  },
-  {
     key: "analysis_model",
     type: "string",
     messageKey: "config.keyDesc.analysis_model",
     valid_values: "e.g., anthropic/claude-3-5-sonnet-20241022",
   },
-  {
-    key: "auto_agg_commit_min_files",
-    type: "number",
-    messageKey: "config.keyDesc.auto_agg_commit_min_files",
-    valid_values: "non-negative integer (deprecated — confirmation is now always shown)",
-  },
-  {
-    key: "auto_agg_commit_min_lines",
-    type: "number",
-    messageKey: "config.keyDesc.auto_agg_commit_min_lines",
-    valid_values: "non-negative integer (deprecated — confirmation is now always shown)",
-  },
-  {
-    key: "auto_agg_commit_skip_confirm_files",
-    type: "number",
-    messageKey: "config.keyDesc.auto_agg_commit_skip_confirm_files",
-    valid_values: "non-negative integer (0 = never skip confirmation)",
-  },
-  {
-    key: "auto_agg_commit_skip_confirm_lines",
-    type: "number",
-    messageKey: "config.keyDesc.auto_agg_commit_skip_confirm_lines",
-    valid_values: "non-negative integer (0 = never skip confirmation)",
-  },
-  {
-    key: "auto_agg_commit_mode",
-    type: "string",
-    messageKey: "config.keyDesc.auto_agg_commit_mode",
-    valid_values: '"per_turn" or "accumulate"',
-  },
-  {
-    key: "batch_warn_turns",
-    type: "number",
-    messageKey: "config.keyDesc.batch_warn_turns",
-    valid_values: "non-negative integer (0 = disabled, default: 5)",
-  },
 ];
 
 export const DEFAULT_SETTINGS: PiGitSettings = {
   lang: "en",
-  auto_agg_commit: false,
   analysis_model: "",
-  auto_agg_commit_min_files: 2,
-  auto_agg_commit_min_lines: 10,
-  auto_agg_commit_skip_confirm_files: 0,
-  auto_agg_commit_skip_confirm_lines: 0,
 };
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
@@ -275,39 +214,9 @@ export function getLanguage(cwd?: string): string {
   return getSettings(cwd).lang || "en";
 }
 
-export function getAutoAggCommit(cwd?: string): boolean {
-  return getSettings(cwd).auto_agg_commit ?? false;
-}
-
 export function getAnalysisModel(cwd?: string): string | undefined {
   const model = getSettings(cwd).analysis_model;
   return model?.trim() ? model.trim() : undefined;
-}
-
-export function getAutoAggCommitMinFiles(cwd?: string): number {
-  return getSettings(cwd).auto_agg_commit_min_files ?? 2;
-}
-
-export function getAutoAggCommitMinLines(cwd?: string): number {
-  return getSettings(cwd).auto_agg_commit_min_lines ?? 10;
-}
-
-export function getAutoAggCommitSkipConfirmFiles(cwd?: string): number {
-  return getSettings(cwd).auto_agg_commit_skip_confirm_files ?? 0;
-}
-
-export function getAutoAggCommitSkipConfirmLines(cwd?: string): number {
-  return getSettings(cwd).auto_agg_commit_skip_confirm_lines ?? 0;
-}
-
-export function getAutoAggCommitMode(
-  cwd?: string,
-): "per_turn" | "accumulate" {
-  return getSettings(cwd).auto_agg_commit_mode ?? "per_turn";
-}
-
-export function getBatchWarnTurns(cwd?: string): number {
-  return getSettings(cwd).batch_warn_turns ?? 5;
 }
 
 // ───────────────────────────────────────────────
