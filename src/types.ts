@@ -54,6 +54,8 @@ export interface DiffHunk {
   isDeletedFile: boolean;
   /** Whether this is atomic (binary/rename/mode-only — no @@ blocks to split) */
   isAtomic: boolean;
+  /** File-level diff header lines (diff --git, ---, +++, index) */
+  fileHeader: string[];
 }
 
 /** Reference to a specific DiffHunk by its globalIndex */
