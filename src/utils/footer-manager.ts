@@ -13,12 +13,7 @@ import type {
   ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 import { t } from "./lang.js";
-import {
-  getAutoAggCommit,
-  getAutoAggCommitMode,
-  getBatchWarnTurns,
-  getLanguage,
-} from "./settings.js";
+import { getLanguage } from "./settings.js";
 
 const STATUS_KEY = "pi-git-agg-commit";
 
@@ -39,7 +34,6 @@ class FooterManager {
   private pi: ExtensionAPI | null = null;
   private ui: ExtensionUIContext | null = null;
   private cwd: string | undefined;
-  private accumulateActive = false;
   private running: {
     command: string;
     phase: Phase;
@@ -84,31 +78,7 @@ class FooterManager {
   async refresh(): Promise<void> {
     if (!this.pi || !this.ui) return;
     if (this.running) return;
-    if (this.accumulateActive) return; // don't overwrite accumulate display
-
-    const enabled = getAutoAggCommit(this.cwd);
-    const lang = getLanguage(this.cwd);
-
-    // Check if inside a git repository
-    const { code } = await this.pi.exec("git", ["rev-parse", "--git-dir"], {
-      cwd: this.cwd,
-    });
-    if (code !== 0) {
-      this.ui.setStatus(STATUS_KEY, t(lang, "footer.autoCommit.off"));
-      return;
-    }
-
-    // Evaluate clean/changed state
-    const { stdout } = await this.pi.exec("git", ["status", "--porcelain"], {
-      cwd: this.cwd,
-    });
-    if (!enabled) {
-      this.ui.setStatus(STATUS_KEY, t(lang, "footer.autoCommit.off"));
-    } else if (stdout.trim().length > 0) {
-      this.ui.setStatus(STATUS_KEY, t(lang, "footer.autoCommit.onChanged"));
-    } else {
-      this.ui.setStatus(STATUS_KEY, t(lang, "footer.autoCommit.onClean"));
-    }
+    this.ui.setStatus(STATUS_KEY, undefined);
   }
 
   /**
@@ -118,17 +88,11 @@ class FooterManager {
   setBatchStatus(turns: number, files: number): void {
     if (!this.ui) return;
 
-    const mode = getAutoAggCommitMode(this.cwd);
-    if (mode !== "accumulate") return;
-
-    this.accumulateActive = true;
     const lang = getLanguage(this.cwd);
-    const warnTurns = getBatchWarnTurns(this.cwd);
-
     const key =
-      warnTurns > 0 && turns >= warnTurns * 2
+      turns >= 10
         ? "footer.autoCommit.accumulateCritical"
-        : warnTurns > 0 && turns >= warnTurns
+        : turns >= 5
           ? "footer.autoCommit.accumulateWarn"
           : "footer.autoCommit.accumulate";
 
