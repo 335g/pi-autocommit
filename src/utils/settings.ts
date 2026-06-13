@@ -24,6 +24,12 @@ export interface PiGitSettings {
   lang?: string;
   /** Model to use for diff analysis (format: "provider/model-id") */
   analysis_model?: string;
+  /** Whether auto-commit is enabled (accumulate mode only — per_turn was removed) */
+  auto_agg_commit?: boolean;
+  /** Commit mode: "accumulate" (default). "per_turn" is deprecated and treated as accumulate. */
+  auto_agg_commit_mode?: "accumulate";
+  /** Number of accumulated turns before showing a commit reminder (0 = disabled) */
+  batch_warn_turns?: number;
 }
 
 export type SettingOrigin = "default" | "global" | "local";
@@ -53,11 +59,32 @@ export const VALID_KEYS_META: KeyMeta[] = [
     messageKey: "config.keyDesc.analysis_model",
     valid_values: "e.g., anthropic/claude-3-5-sonnet-20241022",
   },
+  {
+    key: "auto_agg_commit",
+    type: "boolean",
+    messageKey: "config.keyDesc.auto_agg_commit",
+    valid_values: "true or false",
+  },
+  {
+    key: "auto_agg_commit_mode",
+    type: "string",
+    messageKey: "config.keyDesc.auto_agg_commit_mode",
+    valid_values: '"accumulate"',
+  },
+  {
+    key: "batch_warn_turns",
+    type: "number",
+    messageKey: "config.keyDesc.batch_warn_turns",
+    valid_values: "non-negative integer (0 = disabled)",
+  },
 ];
 
 export const DEFAULT_SETTINGS: PiGitSettings = {
   lang: "en",
   analysis_model: "",
+  auto_agg_commit: false,
+  auto_agg_commit_mode: "accumulate",
+  batch_warn_turns: 5,
 };
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
@@ -217,6 +244,23 @@ export function getLanguage(cwd?: string): string {
 export function getAnalysisModel(cwd?: string): string | undefined {
   const model = getSettings(cwd).analysis_model;
   return model?.trim() ? model.trim() : undefined;
+}
+
+export function getAutoAggCommit(cwd?: string): boolean {
+  return getSettings(cwd).auto_agg_commit === true;
+}
+
+export function getAutoAggCommitMode(cwd?: string): "accumulate" {
+  // "per_turn" was removed — always treat as accumulate
+  return "accumulate";
+}
+
+export function getBatchWarnTurns(cwd?: string): number {
+  const val = getSettings(cwd).batch_warn_turns;
+  if (typeof val === "number" && Number.isFinite(val) && val >= 0) {
+    return val;
+  }
+  return 5; // default
 }
 
 // ───────────────────────────────────────────────
