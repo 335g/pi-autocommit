@@ -9,10 +9,16 @@ import type { AgentEndEvent } from "./types.js";
 import { handleAggCommit } from "./commands/agg-commit.js";
 import { handleConfig } from "./commands/config.js";
 import { handleDiagnostics } from "./commands/diagnostics.js";
+import { t } from "./utils/lang.js";
 import { recoverOrphanedStashes } from "./core/orphan-recovery.js";
 import { turnLog } from "./core/turn-log.js";
 import { isGitRepository, hasChanges } from "./core/git.js";
 import { footerManager } from "./utils/footer-manager.js";
+import {
+  getAutoAggCommit,
+  getBatchWarnTurns,
+  getLanguage,
+} from "./utils/settings.js";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
@@ -80,6 +86,11 @@ export default function (pi: ExtensionAPI) {
       const isRepo = await isGitRepository(pi);
       if (!isRepo) return;
 
+      if (!getAutoAggCommit(ctx.cwd)) {
+        await footerManager.refresh();
+        return;
+      }
+
       if (!(await hasChanges(pi))) {
         await footerManager.refresh();
         return;
@@ -102,6 +113,23 @@ export default function (pi: ExtensionAPI) {
         turnLog.turnCount,
         turnLog.totalFilesChanged,
       );
+
+      // Fire batch_warn_turns notification once per accumulation cycle
+      const warnTurns = getBatchWarnTurns(ctx.cwd);
+      if (
+        warnTurns > 0 &&
+        turnLog.turnCount >= warnTurns &&
+        !turnLog.warnNotified
+      ) {
+        turnLog.warnNotified = true;
+        const lang = getLanguage(ctx.cwd);
+        ctx.ui.notify(
+          t(lang, "batchCommit.warnThreshold", {
+            count: String(turnLog.turnCount),
+          }),
+          "warning",
+        );
+      }
     } catch {
       // Silently ignore errors
     }
