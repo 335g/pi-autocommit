@@ -26,16 +26,7 @@ import {
   VALID_KEYS_META,
 } from "../utils/settings.js";
 
-type ValidKey =
-  | "lang"
-  | "auto_agg_commit"
-  | "analysis_model"
-  | "auto_agg_commit_min_files"
-  | "auto_agg_commit_min_lines"
-  | "auto_agg_commit_skip_confirm_files"
-  | "auto_agg_commit_skip_confirm_lines"
-  | "auto_agg_commit_mode"
-  | "batch_warn_turns";
+type ValidKey = "lang" | "analysis_model";
 
 function isValidKey(key: string): key is ValidKey {
   return VALID_KEYS_META.some((meta) => meta.key === key);
@@ -48,44 +39,8 @@ function validateValue(key: ValidKey, value: string): string | boolean | number 
         throw new Error(`Invalid lang: ${value}. Must be "en" or "ja".`);
       }
       return value;
-    case "auto_agg_commit":
-      if (value !== "true" && value !== "false") {
-        throw new Error(
-          `Invalid auto_agg_commit: ${value}. Must be "true" or "false".`,
-        );
-      }
-      return value === "true";
     case "analysis_model":
-      // Model ID is a free-form string (e.g., "anthropic/claude-3-5-sonnet-20241022")
       return value;
-    case "auto_agg_commit_min_files":
-    case "auto_agg_commit_min_lines":
-    case "auto_agg_commit_skip_confirm_files":
-    case "auto_agg_commit_skip_confirm_lines": {
-      const num = Number(value);
-      if (!Number.isInteger(num) || num < 0) {
-        throw new Error(
-          `Invalid ${key}: ${value}. Must be a non-negative integer.`,
-        );
-      }
-      return num;
-    }
-    case "auto_agg_commit_mode":
-      if (value !== "per_turn" && value !== "accumulate") {
-        throw new Error(
-          `Invalid auto_agg_commit_mode: ${value}. Must be "per_turn" or "accumulate".`,
-        );
-      }
-      return value;
-    case "batch_warn_turns": {
-      const num = Number(value);
-      if (!Number.isInteger(num) || num < 0) {
-        throw new Error(
-          `Invalid batch_warn_turns: ${value}. Must be a non-negative integer.`,
-        );
-      }
-      return num;
-    }
     default:
       throw new Error(`Unknown key: ${key}`);
   }
