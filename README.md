@@ -43,7 +43,6 @@ pi install /path/to/pi-git
 | Command | Description |
 |---------|-------------|
 | [`/git-agg-commit`](#git-agg-commit) | Auto stage and commit changes with AI-generated Conventional Commits messages |
-
 | [`/git-config`](#git-config) | Get, set, or list pi-git configuration values |
 
 ### `/git-agg-commit`
@@ -51,8 +50,10 @@ pi install /path/to/pi-git
 Automatically analyzes the working tree diff, splits changes into logical hunks, generates [Conventional Commits](https://www.conventionalcommits.org/) style messages, stages files, and creates commits — all in one shot.
 
 ```
-/git-agg-commit [--lang=<code>]
+/git-agg-commit [--lang=<code>] [--review]
 ```
+
+TurnLog conversation context is automatically accumulated across turns and injected into the AI prompt for higher-quality hunk splitting. See [docs](docs/accumulate-mode.md).
 
 ### `/git-config`
 
@@ -62,12 +63,18 @@ Gets, sets, or lists pi-git configuration values. Supports global (`~/.config/pi
 /git-config <key> [value] [--global] [--list] [--show-origin] [--keys] [--models] [--help]
 ```
 
+**Key settings**:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `lang` | `string` | `"en"` | Display and commit message language (`"en"` / `"ja"`) |
+| `analysis_model` | `string` | `""` | AI model for diff analysis |
+
 ---
 
 ## Documentation
 
-For detailed usage, options, keybindings, and behavior specifications, see:
-
+- **[TurnLog + Batch Commit Guide](docs/accumulate-mode.md)**
 - **[Command Reference (English)](docs/commands.md)**
 - **[コマンドリファレンス (日本語)](docs/commands.ja.md)**
 
