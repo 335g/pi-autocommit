@@ -149,6 +149,18 @@ export const messages = {
     "diffAnalyzer.buildPromptWithContext":
       '=== GIT DIFF (PRIMARY — this is what actually changed) ===\n```diff\n{diff}\n```\n\n=== CONVERSATION LOG (supplementary — use only to infer intent) ===\n{turnLogText}\n\nSplit the diff above into logical hunks. Use the conversation log ONLY to understand WHY changes were made, not to override the diff structure.\nWrite commit message subjects in English.\nRespond with ONLY a JSON array of hunks.',
 
+    // ── diff-analyzer.ts: intent-based system prompt ──────────
+    "diffAnalyzer.intentSystemPrompt":
+      'You are a commit decomposition engine. Split git diff changes into logical commits based on conversation history AND diff structure.\n\nINPUT:\n- CONVERSATION HISTORY: user requests + assistant responses + files changed per turn\n- NUMBERED DIFF HUNKS: each @@ block numbered [H1], [H2], ... for verification\n\nCORE TASK:\nFor each numbered diff hunk, decide:\n(a) Which conversation turn(s) it belongs to (if any)\n(b) Which other hunks form a logical commit with it\n(c) How confident you are in this grouping\n\nGROUPING RULES:\n1. Hunks that clearly belong to the same conversation intent → one commit group\n2. A single turn\'s request may produce multiple independent changes → split into separate groups (e.g., "add login AND fix README" → 2 groups)\n3. Related changes across multiple turns (same feature, iterative refinement) → merge into one group\n4. Diff hunks with NO clear conversation counterpart → group separately as "unexplained changes"\n5. Every diff hunk [HN] MUST be assigned to exactly one commit group\n\nCOMMIT MESSAGE RULES:\n- Conventional Commits: type(scope): subject (Japanese, imperative, ≤50 chars)\n- Generate from BOTH user request AND assistant response\n- When they differ, prefer assistant\'s description (what was ACTUALLY done)\n- Be specific — reference what changed in the diff\n- NEVER: "変更を適用", "ファイルを更新", "修正しました", "対応しました"\n\nCONFIDENCE LEVELS:\n- "high": all hunks in this group cleanly map to conversation turns\n- "medium": most hunks mapped, some inferred from diff structure\n- "low": this group contains primarily unexplained changes (catch-all)\n\nOUTPUT — return ONLY a JSON object (not an array):\n{\n  "overallConfidence": "high" | "medium" | "low",\n  "groups": [\n    {\n      "hunks": [1, 3],\n      "message": "feat(auth): ログインフォームにバリデーションを追加",\n      "confidence": "high",\n      "turnIndices": [1, 2]\n    },\n    {\n      "hunks": [5],\n      "message": "chore: ヘルパー関数を追加",\n      "confidence": "low",\n      "note": "会話ログに対応するターンなし"\n    }\n  ]\n}',
+
+    // ── diff-analyzer.ts: intent-based user prompt ────────────
+    "diffAnalyzer.intentBuildPrompt":
+      '=== CONVERSATION HISTORY ===\n{turnLogText}\n\n=== NUMBERED DIFF HUNKS ===\n{numberedHunksText}\n\n上記の会話履歴とdiff hunkに基づいて、コミットグループを作成してください。\n\n重要な判断基準:\n- 会話で意図された変更がdiffに現れているhunk → 会話の流れでグループ化\n- diffにはあるが会話で説明できないhunk → 別グループに（confidence: low）\n- 会話で言及されたがdiffにない変更は無視する（コミット対象外なので）\n- 同一ファイル内の異なるhunkが異なる会話ターンに対応する場合は分割する\n\nメッセージは実際に行われた変更（アシスタントの応答 + diff内容）を反映させること。\nユーザーの依頼が実際の変更と食い違っている場合は、実際の変更を優先すること。\n\nJSONオブジェクトのみを返してください。',
+
+    // ── diff-analyzer.ts: intent-based fallback notification ──
+    "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",
+    "diffAnalyzer.intentMediumConfidence": "一部の変更が会話ログと整合しません。--review での確認を推奨します。",
+
     // ── footer-manager.ts: accumulate mode ─────────────────────
     "footer.autoCommit.accumulate":
       "auto-commit: accumulate ({turns} turns) | {files} files",
@@ -334,6 +346,18 @@ export const messages = {
     // ── diff-analyzer.ts: extended user prompt (with TurnLog) ─
     "diffAnalyzer.buildPromptWithContext":
       '=== GIT DIFF（最優先 — 実際に変更された内容） ===\n```diff\n{diff}\n```\n\n=== 会話ログ（補助 — 変更の意図を理解するためだけに使用） ===\n{turnLogText}\n\n上記のdiffを論理的なhunkに分割してください。会話ログは変更の理由を理解するためだけに使用し、diffの構造を上書きしないでください。\nコミットメッセージのサブジェクトは必ず日本語で記述してください。\nJSON配列のみを返してください。',
+
+    // ── diff-analyzer.ts: intent-based system prompt ──────────
+    "diffAnalyzer.intentSystemPrompt":
+      'あなたはコミット分解エンジンです。会話履歴とdiff構造に基づいて、git diffの変更を論理的なコミットに分割してください。\n\n入力:\n- 会話履歴: ユーザー依頼 + アシスタント応答 + ターンごとの変更ファイル\n- 番号付きdiff hunk: 各@@ブロックに [H1], [H2], ... の番号を付与\n\n中心タスク:\n各番号付きdiff hunkについて、以下を決定する:\n(a) どの会話ターンに属するか（該当する場合）\n(b) 他のどのhunkと論理的なコミットを形成するか\n(c) このグループ化の確信度\n\nグループ化ルール:\n1. 同じ会話の意図に明らかに属するhunk → 1つのコミットグループ\n2. 単一ターンの依頼に複数の独立した変更が含まれる → 分割する（例: 「ログイン追加とREADME修正」→ 2グループ）\n3. 複数ターンに跨る関連変更（同じ機能の反復的改善） → 1つに統合\n4. 会話ログに明確な対応がないdiff hunk → 「説明不能な変更」として別グループに\n5. すべてのdiff hunk [HN] は必ずどこかのコミットグループに割り当てること\n\nコミットメッセージルール:\n- Conventional Commits: type(scope): subject （日本語、命令形、50文字以内）\n- ユーザー依頼とアシスタント応答の両方から生成する\n- 両者が食い違う場合は、アシスタントの説明（実際に行われたこと）を優先する\n- 具体的に — diffの変更内容を反映させる\n- 禁止: 「変更を適用」「ファイルを更新」「修正しました」「対応しました」\n\n確信度:\n- "high": このグループの全hunkが会話ターンに明確に対応\n- "medium": ほとんどのhunkが対応、一部はdiff構造から推測\n- "low": 主に説明不能な変更（catch-all）\n\n出力 — JSONオブジェクトのみを返す（配列ではない）:\n{\n  "overallConfidence": "high" | "medium" | "low",\n  "groups": [\n    {\n      "hunks": [1, 3],\n      "message": "feat(auth): ログインフォームにバリデーションを追加",\n      "confidence": "high",\n      "turnIndices": [1, 2]\n    },\n    {\n      "hunks": [5],\n      "message": "chore: ヘルパー関数を追加",\n      "confidence": "low",\n      "note": "会話ログに対応するターンなし"\n    }\n  ]\n}',
+
+    // ── diff-analyzer.ts: intent-based user prompt ────────────
+    "diffAnalyzer.intentBuildPrompt":
+      '=== 会話履歴 ===\n{turnLogText}\n\n=== 番号付きDIFF HUNK ===\n{numberedHunksText}\n\n上記の会話履歴とdiff hunkに基づいて、コミットグループを作成してください。\n\n重要な判断基準:\n- 会話で意図された変更がdiffに現れているhunk → 会話の流れでグループ化\n- diffにはあるが会話で説明できないhunk → 別グループに（confidence: low）\n- 会話で言及されたがdiffにない変更は無視する（コミット対象外なので）\n- 同一ファイル内の異なるhunkが異なる会話ターンに対応する場合は分割する\n\nメッセージは実際に行われた変更（アシスタントの応答 + diff内容）を反映させること。\nユーザーの依頼が実際の変更と食い違っている場合は、実際の変更を優先すること。\n\nJSONオブジェクトのみを返してください。',
+
+    // ── diff-analyzer.ts: intent-based fallback notification ──
+    "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",
+    "diffAnalyzer.intentMediumConfidence": "一部の変更が会話ログと整合しません。--review での確認を推奨します。",
 
     // ── footer-manager.ts: accumulate mode ─────────────────────
     "footer.autoCommit.accumulate":
