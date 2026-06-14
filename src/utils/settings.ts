@@ -89,9 +89,11 @@ export const DEFAULT_SETTINGS: PiGitSettings = {
 
 export const GLOBAL_CONFIG_DIR = join(homedir(), ".config", "pi-git");
 export const GLOBAL_SETTINGS_FILE = join(GLOBAL_CONFIG_DIR, "settings.json");
-const LOCAL_SETTINGS_FILE = "pi-git.toml";
+const LOCAL_SETTINGS_FILE = "config.toml";
 const LOCAL_SETTINGS_DIR = ".pi-git";
 const LEGACY_LOCAL_PATH = join(".pi-git", "settings.json");
+/** Legacy root-level config file — read if .pi-git/config.toml doesn't exist */
+const LEGACY_ROOT_CONFIG = "pi-git.toml";
 
 // ───────────────────────────────────────────────
 // File I/O helpers
@@ -123,7 +125,7 @@ export function getLocalSettingsPath(cwd?: string): string | null {
     if (existsSync(newPath)) return newPath;
 
     // Fall back to repo-root pi-git.toml (legacy location)
-    const legacyPath = join(repoRoot, LOCAL_SETTINGS_FILE);
+    const legacyPath = join(repoRoot, LEGACY_ROOT_CONFIG);
     if (existsSync(legacyPath)) return legacyPath;
 
     // Return the new path as default for new repos
@@ -299,7 +301,7 @@ export function saveGlobalSettings(settings: Partial<PiGitSettings>): void {
  * @returns The written path, or null if not inside a git repo.
  */
 export function initLocalSettings(cwdOrPath?: string): string | null {
-  const localPath = cwdOrPath?.endsWith("pi-git.toml")
+  const localPath = cwdOrPath?.endsWith("config.toml") || cwdOrPath?.endsWith("pi-git.toml")
     ? cwdOrPath
     : getLocalSettingsPath(cwdOrPath);
   if (!localPath) return null;
