@@ -672,10 +672,7 @@ export async function analyzeDiffIntent(
 
   // Parse diff into numbered hunks
   const diffHunks = parseDiffHunks(diff);
-  if (diffHunks.length === 0) {
-    console.warn("[pi-git] analyzeDiffIntent: no diff hunks found");
-    return null;
-  }
+  if (diffHunks.length === 0) return null;
 
   const numberedHunksText = formatNumberedHunks(diffHunks);
 
@@ -691,45 +688,10 @@ export async function analyzeDiffIntent(
       temperature: 0,
     });
 
-    if (!result) {
-      console.warn("[pi-git] analyzeDiffIntent: AI returned null (no model/auth?)");
-      // Write debug file for null case
-      try {
-        const debugDir = join(tmpdir(), "pi-git-debug");
-        mkdirSync(debugDir, { recursive: true });
-        writeFileSync(
-          join(debugDir, `ai-null-${Date.now()}.txt`),
-          `aiComplete returned null.\nPrompt length: ${userMessage.length} chars`,
-          "utf-8",
-        );
-      } catch { /* ignore */ }
-      return null;
-    }
-
-    console.log(
-      `[pi-git] analyzeDiffIntent: AI response (${result.text.length} chars, ` +
-      `model=${result.model.provider}/${result.model.id})`,
-    );
-
-    // Write AI response to debug file for post-session inspection
-    try {
-      const debugDir = join(tmpdir(), "pi-git-debug");
-      mkdirSync(debugDir, { recursive: true });
-      writeFileSync(
-        join(debugDir, `ai-response-${Date.now()}.txt`),
-        `=== PROMPT ===\n${userMessage}\n\n=== RESPONSE ===\n${result.text}`,
-        "utf-8",
-      );
-    } catch { /* best-effort debug logging */ }
+    if (!result) return null;
 
     const grouping = parseHunkGroupingResult(result.text);
-    if (!grouping) {
-      console.warn(
-        `[pi-git] analyzeDiffIntent: parseHunkGroupingResult FAILED. ` +
-        `Response (first 300 chars): ${result.text.substring(0, 300)}`,
-      );
-      return null;
-    }
+    if (!grouping) return null;
 
     // Enrich DiffHunkRef with file paths from the parsed DiffHunk array
     const hunkMap = new Map<number, DiffHunk>();
