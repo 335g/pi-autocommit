@@ -34,6 +34,15 @@ const FILES_PER_BATCH = 8;
 /** Maximum output tokens for the AI completion (hunk JSON can be large with many indices) */
 const MAX_OUTPUT_TOKENS = 2048;
 
+/** Maximum output tokens for intent-based analysis (richer JSON with confidence/turnIndices/notes) */
+const MAX_OUTPUT_TOKENS_INTENT = 4096;
+
+/** Maximum hunks per intent analysis batch (prevents context window overflow for large diffs) */
+const MAX_HUNKS_PER_INTENT_BATCH = 50;
+
+/** Maximum prompt chars before truncating TurnLog text in intent analysis */
+const MAX_INTENT_PROMPT_CHARS = 20_000;
+
 function getSystemPrompt(lang: string): string {
   return t(lang, "diffAnalyzer.systemPrompt");
 }
@@ -430,16 +439,20 @@ export function parseHunkGroupingResult(text: string): HunkGroupingResult | null
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  // Try tagged-line format first
-  const tagged = tryParseTaggedFormat(trimmed);
-  if (tagged) return tagged;
-
-  // Fallback: try JSON parsing (AI might have ignored format instructions)
+  // Layer 1 (PRIMARY): JSON format
   const json = tryParseJSONFormat(trimmed);
-  if (json) return json;
+  if (json) { diagIncr("parseLayer1_jsonPrimary"); return json; }
 
-  // Last resort: try to extract any OVERALL line and COMMIT blocks using heuristics
-  return tryParseHeuristic(trimmed);
+  // Layer 2 (FALLBACK): tagged-line format (backward compat)
+  const tagged = tryParseTaggedFormat(trimmed);
+  if (tagged) { diagIncr("parseLayer2_taggedFallback"); return tagged; }
+
+  // Layer 3 (LAST RESORT): heuristic extraction
+  const heuristic = tryParseHeuristic(trimmed);
+  if (heuristic) { diagIncr("parseLayer3_heuristicFallback"); return heuristic; }
+
+  diagIncr("parseFailure_allLayers");
+  return null;
 }
 
 /** Parse tagged-line format */
@@ -674,17 +687,33 @@ export async function analyzeDiffIntent(
   const diffHunks = parseDiffHunks(diff);
   if (diffHunks.length === 0) return null;
 
+  // Guard: if too many hunks, batch them
+  if (diffHunks.length > MAX_HUNKS_PER_INTENT_BATCH) {
+    diagIncr("intentPath_batched");
+    return await analyzeDiffIntentBatched(
+      _pi, ctx, diffHunks, turnLogText, lang, MAX_HUNKS_PER_INTENT_BATCH,
+    );
+  }
+
+  let truncatedTurnLog = turnLogText;
   const numberedHunksText = formatNumberedHunks(diffHunks);
+  const estimatedPromptSize = numberedHunksText.length + turnLogText.length + 3000;
+  if (estimatedPromptSize > MAX_INTENT_PROMPT_CHARS) {
+    diagIncr("intentPath_promptTruncated");
+    truncatedTurnLog = turnLogText.substring(
+      0, MAX_INTENT_PROMPT_CHARS - numberedHunksText.length - 3000,
+    );
+  }
 
   // Build prompt
   const systemPrompt = getIntentSystemPrompt(lang);
-  const userMessage = buildIntentPrompt(turnLogText, numberedHunksText, lang);
+  const userMessage = buildIntentPrompt(truncatedTurnLog, numberedHunksText, lang);
 
   try {
     const result = await aiComplete(ctx, {
       systemPrompt,
       userMessage,
-      maxTokens: MAX_OUTPUT_TOKENS,
+      maxTokens: MAX_OUTPUT_TOKENS_INTENT,
       temperature: 0,
     });
 
@@ -710,6 +739,73 @@ export async function analyzeDiffIntent(
   } catch {
     return null;
   }
+}
+
+/**
+ * Batch intent-based analysis for diffs with too many hunks.
+ * Splits hunks into batches of batchSize, analyzes each independently,
+ * and merges the results. Returns null if any batch fails.
+ */
+async function analyzeDiffIntentBatched(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  allHunks: DiffHunk[],
+  turnLogText: string,
+  lang: string,
+  batchSize: number,
+): Promise<HunkGroupingResult | null> {
+  const allGroups: CommitGroup[] = [];
+  let overallConfidence: "high" | "medium" | "low" = "high";
+
+  for (let i = 0; i < allHunks.length; i += batchSize) {
+    const batch = allHunks.slice(i, i + batchSize);
+    const numberedText = formatNumberedHunks(batch);
+
+    const systemPrompt = getIntentSystemPrompt(lang);
+    const userMessage = buildIntentPrompt(turnLogText, numberedText, lang);
+
+    try {
+      const result = await aiComplete(ctx, {
+        systemPrompt,
+        userMessage,
+        maxTokens: MAX_OUTPUT_TOKENS_INTENT,
+        temperature: 0,
+      });
+
+      if (!result) return null;
+
+      const grouping = parseHunkGroupingResult(result.text);
+      if (!grouping) return null;
+
+      allGroups.push(...grouping.groups);
+
+      // Merge confidence conservatively
+      if (grouping.overallConfidence === "low") {
+        overallConfidence = "low";
+      } else if (
+        grouping.overallConfidence === "medium" &&
+        overallConfidence !== "low"
+      ) {
+        overallConfidence = "medium";
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  // Enrich DiffHunkRef with file paths
+  const hunkMap = new Map<number, DiffHunk>();
+  for (const h of allHunks) {
+    hunkMap.set(h.globalIndex, h);
+  }
+  for (const group of allGroups) {
+    for (const ref of group.hunks) {
+      const h = hunkMap.get(ref.globalIndex);
+      if (h) ref.file = h.file;
+    }
+  }
+
+  return { overallConfidence, groups: allGroups };
 }
 
 /**
