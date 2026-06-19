@@ -157,6 +157,12 @@ export const messages = {
     "diffAnalyzer.intentBuildPrompt":
       '=== NUMBERED DIFF HUNKS (PRIMARY — these are the only hunks you can group) ===\n{numberedHunksText}\n\n=== CONVERSATION HISTORY (SUPPLEMENTARY — includes original system/user prompts when available, use only to infer grouping intent) ===\n{turnLogText}\n\nIMPORTANT:\n- Follow all rules from the system instructions (grouping, confidence levels, forbidden messages, message format).\n- Every hunk [H1]..[HN] MUST appear in exactly one group. Do not skip or duplicate hunks.\n- If the conversation mentions a change not in the diff, ignore it.\n- If the diff contains changes not in the conversation, group them separately with confidence: "low" and turnIndices: [].\n- The number of groups in the examples is illustrative — output as many as needed.\n\nYour entire response must be a single valid JSON object that can be parsed by JSON.parse(). No code fences, no markdown, no explanations.',
 
+    // ── diff-analyzer.ts: cheap-model hunk message generation ──
+    "diffAnalyzer.cheapModelSystemPrompt":
+      'You are a commit message generator for one small group of related file changes.\n\nRules:\n- Output exactly ONE Conventional Commit subject line\n- Type: feat, fix, docs, style, refactor, test, chore\n- Subject: imperative mood, under 50 chars, in English\n- Use specific words that appear in the diff\n- NEVER generate vague messages like "update files", "apply changes", "modify code"\n\nReturn ONLY the subject line. No JSON, no explanation, no code fences.',
+    "diffAnalyzer.cheapModelBuildPrompt":
+      'Changed files: {files}\n\n```diff\n{diffSnippet}\n```\n\nGenerate exactly one Conventional Commit subject line for these changes.',
+
     // ── diff-analyzer.ts: intent-based fallback notification ──
     "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",
     "diffAnalyzer.intentMediumConfidence": "一部の変更が会話ログと整合しません。--review での確認を推奨します。",
@@ -365,6 +371,12 @@ export const messages = {
     // ── diff-analyzer.ts: intent-based user prompt ────────────
     "diffAnalyzer.intentBuildPrompt":
       '=== 番号付きDIFF HUNK（最優先 — グループ化できるのはこれらのみ） ===\n{numberedHunksText}\n\n=== 会話履歴（補助 — 利用可能な場合は元のsystem/userプロンプトを含みます。グループ化の意図推測にのみ使用） ===\n{turnLogText}\n\n重要:\n- システム指示の全ルール（グループ化、信頼度、禁止メッセージ、メッセージ形式）に従ってください。\n- すべてのhunk [H1]..[HN] を必ずいずれかのグループに割り当ててください。スキップや重複は禁止です。\n- 会話で言及されていてもdiffにない変更は無視してください。\n- diffにあるが会話で説明できない変更は別グループにし、confidence: "low"、turnIndices: [] を設定してください。\n- 例に示すグループ数は参考であり、必要に応じて増減してください。\n\n応答全体がJSONとしてパース可能な単一の有効なJSONオブジェクトでなければなりません。コードフェンス、マークダウン、説明は一切不要です。',
+
+    // ── diff-analyzer.ts: 貧弱モデル向けhunkメッセージ生成 ──
+    "diffAnalyzer.cheapModelSystemPrompt":
+      'あなたは、関連するファイル変更グループ1つに対するコミットメッセージ生成ツールです。\n\nルール:\n- Conventional Commitのサブジェクトを1行だけ出力する\n- type: feat, fix, docs, style, refactor, test, chore から選択\n- サブジェクトは日本語、命令形、50文字以内\n- diffに含まれる具体的な単語を使う\n- 「ファイルを更新」「変更を適用」「修正しました」などの曖昧な表現は禁止\n\nサブジェクト行のみを返してください。JSON、説明、コードフェンスは不要。',
+    "diffAnalyzer.cheapModelBuildPrompt":
+      '変更ファイル: {files}\n\n```diff\n{diffSnippet}\n```\n\n上記の変更に対する Conventional Commit のサブジェクトを1行だけ生成してください。',
 
     // ── diff-analyzer.ts: intent-based fallback notification ──
     "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",
