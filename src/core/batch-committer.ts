@@ -265,6 +265,20 @@ export async function batchCommit(
 
   const turnLogText = turnLog.formatForPrompt();
 
+  // Track whether stored prompts were available for this batch commit
+  const entries = turnLog.getEntries();
+  let hasStoredSystemPrompt = false;
+  let hasStoredUserPrompt = false;
+  for (const entry of entries) {
+    if (entry.systemPrompt) hasStoredSystemPrompt = true;
+    if (entry.rawUserPrompt) hasStoredUserPrompt = true;
+  }
+  if (hasStoredSystemPrompt) diagIncr("intentPath_storedSystemPromptUsed");
+  if (hasStoredUserPrompt) diagIncr("intentPath_storedUserPromptUsed");
+  if (!hasStoredSystemPrompt && !hasStoredUserPrompt) {
+    diagIncr("intentPath_storedPromptsMissing");
+  }
+
   let result: {
     committed: number;
     failed: number;

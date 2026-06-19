@@ -6,10 +6,18 @@ pi-git は各 `agent_end` で会話ログ（TurnLog）を自動蓄積し、`/git
 
 ### TurnLog の蓄積
 
-- 各 `agent_end` で、ターンのユーザーメッセージ・アシスタント応答・変更ファイルが TurnLog に自動蓄積されます
+- 各 `agent_end` で、ターンの以下の情報が TurnLog に自動蓄積されます
+  - ユーザーメッセージ（要約版）
+  - アシスタント応答の抜粋
+  - 変更ファイル一覧
+  - **元の system プロンプト**（`before_agent_start` から取得）
+  - **元の user プロンプト**（`before_agent_start` から取得）
 - TurnLog はセッションスコープのインメモリデータで、`session_start` で初期化されます
 - セッションを切り替えると TurnLog はリセットされます
-- 最大 20 ターン、AI プロンプト予算 8KB の制限があります
+- 最大 20 ターン、AI プロンプト予算 12KB の制限があります
+  - system プロンプトはエントリあたり最大 1,000 文字
+  - user プロンプトはエントリあたり最大 1,500 文字
+  - 超過分は切り詰められます
 
 ### Footer 表示
 
@@ -29,7 +37,9 @@ pi-git は各 `agent_end` で会話ログ（TurnLog）を自動蓄積し、`/git
 4. 各 Hunk を順次コミット
 5. TurnLog をクリア
 
-AI プロンプトの優先順位: **diff（最優先） > ファイル共起 > TurnLog Files > TurnLog 会話テキスト**
+AI プロンプトの優先順位: **diff（最優先） > ファイル共起 > TurnLog Files > TurnLog 会話テキスト > 元の system/user プロンプト**
+
+分析用の system prompt は固定の命令を維持し、保存された元の system/user プロンプトは「会話履歴」セクション内に含めて補足情報として利用します。
 
 `/git-agg-commit --review` を付けると、コミット前にインタラクティブな Hunk レビュー画面が表示されます。
 
@@ -51,6 +61,7 @@ AI プロンプトの優先順位: **diff（最優先） > ファイル共起 > 
 - 8 ファイル以上の大きな diff では全 TurnLog が全バッチに送られます（部分フィルタ未実装）
 - `session_shutdown` での自動コミットは未実装
 - 確認ダイアログでの TurnLog 抜粋表示は未実装
+- 元の system/user プロンプトは `before_agent_start` イベントから取得します。`agent_end` までの間にセッションが切り替わるなど、対応する `before_agent_start` が失われた場合はプロンプトが記録されません
 
 ## トラブルシューティング
 

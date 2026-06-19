@@ -39,6 +39,18 @@ export interface DiagSnapshot {
   intentPath_promptTruncated: number;
   /** AI grouping skipped for cheap model */
   cheapModel_skippedAI: number;
+  /** Stored system prompt was available in TurnLog */
+  intentPath_storedSystemPromptUsed: number;
+  /** Stored raw user prompt was available in TurnLog */
+  intentPath_storedUserPromptUsed: number;
+  /** No stored prompts were available in TurnLog */
+  intentPath_storedPromptsMissing: number;
+
+  // ── TurnLog management ───────────────────────────────────────
+  /** TurnLog was automatically cleared because working tree was clean on session_start */
+  turnLog_autoClearedOnCleanStart: number;
+  /** TurnLog was manually cleared via /git-clear-turnlog */
+  turnLog_manuallyCleared: number;
 
   // ── confidence verification ───────────────────────────────────
   /** Overall confidence downgraded to "low" (>50% low-confidence hunks) */
@@ -78,6 +90,12 @@ const counters: DiagSnapshot = {
   intentPath_batched: 0,
   intentPath_promptTruncated: 0,
   cheapModel_skippedAI: 0,
+  intentPath_storedSystemPromptUsed: 0,
+  intentPath_storedUserPromptUsed: 0,
+  intentPath_storedPromptsMissing: 0,
+
+  turnLog_autoClearedOnCleanStart: 0,
+  turnLog_manuallyCleared: 0,
 
   confidenceDowngrade_overconfidentModel: 0,
   confidenceDowngrade_highToMedium: 0,

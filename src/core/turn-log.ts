@@ -33,12 +33,16 @@ import {
 export interface TurnEntry {
   /** Turn index (1-based) */
   index: number;
-  /** User's message — tail-truncated */
+  /** User's message — tail-truncated and stripped of conversational markers */
   userMessage: string;
   /** Assistant's first meaningful excerpt */
   assistantExcerpt: string;
   /** Files changed during this turn (REQUIRED for AI correlation) */
   filesChanged: string[];
+  /** System prompt effective during this turn */
+  systemPrompt?: string;
+  /** Raw user prompt text (before marker stripping) */
+  rawUserPrompt?: string;
 }
 
 /** On-disk representation of TurnLog state */
@@ -60,7 +64,7 @@ const TURN_LOG_DIR = ".pi-git";
  */
 export class TurnLog {
   static readonly MAX_ENTRIES = 20;
-  static readonly MAX_CHARS = 8_000;
+  static readonly MAX_CHARS = 12_000;
 
   private entries: TurnEntry[] = [];
   private turnIndex = 0;
@@ -126,8 +130,16 @@ export class TurnLog {
    * Called from agent_end handler on every turn.
    *
    * Persists to disk synchronously after appending (file is small, <20KB).
+   *
+   * @param systemPrompt - System prompt effective during this turn (optional)
+   * @param rawUserPrompt - Raw user prompt text before processing (optional)
    */
-  append(event: AgentEndEvent, changedFiles: string[]): void {
+  append(
+    event: AgentEndEvent,
+    changedFiles: string[],
+    systemPrompt?: string,
+    rawUserPrompt?: string,
+  ): void {
     this.turnIndex++;
 
     const messages = (event.messages ?? []) as SimpleMessage[];
@@ -140,6 +152,9 @@ export class TurnLog {
     const assistantMessages = collectMessagesByRole(messages, "assistant");
     const assistantMsg = assistantMessages[0] ?? "";
 
+    // Fallback: if caller did not provide raw user prompt, use the original user message
+    const finalRawUserPrompt = rawUserPrompt ?? userMsg;
+
     this.entries.push({
       index: this.turnIndex,
       userMessage: tailTruncate(
@@ -151,6 +166,12 @@ export class TurnLog {
         500,
       ),
       filesChanged: changedFiles.slice(0, 20),
+      systemPrompt: systemPrompt
+        ? tailTruncate(systemPrompt, 1000)
+        : undefined,
+      rawUserPrompt: finalRawUserPrompt
+        ? tailTruncate(finalRawUserPrompt, 1500)
+        : undefined,
     });
 
     // Enforce budget: keep most recent entries
@@ -214,6 +235,14 @@ export class TurnLog {
         `【応答】${e.assistantExcerpt}`,
       ];
 
+      // Original prompts section (when available)
+      if (e.systemPrompt || e.rawUserPrompt) {
+        const promptParts: string[] = [];
+        if (e.systemPrompt) promptParts.push(`System: ${e.systemPrompt}`);
+        if (e.rawUserPrompt) promptParts.push(`User: ${e.rawUserPrompt}`);
+        parts.push(`【プロンプト】${promptParts.join(" | ")}`);
+      }
+
       // File section with new/continued annotation
       const fileParts: string[] = [];
       if (inc.newFiles.length > 0) {
@@ -236,6 +265,32 @@ export class TurnLog {
     }
 
     return lines.join("\n\n");
+  }
+
+  /** Get entries for external consumers (e.g., heuristic grouping) */
+  getEntries(): TurnEntry[] {
+    return this.entries;
+  }
+
+  /**
+   * Compute file co-occurrence scores from TurnLog entries.
+   * Returns a Map of "fileA::fileB" → co-occurrence count.
+   * Files in each pair are sorted alphabetically for stable keys.
+   */
+  getFileCooccurrence(): Map<string, number> {
+    const scores = new Map<string, number>();
+
+    for (const entry of this.entries) {
+      const files = entry.filesChanged;
+      for (let i = 0; i < files.length; i++) {
+        for (let j = i + 1; j < files.length; j++) {
+          const key = [files[i], files[j]].sort().join("::");
+          scores.set(key, (scores.get(key) || 0) + 1);
+        }
+      }
+    }
+
+    return scores;
   }
 
   /**
@@ -346,8 +401,8 @@ export class TurnLog {
 
     const obj = data as Record<string, unknown>;
 
-    // Version check
-    if (obj.version !== 1) {
+    // Version check — accept both v1 (legacy) and v2 (with prompt fields)
+    if (obj.version !== 1 && obj.version !== 2) {
       console.warn(
         `[pi-git] Unsupported turn-log.json version: ${obj.version} — starting fresh`,
       );
@@ -404,7 +459,7 @@ export class TurnLog {
       mkdirSync(dir, { recursive: true, mode: 0o755 });
 
       const data: PersistedTurnLog = {
-        version: 1,
+        version: 2,
         turnIndex: this.turnIndex,
         warnNotified: this._warnNotified,
         entries: this.entries,

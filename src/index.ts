@@ -6,6 +6,13 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AgentEndEvent } from "./types.js";
+
+/** Pending prompts captured from before_agent_start, consumed by agent_end */
+const pendingPrompts: Array<{ prompt: string; systemPrompt: string }> = [];
+
+function clearPendingPrompts(): void {
+  pendingPrompts.length = 0;
+}
 import { handleAggCommit } from "./commands/agg-commit.js";
 import { handleConfig } from "./commands/config.js";
 import { handleDiagnostics } from "./commands/diagnostics.js";
@@ -23,6 +30,9 @@ import {
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     try {
+      // Reset cross-session prompt capture state
+      clearPendingPrompts();
+
       if (ctx.hasUI) {
         turnLog.initialize(ctx.cwd); // load persisted TurnLog from disk
         footerManager.initialize(pi, ctx.ui, ctx.cwd);
@@ -31,6 +41,17 @@ export default function (pi: ExtensionAPI) {
       }
     } catch {
       // Silently ignore initialization errors to prevent unhandled rejections
+    }
+  });
+
+  pi.on("before_agent_start", (event) => {
+    try {
+      pendingPrompts.push({
+        prompt: event.prompt,
+        systemPrompt: event.systemPrompt,
+      });
+    } catch {
+      // Silently ignore prompt capture errors
     }
   });
 
@@ -108,7 +129,13 @@ export default function (pi: ExtensionAPI) {
 
       if (changedFiles.length === 0) return;
 
-      turnLog.append(event as AgentEndEvent, changedFiles);
+      const prompts = pendingPrompts.shift();
+      turnLog.append(
+        event as AgentEndEvent,
+        changedFiles,
+        prompts?.systemPrompt,
+        prompts?.prompt,
+      );
       footerManager.setBatchStatus(
         turnLog.turnCount,
         turnLog.totalFilesChanged,

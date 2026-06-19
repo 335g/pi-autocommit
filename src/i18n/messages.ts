@@ -155,7 +155,7 @@ export const messages = {
 
     // ── diff-analyzer.ts: intent-based user prompt ────────────
     "diffAnalyzer.intentBuildPrompt":
-      '=== NUMBERED DIFF HUNKS (PRIMARY — these are the only hunks you can group) ===\n{numberedHunksText}\n\n=== CONVERSATION HISTORY (SUPPLEMENTARY — use only to infer grouping intent) ===\n{turnLogText}\n\nIMPORTANT:\n- Follow all rules from the system instructions (grouping, confidence levels, forbidden messages, message format).\n- Every hunk [H1]..[HN] MUST appear in exactly one group. Do not skip or duplicate hunks.\n- If the conversation mentions a change not in the diff, ignore it.\n- If the diff contains changes not in the conversation, group them separately with confidence: "low" and turnIndices: [].\n- The number of groups in the examples is illustrative — output as many as needed.\n\nYour entire response must be a single valid JSON object that can be parsed by JSON.parse(). No code fences, no markdown, no explanations.',
+      '=== NUMBERED DIFF HUNKS (PRIMARY — these are the only hunks you can group) ===\n{numberedHunksText}\n\n=== CONVERSATION HISTORY (SUPPLEMENTARY — includes original system/user prompts when available, use only to infer grouping intent) ===\n{turnLogText}\n\nIMPORTANT:\n- Follow all rules from the system instructions (grouping, confidence levels, forbidden messages, message format).\n- Every hunk [H1]..[HN] MUST appear in exactly one group. Do not skip or duplicate hunks.\n- If the conversation mentions a change not in the diff, ignore it.\n- If the diff contains changes not in the conversation, group them separately with confidence: "low" and turnIndices: [].\n- The number of groups in the examples is illustrative — output as many as needed.\n\nYour entire response must be a single valid JSON object that can be parsed by JSON.parse(). No code fences, no markdown, no explanations.',
 
     // ── diff-analyzer.ts: intent-based fallback notification ──
     "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",
@@ -353,7 +353,7 @@ export const messages = {
 
     // ── diff-analyzer.ts: intent-based user prompt ────────────
     "diffAnalyzer.intentBuildPrompt":
-      '=== 番号付きDIFF HUNK（最優先 — グループ化できるのはこれらのみ） ===\n{numberedHunksText}\n\n=== 会話履歴（補助 — グループ化の意図推測にのみ使用） ===\n{turnLogText}\n\n重要:\n- システム指示の全ルール（グループ化、信頼度、禁止メッセージ、メッセージ形式）に従ってください。\n- すべてのhunk [H1]..[HN] を必ずいずれかのグループに割り当ててください。スキップや重複は禁止です。\n- 会話で言及されていてもdiffにない変更は無視してください。\n- diffにあるが会話で説明できない変更は別グループにし、confidence: "low"、turnIndices: [] を設定してください。\n- 例に示すグループ数は参考であり、必要に応じて増減してください。\n\n応答全体がJSONとしてパース可能な単一の有効なJSONオブジェクトでなければなりません。コードフェンス、マークダウン、説明は一切不要です。',
+      '=== 番号付きDIFF HUNK（最優先 — グループ化できるのはこれらのみ） ===\n{numberedHunksText}\n\n=== 会話履歴（補助 — 利用可能な場合は元のsystem/userプロンプトを含みます。グループ化の意図推測にのみ使用） ===\n{turnLogText}\n\n重要:\n- システム指示の全ルール（グループ化、信頼度、禁止メッセージ、メッセージ形式）に従ってください。\n- すべてのhunk [H1]..[HN] を必ずいずれかのグループに割り当ててください。スキップや重複は禁止です。\n- 会話で言及されていてもdiffにない変更は無視してください。\n- diffにあるが会話で説明できない変更は別グループにし、confidence: "low"、turnIndices: [] を設定してください。\n- 例に示すグループ数は参考であり、必要に応じて増減してください。\n\n応答全体がJSONとしてパース可能な単一の有効なJSONオブジェクトでなければなりません。コードフェンス、マークダウン、説明は一切不要です。',
 
     // ── diff-analyzer.ts: intent-based fallback notification ──
     "diffAnalyzer.intentLowConfidence": "会話ログとdiffの乖離が大きいため、diffベースの分割に切り替えます。",

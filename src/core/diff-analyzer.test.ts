@@ -11,6 +11,7 @@ import {
   parseDiffHunks,
   formatNumberedHunks,
   validateHunkCoverage,
+  buildIntentPrompt,
 } from "./diff-analyzer.js";
 import type { DiffHunk, CommitGroup } from "../types.js";
 
@@ -347,5 +348,41 @@ describe("integration: parse → format → coverage", () => {
     assert.equal(validated.length, 2);
     // No catch-all needed
     assert.ok(validated.every((g) => g.confidence !== "low" || g.note));
+  });
+});
+
+// ───────────────────────────────────────────────
+// Prompt integration
+// ───────────────────────────────────────────────
+
+describe("buildIntentPrompt prompt integration", () => {
+  it("includes conversation history section", () => {
+    const turnLogText = "### Turn 1\n【依頼】add login\n【応答】added login\n【ファイル】a.ts";
+    const numberedHunks = "[H1] src/auth/login.ts: add form";
+    const prompt = buildIntentPrompt(turnLogText, numberedHunks, "en");
+
+    assert.ok(prompt.includes("=== CONVERSATION HISTORY"));
+    assert.ok(prompt.includes(turnLogText));
+    assert.ok(prompt.includes("=== NUMBERED DIFF HUNKS"));
+    assert.ok(prompt.includes(numberedHunks));
+  });
+
+  it("includes prompt marker when stored prompts are present", () => {
+    const turnLogText =
+      "### Turn 1\n【依頼】add login\n【応答】added login\n【プロンプト】System: sys | User: raw\n【ファイル】a.ts";
+    const numberedHunks = "[H1] src/auth/login.ts: add form";
+    const prompt = buildIntentPrompt(turnLogText, numberedHunks, "en");
+
+    assert.ok(prompt.includes("【プロンプト】"), "should preserve prompt marker");
+    assert.ok(prompt.includes("System: sys"), "should include system prompt");
+    assert.ok(prompt.includes("User: raw"), "should include raw user prompt");
+  });
+
+  it("mentions original prompts in the conversation history header", () => {
+    const prompt = buildIntentPrompt("turn log text", "hunks text", "en");
+    assert.ok(
+      prompt.includes("includes original system/user prompts when available"),
+      "should note that original prompts may be included",
+    );
   });
 });

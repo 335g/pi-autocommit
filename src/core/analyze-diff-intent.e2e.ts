@@ -17,7 +17,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 
-import { parseDiffHunks, formatNumberedHunks, parseHunkGroupingResult } from "./diff-analyzer.js";
+import {
+  parseDiffHunks,
+  formatNumberedHunks,
+  parseHunkGroupingResult,
+  getIntentSystemPrompt,
+  buildIntentPrompt,
+} from "./diff-analyzer.js";
 import { turnLog } from "./turn-log.js";
 import type { AgentEndEvent } from "../types.js";
 
@@ -61,6 +67,8 @@ export function LoginForm() {
       "login.tsxにログインフォームコンポーネントを、api.tsに認証APIクライアントを作成しました。",
     ),
     ["src/auth/login.ts", "src/auth/api.ts"],
+    "あなたはReact + TypeScriptのコーディングアシスタントです。",
+    "ログインフォームを作成してください。API接続も含めて実装して。",
   );
 
   execSync("git add -A", { cwd: root });
@@ -102,6 +110,8 @@ export function LoginForm() {
       "validation.tsを追加し、login.tsにバリデーションロジックを組み込みました。READMEの説明も修正しました。",
     ),
     ["src/auth/validation.ts", "src/auth/login.ts"],
+    "あなたはReact + TypeScriptのコーディングアシスタントです。",
+    "入力バリデーションを追加してください。ついでにREADMEの誤字も修正して。",
   );
 
   // ── Simulate a human edit: someone manually tweaked the API file ──
@@ -185,12 +195,12 @@ async function main() {
       console.log("(use --call-ai to actually call the AI)");
 
       // Show the exact system prompt
-      const systemPrompt = getIntentSystemPrompt();
+      const systemPrompt = getIntentSystemPrompt("ja");
       console.log(`\n=== SYSTEM (${systemPrompt.length} chars) ===`);
       console.log(systemPrompt.substring(0, 500) + "...");
 
       // Show the user prompt
-      const userPrompt = buildIntentPrompt(turnLogText, numberedHunks);
+      const userPrompt = buildIntentPrompt(turnLogText, numberedHunks, "ja");
       console.log(`\n=== USER PROMPT (${userPrompt.length} chars) ===`);
       console.log(userPrompt.substring(0, 1000) + "...");
     }
@@ -202,58 +212,6 @@ async function main() {
   } finally {
     cleanup();
   }
-}
-
-function getIntentSystemPrompt(): string {
-  // Minimal inline copy of the intent system prompt for standalone use
-  return `You are a commit decomposition engine. Split git diff changes into logical
-commits based on conversation history AND diff structure.
-
-INPUT:
-- CONVERSATION HISTORY: user requests + assistant responses + files changed per turn
-- NUMBERED DIFF HUNKS: each @@ block numbered [H1], [H2], ... for verification
-
-CORE TASK:
-For each numbered diff hunk, decide:
-(a) Which conversation turn(s) it belongs to (if any)
-(b) Which other hunks form a logical commit with it
-(c) How confident you are in this grouping
-
-GROUPING RULES:
-1. Hunks that clearly belong to the same conversation intent → one commit group
-2. A single turn's request may produce multiple independent changes → split
-3. Related changes across multiple turns → merge into one group
-4. Diff hunks with NO clear conversation counterpart → group separately
-
-COMMIT MESSAGE RULES:
-- Conventional Commits: type(scope): subject (Japanese, imperative, ≤50 chars)
-- Generate from BOTH user request AND assistant response
-- When they differ, prefer assistant's description (what was ACTUALLY done)
-
-CONFIDENCE LEVELS:
-- "high": all hunks in this group cleanly map to conversation turns
-- "medium": most hunks mapped, some inferred from diff structure
-- "low": this group contains primarily unexplained changes (catch-all)`;
-}
-
-function buildIntentPrompt(turnLogText: string, numberedHunks: string): string {
-  return `=== CONVERSATION HISTORY ===
-${turnLogText}
-
-=== NUMBERED DIFF HUNKS ===
-${numberedHunks}
-
-上記の会話履歴とdiff hunkに基づいて、コミットグループを作成してください。
-
-重要な判断基準:
-- 会話で意図された変更がdiffに現れているhunk → 会話の流れでグループ化
-- diffにはあるが会話で説明できないhunk → 別グループに（confidence: low）
-- 会話で言及されたがdiffにない変更は無視する
-- 同一ファイル内の異なるhunkが異なる会話ターンに対応する場合は分割する
-
-メッセージは実際に行われた変更を反映させること。
-
-JSONオブジェクトのみを返してください。`;
 }
 
 function testMockResponse(totalHunks: number): void {

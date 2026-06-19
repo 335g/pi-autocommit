@@ -124,6 +124,202 @@ describe("TurnLog persistence", () => {
     });
   });
 
+  describe("prompt persistence", () => {
+    it("saves and restores systemPrompt and rawUserPrompt", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log1 = new TurnLog();
+        log1.initialize(root);
+        log1.append(
+          makeEvent("add login", "added login form"),
+          ["src/auth/login.ts"],
+          "You are a helpful coding assistant.",
+          "Add a login form with email validation.",
+        );
+
+        const log2 = new TurnLog();
+        log2.initialize(root);
+        assert.equal(log2.turnCount, 1);
+
+        const entries = log2.getEntries();
+        assert.equal(entries[0].systemPrompt, "You are a helpful coding assistant.");
+        assert.equal(entries[0].rawUserPrompt, "Add a login form with email validation.");
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("includes prompt section in formatForPrompt output", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log = new TurnLog();
+        log.initialize(root);
+        log.append(
+          makeEvent("add login", "added login form"),
+          ["src/auth/login.ts"],
+          "You are a helpful coding assistant.",
+          "Add a login form with email validation.",
+        );
+
+        const prompt = log.formatForPrompt();
+        assert.ok(prompt.includes("【プロンプト】"), "should include prompt marker");
+        assert.ok(prompt.includes("System: You are a helpful coding assistant."), "should include system prompt");
+        assert.ok(prompt.includes("User: Add a login form with email validation."), "should include raw user prompt");
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("truncates long prompts", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log = new TurnLog();
+        log.initialize(root);
+        const longSystemPrompt = "x".repeat(5000);
+        const longUserPrompt = "y".repeat(5000);
+        log.append(
+          makeEvent("short user", "short assistant"),
+          ["a.ts"],
+          longSystemPrompt,
+          longUserPrompt,
+        );
+
+        const entries = log.getEntries();
+        assert.ok(entries[0].systemPrompt!.length < 5000, "system prompt should be truncated");
+        assert.ok(entries[0].rawUserPrompt!.length < 5000, "raw user prompt should be truncated");
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("falls back to raw user message when rawUserPrompt is not provided", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log = new TurnLog();
+        log.initialize(root);
+        log.append(makeEvent("add login form"), ["src/auth/login.ts"]);
+
+        const entries = log.getEntries();
+        assert.equal(entries[0].rawUserPrompt, "add login form");
+        assert.equal(entries[0].systemPrompt, undefined);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("falls back to raw user message when no prompts are provided", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log = new TurnLog();
+        log.initialize(root);
+        log.append(makeEvent("add login form"), ["src/auth/login.ts"]);
+
+        const prompt = log.formatForPrompt();
+        assert.ok(prompt.includes("【プロンプト】"), "should include prompt marker with fallback");
+        assert.ok(prompt.includes("User: add login form"), "should use raw user message as fallback");
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("drops oldest turns when MAX_CHARS is exceeded", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log = new TurnLog();
+        log.initialize(root);
+
+        // Each entry with maxed-out fields is ~3,600+ chars;
+        // 4 entries should exceed MAX_CHARS=12,000
+        for (let i = 1; i <= 4; i++) {
+          log.append(
+            makeEvent(
+              `turn ${i} user message ${"u".repeat(500)}`,
+              `turn ${i} assistant response ${"a".repeat(500)}`,
+            ),
+            [`src/file${i}.ts`],
+            `System prompt for turn ${i} with padding: ${"s".repeat(1500)}`,
+            `Raw user prompt for turn ${i} with padding: ${"r".repeat(2000)}`,
+          );
+        }
+
+        const prompt = log.formatForPrompt();
+        // Most recent turns should be present
+        assert.ok(prompt.includes("Turn 4"), "should include most recent turn");
+        assert.ok(prompt.includes("Turn 3"), "should include recent turn");
+        // Oldest turn should be dropped due to MAX_CHARS
+        assert.ok(!prompt.includes("Turn 1"), "should drop oldest turn");
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
+  describe("version 2 file format", () => {
+    it("writes version 2 and reloads correctly", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const log1 = new TurnLog();
+        log1.initialize(root);
+        log1.append(makeEvent("turn 1"), ["a.ts"], "system prompt", "raw user prompt");
+
+        const log2 = new TurnLog();
+        log2.initialize(root);
+        assert.equal(log2.turnCount, 1);
+
+        const raw = readFileSync(join(root, ".pi-git", "turn-log.json"), "utf-8");
+        const data = JSON.parse(raw);
+        assert.equal(data.version, 2, "should persist as version 2");
+        assert.equal(data.entries[0].systemPrompt, "system prompt");
+        assert.equal(data.entries[0].rawUserPrompt, "raw user prompt");
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("migrates version 1 to version 2 on append", () => {
+      const { root, cleanup } = makeTempGitRepo();
+      try {
+        const dir = join(root, ".pi-git");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(
+          join(dir, "turn-log.json"),
+          JSON.stringify({
+            version: 1,
+            turnIndex: 1,
+            warnNotified: false,
+            entries: [
+              {
+                index: 1,
+                userMessage: "old entry",
+                assistantExcerpt: "ok",
+                filesChanged: ["a.ts"],
+              },
+            ],
+          }),
+        );
+
+        const log = new TurnLog();
+        log.initialize(root);
+        assert.equal(log.turnCount, 1);
+        assert.equal(log.getEntries()[0].systemPrompt, undefined);
+        assert.equal(log.getEntries()[0].rawUserPrompt, undefined);
+
+        log.append(makeEvent("turn 2"), ["b.ts"], "system prompt", "raw user prompt");
+
+        const raw = readFileSync(join(dir, "turn-log.json"), "utf-8");
+        const data = JSON.parse(raw);
+        assert.equal(data.version, 2, "should rewrite as version 2");
+        assert.equal(data.entries.length, 2);
+        assert.equal(data.entries[0].systemPrompt, undefined);
+        assert.equal(data.entries[0].rawUserPrompt, undefined);
+        assert.equal(data.entries[1].systemPrompt, "system prompt");
+        assert.equal(data.entries[1].rawUserPrompt, "raw user prompt");
+      } finally {
+        cleanup();
+      }
+    });
+  });
+
   describe("clear() — disk cleanup", () => {
     it("deletes turn-log.json after clear", () => {
       const { root, cleanup } = makeTempGitRepo();

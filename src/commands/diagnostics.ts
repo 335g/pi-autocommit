@@ -32,6 +32,15 @@ function formatSnapshot(s: DiagSnapshot): string {
     "── commit message sanitization ──",
     `  sanitize called:           ${s.msgSanitized}`,
     `  sanitize changed (invalid): ${s.msgSanitizeChanged}`,
+    "",
+    "── stored prompt availability ──",
+    `  system prompt used:        ${s.intentPath_storedSystemPromptUsed}`,
+    `  raw user prompt used:      ${s.intentPath_storedUserPromptUsed}`,
+    `  prompts missing:           ${s.intentPath_storedPromptsMissing}`,
+    "",
+    "── TurnLog management ──",
+    `  auto-cleared on clean start: ${s.turnLog_autoClearedOnCleanStart}`,
+    `  manually cleared:            ${s.turnLog_manuallyCleared}`,
   ];
 
   const totalParses =

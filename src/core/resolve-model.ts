@@ -8,6 +8,17 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAnalysisModel } from "../utils/settings.js";
 
+/** Model name patterns indicating cheap/small models (shared across all modules) */
+export const CHEAP_MODEL_PATTERNS: RegExp[] = [
+  /mini/i, /flash/i, /nano/i, /lite/i, /small/i, /haiku/i,
+];
+
+/** Check if a model ID matches known cheap/small model patterns */
+export function isCheapModel(modelId: string | undefined): boolean {
+  if (!modelId) return true; // unknown → conservative
+  return CHEAP_MODEL_PATTERNS.some((p) => p.test(modelId));
+}
+
 /**
  * Resolve the model to use for AI operations.
  *

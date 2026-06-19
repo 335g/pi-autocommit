@@ -41,7 +41,7 @@ const MAX_OUTPUT_TOKENS_INTENT = 4096;
 const MAX_HUNKS_PER_INTENT_BATCH = 50;
 
 /** Maximum prompt chars before truncating TurnLog text in intent analysis */
-const MAX_INTENT_PROMPT_CHARS = 20_000;
+const MAX_INTENT_PROMPT_CHARS = 24_000;
 
 function getSystemPrompt(lang: string): string {
   return t(lang, "diffAnalyzer.systemPrompt");
@@ -402,11 +402,11 @@ export async function analyzeDiff(
 // Intent-based hunk analysis (new)
 // ───────────────────────────────────────────────
 
-function getIntentSystemPrompt(lang: string): string {
+export function getIntentSystemPrompt(lang: string): string {
   return t(lang, "diffAnalyzer.intentSystemPrompt");
 }
 
-function buildIntentPrompt(
+export function buildIntentPrompt(
   turnLogText: string,
   numberedHunksText: string,
   lang: string,
