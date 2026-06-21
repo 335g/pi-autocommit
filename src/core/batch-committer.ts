@@ -1,7 +1,7 @@
 /**
  * Batch commit flow for accumulate mode.
  *
- * Called from /git-agg-commit when auto_agg_commit_mode is "accumulate".
+ * Called from /git-agg-commit.
  * Collects diff, injects TurnLog into AI prompt, splits into hunks, and commits.
  */
 
