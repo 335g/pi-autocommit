@@ -26,7 +26,7 @@ import {
   VALID_KEYS_META,
 } from "../utils/settings.js";
 
-type ValidKey = "lang" | "analysis_model" | "auto_agg_commit" | "auto_agg_commit_mode" | "batch_warn_turns";
+type ValidKey = "lang" | "analysis_model" | "batch_warn_turns";
 
 function isValidKey(key: string): key is ValidKey {
   return VALID_KEYS_META.some((meta) => meta.key === key);
@@ -40,20 +40,6 @@ function validateValue(key: ValidKey, value: string): string | boolean | number 
       }
       return value;
     case "analysis_model":
-      return value;
-    case "auto_agg_commit":
-      if (value === "true" || value === "1") return true;
-      if (value === "false" || value === "0") return false;
-      throw new Error(
-        `Invalid auto_agg_commit: ${value}. Must be "true" or "false".`,
-      );
-    case "auto_agg_commit_mode":
-      if (value !== "accumulate") {
-        throw new Error(
-          `Invalid auto_agg_commit_mode: ${value}. Must be "accumulate". ` +
-            `"per_turn" mode has been removed.`,
-        );
-      }
       return value;
     case "batch_warn_turns":
       const num = Number(value);
