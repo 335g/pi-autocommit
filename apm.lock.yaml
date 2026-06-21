@@ -1,41 +1,55 @@
 lockfile_version: '1'
-generated_at: '2026-05-23T02:57:10.854109+00:00'
-apm_version: 0.14.1
+generated_at: '2026-06-21T14:09:28.415429+00:00'
+apm_version: 0.21.0
 dependencies:
 - repo_url: mattpocock/skills
   host: github.com
-  resolved_commit: b8be62ffacb0118fa3eaa29a0923c87c8c11985c
-  virtual_path: skills/productivity/grill-me
-  is_virtual: true
-  package_type: claude_skill
-  deployed_files:
-  - .claude/skills/grill-me
-  content_hash: sha256:784f0dbb7403b0f00324bce9a112f715342777a0daee7bbb7385f9c6f0a170ea
-- repo_url: mattpocock/skills
-  host: github.com
-  resolved_commit: b8be62ffacb0118fa3eaa29a0923c87c8c11985c
-  virtual_path: skills/productivity/handoff
-  is_virtual: true
-  package_type: claude_skill
-  deployed_files:
-  - .claude/skills/handoff
-  content_hash: sha256:1a78d774f8a59db5daa6e65e20a6596872fa8cde769f9a6e3a09b678dd5ae8cc
-- repo_url: mattpocock/skills
-  host: github.com
-  resolved_commit: b8be62ffacb0118fa3eaa29a0923c87c8c11985c
+  resolved_commit: 6eeb81b5fcfeeb5bd531dd47ab2f9f2bbea27461
   virtual_path: skills/engineering/grill-with-docs
   is_virtual: true
   package_type: claude_skill
   deployed_files:
   - .claude/skills/grill-with-docs
-  content_hash: sha256:a5c65e76275008b469962f7bee8b34866f1c9b0709f4886e71c8e731735640e4
+  - .claude/skills/grill-with-docs/SKILL.md
+  deployed_file_hashes:
+    .claude/skills/grill-with-docs/SKILL.md: sha256:610d091047bcfb9db0f75c057d15538481a721111579fc5ec7f83ad9131a2165
+  content_hash: sha256:e7ef25bbee50cda2eb7b3a8ef541db0a0396dad7d369f7d14fb610671dd1864b
+- repo_url: mattpocock/skills
+  host: github.com
+  resolved_commit: 6eeb81b5fcfeeb5bd531dd47ab2f9f2bbea27461
+  virtual_path: skills/productivity/grill-me
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .claude/skills/grill-me
+  - .claude/skills/grill-me/SKILL.md
+  deployed_file_hashes:
+    .claude/skills/grill-me/SKILL.md: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
+  content_hash: sha256:f321507f77702a54af1db66549ec1685fc625390d06c57d7949cdcda8eb1b5c7
+- repo_url: mattpocock/skills
+  host: github.com
+  resolved_commit: 6eeb81b5fcfeeb5bd531dd47ab2f9f2bbea27461
+  virtual_path: skills/productivity/handoff
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .claude/skills/handoff
+  - .claude/skills/handoff/SKILL.md
+  deployed_file_hashes:
+    .claude/skills/handoff/SKILL.md: sha256:94bee8c16cbfcf9f1e15187f7e5d0d5a93c4adb7c512feceecaab80c8ff7c059
+  content_hash: sha256:5d0f81e38abe6b984e1feaa731927de5291d040982106ac513cf54ec240e00ec
 - repo_url: mitsuhiko/agent-stuff
   host: github.com
-  resolved_commit: ab79f98104bcd3c6a7c5491e609f6d6700a7414d
+  resolved_commit: 6db1e48cf18ac8106968fb82d5748999336dc664
   virtual_path: skills/mermaid
   is_virtual: true
   package_type: claude_skill
   deployed_files:
   - .agents/skills/mermaid
   - .claude/skills/mermaid
+  - .claude/skills/mermaid/SKILL.md
+  - .claude/skills/mermaid/tools/validate.sh
+  deployed_file_hashes:
+    .claude/skills/mermaid/SKILL.md: sha256:15a4d1a9cc0da7ec8a802916252b18cdc15bca1c0a85392ef618b32a9d7c0abb
+    .claude/skills/mermaid/tools/validate.sh: sha256:c88e293941f1b43c0a8a7c55a65c7b4413d09aa3e8d6a43d7577afd0342c7e6d
   content_hash: sha256:c27878e303ee74ba5997fbcf9a02f9956d3678a11da34e5a64f903178a6606c3
