@@ -90,20 +90,8 @@ export const messages = {
 
     // ── config.ts: VALID_KEYS_META descriptions ─────────────────
     "config.keyDesc.lang": "Display and commit message language",
-    "config.keyDesc.auto_agg_commit":
-      "Whether to automatically run git-agg-commit after assistant response",
     "config.keyDesc.analysis_model":
       "AI model to use for diff analysis (format: model-id or provider/model-id)",
-    "config.keyDesc.auto_agg_commit_min_files":
-      "Maximum changed files to trigger confirmation (deprecated: confirmation is now always shown)",
-    "config.keyDesc.auto_agg_commit_min_lines":
-      "Maximum changed lines to trigger confirmation (deprecated: confirmation is now always shown)",
-    "config.keyDesc.auto_agg_commit_skip_confirm_files":
-      "Maximum changed files to skip confirmation (0 = never skip, always confirm)",
-    "config.keyDesc.auto_agg_commit_skip_confirm_lines":
-      "Maximum changed lines to skip confirmation (0 = never skip, always confirm)",
-    "config.keyDesc.auto_agg_commit_mode":
-      "Commit mode: per_turn (commit after each turn) or accumulate (batch commit via /git-agg-commit)",
     "config.keyDesc.batch_warn_turns":
       "Number of accumulated turns before showing a commit reminder (0 = disabled)",
 
@@ -305,19 +293,8 @@ export const messages = {
 
     // ── config.ts: VALID_KEYS_META descriptions ─────────────────
     "config.keyDesc.lang": "表示・コミットメッセージの言語設定",
-    "config.keyDesc.auto_agg_commit": "アシスタント応答後の自動コミット有無",
     "config.keyDesc.analysis_model":
       "diff分析に使用するAIモデル（形式: model-id または provider/model-id）",
-    "config.keyDesc.auto_agg_commit_min_files":
-      "確認をトリガーする最大変更ファイル数（非推奨: 現在は常に確認ダイアログが表示されます）",
-    "config.keyDesc.auto_agg_commit_min_lines":
-      "確認をトリガーする最大変更行数（非推奨: 現在は常に確認ダイアログが表示されます）",
-    "config.keyDesc.auto_agg_commit_skip_confirm_files":
-      "確認をスキップする最大変更ファイル数（0 = 常に確認。どちらかの条件を満たせば確認をスキップ）",
-    "config.keyDesc.auto_agg_commit_skip_confirm_lines":
-      "確認をスキップする最大変更行数（0 = 常に確認。どちらかの条件を満たせば確認をスキップ）",
-    "config.keyDesc.auto_agg_commit_mode":
-      "コミットモード: per_turn（毎ターンコミット）または accumulate（/git-agg-commitで一括コミット）",
     "config.keyDesc.batch_warn_turns":
       "コミットリマインダーを表示する蓄積ターン数（0 = 無効）",
 
