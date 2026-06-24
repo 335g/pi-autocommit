@@ -62,7 +62,13 @@ export default function (pi: ExtensionAPI) {
 			while (!confirmed && !cancelled) {
 				// Present the message (SKILL.md step 5: show the full generated message)
 				if (ctx.hasUI) {
-					ctx.ui.notify(fullMessage, "info");
+					// Display the commit message in a widget above the editor
+					const widgetLines = [
+						"",
+						...fullMessage.split("\n"),
+						"",
+					];
+					ctx.ui.setWidget("pi-git-commit", widgetLines);
 
 					const choice = await ctx.ui.select(
 						"Commit with the following message?",
@@ -72,6 +78,9 @@ export default function (pi: ExtensionAPI) {
 							"Edit - Modify the message",
 						],
 					);
+
+					// Clear the widget after selection
+					ctx.ui.setWidget("pi-git-commit", []);
 
 					switch (choice) {
 						case "Y - Execute commit":
@@ -110,6 +119,11 @@ export default function (pi: ExtensionAPI) {
 					// so we commit directly.
 					confirmed = true;
 				}
+			}
+
+			// Clear widget on exit (in case cancelled didn't run the clear)
+			if (ctx.hasUI) {
+				ctx.ui.setWidget("pi-git-commit", []);
 			}
 
 			if (cancelled) {
