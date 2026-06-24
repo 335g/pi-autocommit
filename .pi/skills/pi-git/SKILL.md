@@ -1,103 +1,103 @@
 ---
 name: pi-git
-description: 現状の全ファイルについてステージングし、これらのファイルの変更内容等の情報からコミットメッセージを自動で作成し、コミットする
+description: Stage all current files and automatically generate a commit message from the changes, then commit
 ---
 
 # pi-git Skill
 
-AIエージェントが編集した変更を、適切な Conventional Commits メッセージで一括コミットするためのスキル。
+A skill for committing AI-agent-made changes in bulk with appropriate Conventional Commits messages.
 
-## 事前準備：設定ファイルの読み込み
+## Prerequisite: Load configuration
 
-コミットメッセージの本文の言語を決定するため、プロジェクトルートの `.pi-git/config.toml` を読み込む。
+Read `.pi-git/config.toml` from the project root to determine the language of the commit message body.
 
 ```toml
-; 設定例
-lang = "ja"   ; 本文の言語（デフォルト: 英語）
+; Example configuration
+lang = "ja"   ; Body language (default: English)
 ```
 
-`lang` キーの値に応じたルール：
+Rules based on the `lang` key:
 
-| lang の値 | コミットメッセージ件名（subject） | コミットメッセージ本文（body） |
+| `lang` value | Commit subject | Commit body |
 |-----------|----------------------------------|-------------------------------|
-| `"ja"`    | 英語（Conventional Commits標準） | 日本語 |
-| それ以外 または 未設定/ファイル不在 | 英語 | 英語 |
+| `"ja"`    | English (Conventional Commits standard) | Japanese |
+| Anything else, unset, or file missing | English | English |
 
-> **件名（subject）** = `feat(cmd): add interactive shell mode` の部分。言語によらず英語。
-> **本文（body）** = 変更の詳細説明。`lang` の値に従う。
+> **Subject** = `feat(cmd): add interactive shell mode` part. Always in English regardless of language setting.
+> **Body** = Detailed description of changes. Follows the `lang` setting.
 
-## ワークフロー
+## Workflow
 
-### 1. 変更の確認
+### 1. Check changes
 
 ```bash
 git status --short
 ```
 
-変更がない場合は即座に終了する。
+Exit immediately if there are no changes.
 
-### 2. 全ファイルをステージング
+### 2. Stage all files
 
 ```bash
 git add -A
 ```
 
-### 3. 変更内容の分析
+### 3. Analyze changes
 
-以下の情報を取得し、コミットメッセージの材料とする：
+Retrieve the following information to construct the commit message:
 
-- `git diff --cached --stat` — 変更ファイル一覧
-- `git diff --cached` — 実際の変更内容
-- `git diff --cached --name-status` — ファイルごとの変更種別（追加/変更/削除/リネーム）
+- `git diff --cached --stat` — list of changed files
+- `git diff --cached` — actual diff content
+- `git diff --cached --name-status` — change type per file (added/modified/deleted/renamed)
 
-### 4. Conventional Commits メッセージの生成
+### 4. Generate Conventional Commits message
 
-以下のルールでメッセージを生成する。
+Generate the message according to the following rules.
 
-**型（type）の判定基準:**
+**Type selection criteria:**
 
-| 型 | 条件 |
-|------|------|
-| `feat` | 新機能の追加、新しいコマンド・オプション・APIの実装 |
-| `fix` | バグ修正、意図しない動作の是正 |
-| `refactor` | 振る舞いを変えずにコード構造を改善 |
-| `chore` | ビルド設定、依存関係、CI設定、リポジトリ設定 |
-| `docs` | ドキュメントのみの変更（README、SKILL.md、コメント） |
-| `test` | テストの追加・修正 |
-| `style` | コードフォーマット、セミコロン、インデント（振る舞いに影響なし） |
-| `perf` | パフォーマンス改善 |
+| Type | Conditions |
+|------|------------|
+| `feat` | New feature, implementation of a new command/option/API |
+| `fix` | Bug fix, correction of unintended behavior |
+| `refactor` | Improve code structure without changing behavior |
+| `chore` | Build configuration, dependencies, CI setup, repository configuration |
+| `docs` | Documentation-only changes (README, SKILL.md, comments) |
+| `test` | Adding or modifying tests |
+| `style` | Code formatting, semicolons, indentation (no behavioral impact) |
+| `perf` | Performance improvements |
 
-複数の型にまたがる変更が含まれる場合、最も主要なものを型として選び、その他の変更は本文に記載する。
+When a change spans multiple types, select the most significant one as the type and describe the rest in the body.
 
-**scope（スコープ）:**
+**Scope:**
 
-可能であれば影響範囲を括弧内に記述する（例: `feat(cmd):`、`fix(skill):`）。特に決まったスコープ一覧はなく、変更内容から適切なものを判断する。
+If possible, describe the affected scope in parentheses (e.g., `feat(cmd):`, `fix(skill):`). There is no fixed list of scopes; determine an appropriate one from the changes.
 
-**件名（subject）のルール:**
+**Subject rules:**
 
 ```
-型(スコープ): 簡潔な要約
+type(scope): brief summary
 ```
 
-- 英語で記述する（`lang` の値によらない）
-- 命令形の現在形で書く（"add", "fix", "update"）
-- 先頭は小文字
-- 末尾にピリオドは付けない
-- 50文字以内を目安に
+- Write in English (regardless of `lang` value)
+- Use imperative present tense ("add", "fix", "update")
+- Start with a lowercase letter
+- Do not end with a period
+- Aim for 50 characters or fewer
 
-**本文（body）のルール:**
+**Body rules:**
 
-- 変更のあったファイルをリストアップする
-- 各ファイルで何を変更したかを簡潔に説明する
-- なぜその変更が必要だったか（可能な範囲で）
-- 言語は `lang` の値に従う
-- 72文字で折り返し推奨
+- List the changed files
+- Briefly describe what was changed in each file
+- Explain why the change was necessary (as far as possible)
+- Follow the language specified by `lang`
+- Recommended to wrap at 72 characters
 
-**フッター（footer）:**
+**Footer:**
 
-BREAKING CHANGE がある場合は、`BREAKING CHANGE: ...` または `!` マーカーを付けて明記する。
+If there is a BREAKING CHANGE, clearly note it with `BREAKING CHANGE: ...` or the `!` marker.
 
-**出力形式の例（`lang = "ja"` の場合）:**
+**Example output (with `lang = "ja"`):**
 
 ```
 feat(cmd): add interactive shell mode
@@ -112,7 +112,7 @@ feat(cmd): add interactive shell mode
 するための新機能。子プロセスの管理には node-pty を使用。
 ```
 
-**出力形式の例（デフォルト: 英語）:**
+**Example output (default: English):**
 
 ```
 feat(cmd): add interactive shell mode
@@ -128,40 +128,40 @@ commands while conversing with the agent. Uses node-pty for
 subprocess management.
 ```
 
-### 5. ユーザー確認
+### 5. User confirmation
 
-生成したコミットメッセージをユーザーに提示し、確認を求める：
+Present the generated commit message to the user and ask for confirmation:
 
 ```
-以下のコミットメッセージでコミットしてよろしいですか？
+Commit with the following message?
 
-  {生成されたメッセージ全文}
+  {full generated message}
 
-[Y] コミットを実行 / [N] やり直し / [編集] メッセージを修正
+[Y] Execute commit / [N] Cancel and retry / [Edit] Modify the message
 ```
 
-ユーザーの応答に応じて：
-- **Y** → 手順6へ
-- **N** → 処理を中断し、ユーザーの指示を仰ぐ
-- **編集リクエスト**（任意の文言）→ 指定に従ってメッセージを修正し、再確認
+Respond based on the user's input:
+- **Y** → Proceed to step 6
+- **N** → Abort and ask the user for instructions
+- **Edit request** (any text) → Modify the message as requested and re-confirm
 
-### 6. コミット実行
+### 6. Execute commit
 
 ```bash
-git commit -m "<件名>
+git commit -m "<subject>
 
-<本文>
+<body>
 
-<フッター>"
+<footer>"
 ```
 
-成功したら結果を表示する。
+Display the result on success.
 
-## エッジケース
+## Edge cases
 
-| 状況 | 対応 |
-|------|------|
-| 変更なし | 「変更はありません」と表示して終了 |
-| 新規 untracked ファイルのみ | 通常通り add & commit（`git add -A` で拾える） |
-| マージコンフリクト中 | コミットを中断し、コンフリクト解決を促す |
-| 空のコミット（全変更がadd済み） | 通常通り `git commit` を実行 |
+| Situation | Response |
+|-----------|----------|
+| No changes | Display "No changes" and exit |
+| Only new untracked files | Add & commit as usual (`git add -A` handles these) |
+| Merge conflict in progress | Abort the commit and prompt the user to resolve conflicts first |
+| Empty commit (all changes already staged) | Run `git commit` normally |
