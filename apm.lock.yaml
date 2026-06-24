@@ -1,0 +1,30 @@
+lockfile_version: '1'
+generated_at: '2026-06-24T13:15:06.757791+00:00'
+apm_version: 0.21.0
+dependencies:
+- repo_url: mattpocock/skills
+  host: github.com
+  resolved_commit: 8370e760d0251a3738e006aeacec6d1cb31dd208
+  package_type: marketplace_plugin
+  deployed_files:
+  - .agents/skills/domain-modeling
+  - .agents/skills/domain-modeling/ADR-FORMAT.md
+  - .agents/skills/domain-modeling/CONTEXT-FORMAT.md
+  - .agents/skills/domain-modeling/SKILL.md
+  - .agents/skills/grill-me
+  - .agents/skills/grill-me/SKILL.md
+  - .agents/skills/grilling
+  - .agents/skills/grilling/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/domain-modeling/ADR-FORMAT.md: sha256:f1f36cd3f8d3b6474ddd5855da4e233bfc4ae1a1c5024909ccf11871819a41b2
+    .agents/skills/domain-modeling/CONTEXT-FORMAT.md: sha256:b8cc318f2a4285b530e908b6bc43901c3c5cd11100362636bbc4216639bef597
+    .agents/skills/domain-modeling/SKILL.md: sha256:152e2c97239affb12a60c5f4a7e74ab546a49ae169688c81f4e2ccc42dafa579
+    .agents/skills/grill-me/SKILL.md: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
+    .agents/skills/grilling/SKILL.md: sha256:fe00af3e1815f97c0a7644605479328a726b5cd95ba6ef56a4be2a92fae6c20f
+  content_hash: sha256:74b35ab07a5b9a42c9561f4a70d44ba2c5b65c5ae8553ca908c081da658df69c
+  skill_subset:
+  - domain-modeling
+  - domain_modeling
+  - grill-me
+  - grilling
+  - grilling,domain-modeling

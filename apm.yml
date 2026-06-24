@@ -1,11 +1,18 @@
-name: pi-git
+name: skill
 version: 1.0.0
-description: APM project for pi-git
+description: APM project for skill
 author: Yoshiki Kudo
 targets:
 - agent-skills
 dependencies:
-  apm: []
+  apm:
+  - git: mattpocock/skills
+    skills:
+    - domain-modeling
+    - domain_modeling
+    - grill-me
+    - grilling
+    - grilling,domain-modeling
   mcp: []
 includes: auto
 scripts: {}
