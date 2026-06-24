@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig } from "./config.js";
 import { GitOperations } from "./git-operations.js";
-import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
+import { generateCommitMessageWithLLM } from "./llm-commit.js";
 
 /**
  * pi-git extension — `/commit` command
@@ -51,9 +51,18 @@ export default function (pi: ExtensionAPI) {
 			const stat = await git.getStagedStat();
 			const diff = await git.getStagedDiff();
 
-			// ── 6. Generate commit message ──────────────────────────────
-			const commitMsg = generateCommitMessage(nameStatus, stat, diff, config);
-			let fullMessage = formatFullMessage(commitMsg);
+			// ── 6. Generate commit message via LLM ──────────────────────
+			// Uses pi's model (same as the current session), with heuristic
+			// fallback when the LLM is unavailable.
+			ctx.ui.notify("Generating commit message via LLM...", "info");
+			let fullMessage = await generateCommitMessageWithLLM(
+				pi,
+				ctx,
+				nameStatus,
+				stat,
+				diff,
+				config,
+			);
 
 			// ── 7. User confirmation loop ───────────────────────────────
 			let confirmed = false;
