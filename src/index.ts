@@ -20,6 +20,13 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			const git = new GitOperations(pi);
 
+			// ── 0. Parse --dry-run flag ─────────────────────────────────
+			const rawArgs = args?.trim() ?? "";
+			const dryRun = /(?:^|\s)--dry-run(?:$|\s)/.test(rawArgs);
+			const inlineMessage = dryRun
+				? rawArgs.replace(/\s*--dry-run\s*/, "").trim()
+				: rawArgs;
+
 			// ── 0. Verify git repository ────────────────────────────────
 			if (!(await git.isInsideGitRepo())) {
 				ctx.ui.notify("Not a git repository", "error");
@@ -49,11 +56,17 @@ export default function (pi: ExtensionAPI) {
 			await git.stageAll();
 
 			// ── 5. Check if user provided an inline commit message ──────
-			// If args has text, use it directly without AI generation.
-			const inlineMessage = args?.trim();
+			// If inlineMessage has text, use it directly without AI generation.
 			if (inlineMessage) {
 				// Skip AI generation — commit directly with the provided message
 				try {
+					if (dryRun) {
+						ctx.ui.notify(
+							`[DRY RUN] Would commit with the following message:\n\n${inlineMessage}`,
+							"info",
+						);
+						return;
+					}
 					ctx.ui.notify(`Committing with provided message...`, "info");
 					const result = await git.commit(inlineMessage);
 					if (result.code === 0) {
@@ -79,7 +92,12 @@ export default function (pi: ExtensionAPI) {
 			const stat = await git.getStagedStat();
 			const diff = await git.getStagedDiff();
 
-			// ── 7. Generate commit message via LLM ──────────────────────
+			// ── 7. Notify dry-run mode ─────────────────────────────────
+			if (dryRun) {
+				ctx.ui.notify("[DRY RUN] Commit will be simulated — no changes will be committed.", "info");
+			}
+
+			// ── 8. Generate commit message via LLM ─────────────────────
 			// Uses pi's model (same as the current session), with heuristic
 			// fallback when the LLM is unavailable.
 			ctx.ui.notify("Generating commit message via LLM...", "info");
@@ -92,7 +110,7 @@ export default function (pi: ExtensionAPI) {
 				config,
 			);
 
-			// ── 8. User confirmation loop ───────────────────────────────
+			// ── 9. User confirmation loop ───────────────────────────────
 			let confirmed = false;
 			let cancelled = false;
 
@@ -168,7 +186,15 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// ── 9. Execute commit ───────────────────────────────────────
+			// ── 10. Execute commit ──────────────────────────────────────
+			if (dryRun) {
+				ctx.ui.notify(
+					`[DRY RUN] Skipped. Would commit with:\n\n${fullMessage}`,
+					"info",
+				);
+				return;
+			}
+
 			try {
 				const result = await git.commit(fullMessage);
 				if (result.code === 0) {
