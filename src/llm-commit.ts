@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
 import type { PiGitConfig } from "./config.js";
 import { isJapanese } from "./config.js";
 import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
@@ -70,6 +69,11 @@ export async function generateCommitMessageWithLLM(
 		if (!ctx.model) {
 			throw new Error("No model available");
 		}
+
+		// Dynamic import: avoids startup failure when pi-ai doesn't export
+		// `./compat` (e.g. pi installed via Nix store with bundled pi-ai that
+		// lacks this subpath). If the import fails, falls through to heuristic.
+		const { completeSimple } = await import("@earendil-works/pi-ai/compat");
 
 		const result = await completeSimple(ctx.model, {
 			systemPrompt,
