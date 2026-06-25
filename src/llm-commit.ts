@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { PiGitConfig } from "./config.js";
-import { isJapanese } from "./config.js";
+import { hasNoBody, isJapanese } from "./config.js";
 import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
 
 /**
@@ -22,25 +22,52 @@ export async function generateCommitMessageWithLLM(
 ): Promise<string> {
 	const lang = isJapanese(config) ? "ja" : "en";
 
+	const noBody = hasNoBody(config);
+
 	const bodyLangInstruction =
-		lang === "ja"
-			? "Write the body in Japanese (日本語)."
-			: "Write the body in English.";
+		noBody
+			? ""
+			: lang === "ja"
+				? "Write the body in Japanese (日本語)."
+				: "Write the body in English.";
 
 	const subjectLangInstruction =
 		lang === "ja"
 			? "Japanese (日本語), imperative plain form (連用形), lowercase (ひらがな優先), no period, 50 chars or fewer."
 			: "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
 
+	const rules = [
+		"Subject format: `type(scope): brief summary`",
+		`Subject: ${subjectLangInstruction}`,
+	];
+
+	if (noBody) {
+		rules.push(
+			"Body: NONE — output ONLY the subject line, no body.",
+		);
+		rules.push(
+			"Footer: add `BREAKING CHANGE: ...` when there is a breaking change (optional).",
+		);
+	} else {
+		rules.push(
+			`Body: list each changed file, describe what changed and why. ${bodyLangInstruction}`,
+		);
+		rules.push(
+			"Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
+		);
+		rules.push(
+			"",
+			"When a change spans multiple types, select the most significant one and",
+			"describe the rest in the body.",
+		);
+	}
+
 	const systemPrompt = [
 		"You are a commit message generator. Generate a Conventional Commits",
 		"commit message for the given staged changes.",
 		"",
 		"--- Rules ---",
-		"Subject format: `type(scope): brief summary`",
-		`Subject: ${subjectLangInstruction}`,
-		`Body: list each changed file, describe what changed and why. ${bodyLangInstruction}`,
-		"Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
+		...rules,
 		"",
 		"Type reference (pick the most significant one):",
 		"  feat     — New feature, new command/option/API",
@@ -51,9 +78,6 @@ export async function generateCommitMessageWithLLM(
 		"  test     — Adding or modifying tests",
 		"  style    — Code formatting (no behavioral impact)",
 		"  perf     — Performance improvements",
-		"",
-		"When a change spans multiple types, select the most significant one and",
-		"describe the rest in the body.",
 		"",
 		"Scope: describe the affected area in parentheses if meaningful.",
 		"There is no fixed list; infer from the changed paths.",

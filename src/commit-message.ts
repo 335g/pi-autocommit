@@ -1,5 +1,5 @@
 import type { PiGitConfig } from "./config.js";
-import { isJapanese } from "./config.js";
+import { hasNoBody, isJapanese } from "./config.js";
 
 /**
  * Conventional Commits type.
@@ -306,6 +306,8 @@ function generateBody(
 	config: PiGitConfig,
 	type: CommitType,
 ): string {
+	if (hasNoBody(config)) return "";
+
 	const jp = isJapanese(config);
 
 	// Parse stat lines to get insertion/deletion counts per file
@@ -531,7 +533,9 @@ export function generateCommitMessage(
  * Format the full commit message string ready for `git commit -m`.
  */
 export function formatFullMessage(msg: CommitMessage): string {
-	let full = `${msg.subject}\n\n${msg.body}`;
+	let full = msg.body
+		? `${msg.subject}\n\n${msg.body}`
+		: msg.subject;
 	if (msg.footer) {
 		full += `\n\n${msg.footer}`;
 	}
