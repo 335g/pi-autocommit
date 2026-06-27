@@ -4,18 +4,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) の拡張機能です。
-LLM またはヒューリスティックフォールバックを用いて [Conventional Commits](https://www.conventionalcommits.org/) 形式のコミットメッセージを生成する `/commit` コマンドを追加します。
+LLM またはヒューリスティックフォールバックを用いて [Conventional Commits](https://www.conventionalcommits.org/) 形式のコミットメッセージを生成する `/commit`・`/review` コマンドを追加します。
 
 ## 特徴
 
-- **`/commit` コマンド** – 変更をすべてステージし、コミットメッセージを生成して実行
+- **`/commit` コマンド** – 変更をステージし、ファイル選択、AI 生成、確認を経てコミット
+- **`/review` コマンド** – [crit](https://github.com/335g/crit) によるインラインレビューを経てコミットメッセージを生成
 - **インラインコミットメッセージ** – `/commit fix typo` のようにメッセージを直接指定すると AI 生成をスキップ
 - **AI による生成** – pi の LLM を利用してステージされた差分から Conventional Commits メッセージを生成
 - **ヒューリスティックフォールバック** – LLM が利用できない場合、差分解析からコミットメッセージを生成
-- **言語対応** – コミット本文を英語または日本語で記述可能（`.pi-git/config.toml` で設定）
+- **対話型ファイル選択** – どのファイルをコミットに含めるか選択可能。Space キーで差分プレビュー（TUI モード）
 - **対話型確認** – 生成されたコミットメッセージを確認・編集・キャンセルしてから実行
+- **言語対応** – コミットメッセージを英語または日本語で記述可能（`.pi-git/config.toml` で設定）
 - **自動コミット** – `commit_every_turn = true` 設定で各エージェントターン終了時に自動コミット
 - **マージコンフリクト検出** – マージ競合中はコミットを拒否
+- **ドライランモード** – `--dry-run` でコミットメッセージのプレビューのみ実行
 
 ## インストール
 
@@ -47,9 +50,9 @@ pi セッション内で、git リポジトリの中で以下を実行:
 1. マージコンフリクトの確認
 2. 未コミットの変更の確認
 3. 全ファイルをステージ (`git add -A`)
-4. ステージされた差分の解析
+4. ファイル選択（TUI モード）— Space で差分プレビュー、Enter で確定
 5. LLM による Conventional Commits メッセージの生成
-6. メッセージの確認表示
+6. メッセージの確認（Y/編集/キャンセル）
 7. コミットの実行
 
 ### インラインコミットメッセージ
@@ -58,7 +61,57 @@ pi セッション内で、git リポジトリの中で以下を実行:
 /commit fix typo in header
 ```
 
-AI 生成をスキップし、指定されたメッセージで即座にコミットします。
+AI 生成をスキップし、指定されたメッセージでコミットします。
+ファイル選択は通常通り実行されます（TUI モード）。
+
+### レビュー → コミット
+
+[crit](https://github.com/335g/crit) のインストールが必要です（`npm install -g crit`）。
+
+```
+/review
+```
+
+`/commit` と同様のフローですが、ステージとファイル選択の後に:
+1. ブラウザで crit レビューが開き、差分にインラインコメントを付けられます
+2. レビュー完了後、未解決コメントがあれば表示
+3. コメントをコミットメッセージのコンテキストに含めるか選択
+4. レビューコメントを反映したコミットメッセージを生成
+5. 確認・編集してコミット
+
+### ドライランモード
+
+実行せずにプレビュー:
+
+```
+/commit --dry-run
+/review --dry-run
+```
+
+パイプライン全体（ステージ、ファイル選択、LLM 生成、確認）は実行されますが、
+実際の `git commit` はスキップされます。ファイルはアンステージされません。
+
+### ファイル選択（TUI モード）
+
+`/commit` または `/review` を TUI モードで実行すると、ファイル選択画面が表示されます:
+
+```
+ Select files to commit  (3/5)
+   select   stat    type  file
+  ─────── ─────── ──── ────
+  ▸ ●     +10/-2  mod  src/index.ts
+    ○              new  src/pipeline.ts
+    ●     +5/-0   mod  src/config.ts
+
+  ↑↓ navigate  → select  ← deselect  space preview  a all  enter commit  esc cancel
+```
+
+- `↑↓` 移動
+- `→` 選択、`←` 選択解除
+- `Space` — 全画面差分プレビュー（QuickLook 風）
+- `a` — すべて選択/解除
+- `Enter` — 確定
+- `Esc` / `Ctrl+C` — キャンセル
 
 ### 設定
 
@@ -125,7 +178,8 @@ npm test
 
 - [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent)（ピア依存関係）
 - [pi-ai](https://github.com/earendil-works/pi-ai)（ピア依存関係）
-- [pi-tui](https://github.com/earendil-works/pi-tui)（オプションのピア依存関係 – 対話型確認 UI を有効化）
+- [pi-tui](https://github.com/earendil-works/pi-tui)（オプションのピア依存関係 – 対話型ファイル選択・確認 UI を有効化）
+- [crit](https://github.com/335g/crit)（オプション – `/review` コマンドに必要）
 
 ## ライセンス
 

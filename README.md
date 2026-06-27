@@ -3,18 +3,21 @@
 [![npm version](https://img.shields.io/npm/v/@335g/pi-git.svg)](https://www.npmjs.com/package/@335g/pi-git)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds a `/commit` command for generating [Conventional Commits](https://www.conventionalcommits.org/) messages using LLM or heuristic fallback.
+A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/commit` and `/review` commands for generating [Conventional Commits](https://www.conventionalcommits.org/) messages using LLM or heuristic fallback.
 
 ## Features
 
-- **`/commit` command** – Stage all changes and generate a commit message in one step
+- **`/commit` command** – Stage all changes, optionally select files, and commit with an AI-generated message
+- **`/review` command** – Stage, review changes with [crit](https://github.com/335g/crit) inline comments, then generate a commit message
 - **Inline message support** – `/commit fix typo` uses the message directly without AI generation
 - **AI-powered generation** – Leverages pi's LLM to produce Conventional Commits messages from staged diffs
 - **Heuristic fallback** – When the LLM is unavailable, generates a commit message from diff analysis
-- **Language support** – Commit message (subject and body) can be written in English or Japanese (configured via `.pi-git/config.toml`)
+- **Interactive file selection** – Pick which staged files to include; preview diffs with QuickLook-style overlay (TUI mode)
 - **Interactive confirmation** – Review, edit, or cancel the proposed commit message before executing
+- **Language support** – Commit messages can be written in English or Japanese (configured via `.pi-git/config.toml`)
 - **Auto-commit on every turn** – Automatically commit changes at the end of each agent turn when `commit_every_turn = true` is set in config
 - **Merge conflict detection** – Refuses to commit when a merge is in progress
+- **Dry-run mode** – Preview the generated commit message without executing
 
 ## Installation
 
@@ -46,9 +49,9 @@ This will:
 1. Check for merge conflicts
 2. Check for uncommitted changes
 3. Stage all files (`git add -A`)
-4. Analyze the staged diff
+4. Present an interactive file selector (TUI mode) — pick files to include, preview diffs with Space
 5. Generate a Conventional Commits message via LLM
-6. Present the message for confirmation
+6. Present the message for confirmation (Y/Edit/Cancel)
 7. Execute the commit
 
 ### Inline commit message
@@ -57,7 +60,55 @@ This will:
 /commit fix typo in header
 ```
 
-Skips AI generation and commits directly with the provided message.
+Skips AI generation and commits directly with the provided message. File selection still runs (TUI mode).
+
+### Review-then-commit
+
+Requires [crit](https://github.com/335g/crit) to be installed (`npm install -g crit`).
+
+```
+/review
+```
+
+Same flow as `/commit`, but after staging and file selection:
+1. Opens a crit review in your browser for inline comments on the diff
+2. After finishing the review, unresolved comments are shown
+3. Choose whether to include comments in the commit message context
+4. A commit message is generated incorporating the review feedback
+5. Confirm or edit the message, then commit
+
+### Dry-run mode
+
+Preview without committing:
+
+```
+/commit --dry-run
+/review --dry-run
+```
+
+The full pipeline (stage, file selection, LLM generation, confirmation) runs, but the actual `git commit` is skipped. No files are unstaged.
+
+### Interactive file selection (TUI mode)
+
+When running `/commit` or `/review` in TUI mode, an interactive file picker appears:
+
+```
+ Select files to commit  (3/5)
+   select   stat    type  file
+  ─────── ─────── ──── ────
+  ▸ ●     +10/-2  mod  src/index.ts
+    ○              new  src/pipeline.ts
+    ●     +5/-0   mod  src/config.ts
+
+  ↑↓ navigate  → select  ← deselect  space preview  a all  enter commit  esc cancel
+```
+
+- `↑↓` navigate
+- `→` select, `←` deselect
+- `Space` — open a full-screen diff preview (QuickLook-style)
+- `a` — toggle all
+- `Enter` — confirm selection
+- `Esc` / `Ctrl+C` — cancel
 
 ### Configuration
 
@@ -126,7 +177,8 @@ npm test
 
 - [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) (peer dependency)
 - [pi-ai](https://github.com/earendil-works/pi-ai) (peer dependency)
-- [pi-tui](https://github.com/earendil-works/pi-tui) (optional peer dependency – enables interactive confirmation UI)
+- [pi-tui](https://github.com/earendil-works/pi-tui) (optional peer dependency – enables interactive file selection and confirmation UI)
+- [crit](https://github.com/335g/crit) (optional – required for `/review` command)
 
 ## License
 
