@@ -2,8 +2,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { loadConfig } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { generateCommitMessageWithLLM } from "./llm-commit.js";
-import { selectFiles } from "./file-selector.js";
+import { selectFiles, type FileDetail } from "./file-selector.js";
 import { parseNameStatus } from "./commit-message.js";
+import { runCritReview, type CritReviewResult } from "./reviewer.js";
 
 /**
  * pi-git extension — `/commit` command
@@ -85,7 +86,31 @@ export default function (pi: ExtensionAPI) {
 			// to include in this commit. Only shown for interactive commits,
 			// not for auto-commit (commit_every_turn).
 			const nameStatusBeforeSelect = await git.getStagedNameStatus();
-			const selectedFiles = await selectFiles(ctx, nameStatusBeforeSelect);
+
+			// Pre-fetch per-file diffs and stats for QuickLook-style preview.
+			// Only needed in TUI mode; skip for non-TUI.
+			const fileDetails = new Map<string, FileDetail>();
+			if (ctx.mode === "tui") {
+				const parsed = parseNameStatus(nameStatusBeforeSelect);
+				await Promise.all(
+					parsed.map(async (entry) => {
+						const [diffResult, numstatResult] = await Promise.all([
+							git.getFileStagedDiff(entry.path),
+							git.getFileStagedNumstat(entry.path),
+						]);
+						fileDetails.set(entry.path, {
+							diff: diffResult,
+							additions: numstatResult.additions,
+							deletions: numstatResult.deletions,
+						});
+					}),
+				);
+			}
+
+			const selectedFiles = await selectFiles(ctx, nameStatusBeforeSelect, {
+				fileDetails: fileDetails.size > 0 ? fileDetails : undefined,
+				confirmLabel: "commit",
+			});
 
 			if (selectedFiles === null) {
 				// User cancelled – unstage everything and stop
@@ -263,6 +288,310 @@ export default function (pi: ExtensionAPI) {
 				}
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
+				ctx.ui.notify(`Commit error: ${message}`, "error");
+			}
+		},
+	});
+
+	// ───────────────────────────────────────────────────────────────────
+	// /review command
+	// ───────────────────────────────────────────────────────────────────
+
+	pi.registerCommand("review", {
+		description:
+			"Stage, review with crit, generate commit message, and commit",
+		handler: async (args, ctx) => {
+			const git = new GitOperations(pi);
+
+			// ── 0. Parse --dry-run flag ─────────────────────────────────
+			const rawArgs = args?.trim() ?? "";
+			const dryRun = /(?:^|\s)--dry-run(?:$|\s)/.test(rawArgs);
+
+			// ── 0. Verify git repository ────────────────────────────────
+			if (!(await git.isInsideGitRepo())) {
+				ctx.ui.notify("Not a git repository", "error");
+				return;
+			}
+
+			// ── 1. Check for merge conflict ─────────────────────────────
+			if (await git.hasMergeConflict()) {
+				ctx.ui.notify(
+					"Merge conflict in progress. Please resolve conflicts first.",
+					"error",
+				);
+				return;
+			}
+
+			// ── 2. Check for changes ────────────────────────────────────
+			const status = await git.checkStatus();
+			if (!status.hasChanges) {
+				ctx.ui.notify("No changes to commit", "info");
+				await updateFooterStatus(ctx);
+				return;
+			}
+
+			// ── 3. Load config ──────────────────────────────────────────
+			const config = loadConfig(ctx.cwd);
+
+			// ── 4. Stage all files ──────────────────────────────────────
+			await git.stageAll();
+
+			// ── 5. File selection ───────────────────────────────────────
+			const nameStatusBeforeSelect = await git.getStagedNameStatus();
+
+			const fileDetails = new Map<string, FileDetail>();
+			if (ctx.mode === "tui") {
+				const parsed = parseNameStatus(nameStatusBeforeSelect);
+				await Promise.all(
+					parsed.map(async (entry) => {
+						const [diffResult, numstatResult] = await Promise.all([
+							git.getFileStagedDiff(entry.path),
+							git.getFileStagedNumstat(entry.path),
+						]);
+						fileDetails.set(entry.path, {
+							diff: diffResult,
+							additions: numstatResult.additions,
+							deletions: numstatResult.deletions,
+						});
+					}),
+				);
+			}
+
+			const selectedFiles = await selectFiles(ctx, nameStatusBeforeSelect, {
+				fileDetails: fileDetails.size > 0 ? fileDetails : undefined,
+				confirmLabel: "review",
+			});
+
+			if (selectedFiles === null) {
+				await git.unstageAll();
+				ctx.ui.notify("Review cancelled.", "info");
+				await updateFooterStatus(ctx);
+				return;
+			}
+
+			// Unstage files that were NOT selected by the user
+			const allParsed = parseNameStatus(nameStatusBeforeSelect);
+			for (const entry of allParsed) {
+				if (!selectedFiles.includes(entry.path)) {
+					await git.unstageFile(entry.path);
+				}
+			}
+
+			// ── 6. Build diff for selected files only ───────────────────
+			const selectedFileEntries = selectedFiles
+				.map((path) => {
+					const detail = fileDetails.get(path);
+					if (!detail) return null;
+					return {
+						path,
+						additions: detail.additions,
+						deletions: detail.deletions,
+						diff: detail.diff,
+					};
+				})
+				.filter(
+					(e): e is NonNullable<typeof e> => e !== null,
+				);
+
+			const combinedDiff = selectedFileEntries
+				.map((e) => e.diff)
+				.filter((d) => d.length > 0)
+				.join("\n");
+
+			// ── 7. Run crit review ──────────────────────────────────────
+			ctx.ui.notify(
+				"Opening crit review in your browser. Review the diff and click Finish Review when done.",
+				"info",
+			);
+
+			let reviewResult: CritReviewResult;
+			try {
+				reviewResult = await runCritReview(
+					pi,
+					combinedDiff,
+					selectedFileEntries,
+				);
+			} catch (err) {
+				const message =
+					err instanceof Error ? err.message : String(err);
+				ctx.ui.notify(`Review failed: ${message}`, "error");
+				await git.unstageAll();
+				await updateFooterStatus(ctx);
+				return;
+			}
+
+			// ── 8. Handle review outcome ────────────────────────────────
+			const unresolvedComments = reviewResult.comments.filter(
+				(c) => !c.resolved,
+			);
+			let reviewContext: string | undefined;
+
+			if (unresolvedComments.length > 0) {
+				const commentLines = unresolvedComments.map((c) => {
+					const location = c.file
+						? `${c.file}${c.quote ? `: "${c.quote}"` : ""}`
+						: "";
+					return location ? `${location}: ${c.body}` : c.body;
+				});
+				const commentSummary =
+					`Unresolved review comments:\n${commentLines.join("\n")}`;
+
+				ctx.ui.notify(commentSummary, "warning");
+
+				// Ask user whether to continue
+				if (ctx.hasUI) {
+					const choice = await ctx.ui.select(
+						"Review has unresolved comments. Continue with commit?",
+						[
+							"Yes — include comments in commit message context",
+							"No — cancel and fix issues first",
+						],
+					);
+					if (
+						choice !==
+						"Yes — include comments in commit message context"
+					) {
+						ctx.ui.notify(
+							"Review cancelled. Fix the issues and run /review again.",
+							"info",
+						);
+						await git.unstageAll();
+						await updateFooterStatus(ctx);
+						return;
+					}
+				} else {
+					ctx.ui.notify(
+						"Review has unresolved comments. Proceeding with commit anyway.",
+						"warning",
+					);
+				}
+
+				reviewContext = commentLines.join("\n");
+			}
+
+			if (reviewResult.prompt) {
+				ctx.ui.notify(
+					`Reviewer prompt: ${reviewResult.prompt}`,
+					"info",
+				);
+			}
+
+			// ── 9. Notify dry-run mode ─────────────────────────────────
+			if (dryRun) {
+				ctx.ui.notify(
+					"[DRY RUN] Changes were reviewed but will not be committed.",
+					"info",
+				);
+			}
+
+			// ── 10. Generate commit message ─────────────────────────────
+			ctx.ui.notify(
+				"Generating commit message via LLM...",
+				"info",
+			);
+			const stagedNameStatus = await git.getStagedNameStatus();
+			const stagedStat = await git.getStagedStat();
+			const stagedDiff = await git.getStagedDiff();
+			let fullMessage = await generateCommitMessageWithLLM(
+				pi,
+				ctx,
+				stagedNameStatus,
+				stagedStat,
+				stagedDiff,
+				config,
+				reviewContext,
+			);
+
+			// ── 11. User confirmation loop ──────────────────────────────
+			let confirmed = false;
+			let cancelled = false;
+
+			while (!confirmed && !cancelled) {
+				if (ctx.hasUI) {
+					const widgetLines = ["", ...fullMessage.split("\n"), ""];
+					ctx.ui.setWidget("pi-git-review-msg", widgetLines);
+
+					const choice = await ctx.ui.select(
+						"Commit with the following message?",
+						[
+							"Y - Execute commit",
+							"N - Cancel",
+							"Edit - Modify the message",
+						],
+					);
+
+					ctx.ui.setWidget("pi-git-review-msg", []);
+
+					switch (choice) {
+						case "Y - Execute commit":
+							confirmed = true;
+							break;
+
+						case "N - Cancel":
+							cancelled = true;
+							break;
+
+						case "Edit - Modify the message": {
+							const edited = await ctx.ui.input(
+								"Edit the commit message:",
+								fullMessage,
+							);
+							if (edited != null && edited !== fullMessage) {
+								fullMessage = edited.trim();
+							}
+							break;
+						}
+
+						default:
+							cancelled = true;
+							break;
+					}
+				} else {
+					ctx.ui.notify(
+						`Proposed commit message:\n\n${fullMessage}\n\nReply with "y" to commit.`,
+						"info",
+					);
+					confirmed = true;
+				}
+			}
+
+			if (ctx.hasUI) {
+				ctx.ui.setWidget("pi-git-review-msg", []);
+			}
+
+			if (cancelled) {
+				ctx.ui.notify("Commit cancelled.", "info");
+				await updateFooterStatus(ctx);
+				return;
+			}
+
+			// ── 12. Execute commit ─────────────────────────────────────
+			if (dryRun) {
+				ctx.ui.notify(
+					`[DRY RUN] Skipped. Would commit with:\n\n${fullMessage}`,
+					"info",
+				);
+				await updateFooterStatus(ctx);
+				return;
+			}
+
+			try {
+				const result = await git.commit(fullMessage);
+				if (result.code === 0) {
+					ctx.ui.notify(
+						`Committed successfully:\n${result.stdout.trim() || fullMessage.split("\n")[0]}`,
+						"info",
+					);
+					await updateFooterStatus(ctx);
+				} else {
+					ctx.ui.notify(
+						`Commit failed (code ${result.code}):\n${result.stderr.trim() || "Unknown error"}`,
+						"error",
+					);
+				}
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : String(error);
 				ctx.ui.notify(`Commit error: ${message}`, "error");
 			}
 		},
