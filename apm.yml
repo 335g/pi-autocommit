@@ -9,10 +9,10 @@ dependencies:
   - git: mattpocock/skills
     skills:
     - domain-modeling
-    - domain_modeling
     - grill-me
     - grilling
-    - grilling,domain-modeling
+    - grill-with-docs
+    - to-prd
   mcp: []
 includes: auto
 scripts: {}

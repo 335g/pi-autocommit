@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-06-24T13:15:06.757791+00:00'
+generated_at: '2026-06-27T15:04:58.287391+00:00'
 apm_version: 0.21.0
 dependencies:
 - repo_url: mattpocock/skills
@@ -13,18 +13,24 @@ dependencies:
   - .agents/skills/domain-modeling/SKILL.md
   - .agents/skills/grill-me
   - .agents/skills/grill-me/SKILL.md
+  - .agents/skills/grill-with-docs
+  - .agents/skills/grill-with-docs/SKILL.md
   - .agents/skills/grilling
   - .agents/skills/grilling/SKILL.md
+  - .agents/skills/to-prd
+  - .agents/skills/to-prd/SKILL.md
   deployed_file_hashes:
     .agents/skills/domain-modeling/ADR-FORMAT.md: sha256:f1f36cd3f8d3b6474ddd5855da4e233bfc4ae1a1c5024909ccf11871819a41b2
     .agents/skills/domain-modeling/CONTEXT-FORMAT.md: sha256:b8cc318f2a4285b530e908b6bc43901c3c5cd11100362636bbc4216639bef597
     .agents/skills/domain-modeling/SKILL.md: sha256:152e2c97239affb12a60c5f4a7e74ab546a49ae169688c81f4e2ccc42dafa579
     .agents/skills/grill-me/SKILL.md: sha256:6189dfceb7304a6e5558f75d87e68fa3bc7fcf7ba120e44f21f8a61fe01eba54
+    .agents/skills/grill-with-docs/SKILL.md: sha256:610d091047bcfb9db0f75c057d15538481a721111579fc5ec7f83ad9131a2165
     .agents/skills/grilling/SKILL.md: sha256:fe00af3e1815f97c0a7644605479328a726b5cd95ba6ef56a4be2a92fae6c20f
+    .agents/skills/to-prd/SKILL.md: sha256:db7e7188ac4fd47f4925ae6550e0233365b3b05be40f45235ab3a0a6b0165156
   content_hash: sha256:74b35ab07a5b9a42c9561f4a70d44ba2c5b65c5ae8553ca908c081da658df69c
   skill_subset:
   - domain-modeling
-  - domain_modeling
   - grill-me
+  - grill-with-docs
   - grilling
-  - grilling,domain-modeling
+  - to-prd
