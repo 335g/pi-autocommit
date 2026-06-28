@@ -262,13 +262,13 @@ async function showStatusViewer(
 	ctx: ExtensionContext,
 	statusOutput: string,
 ): Promise<void> {
-	const lines = statusOutput.split("\n");
+	const lines = statusOutput.trimEnd().split("\n");
 	if (lines.length === 0 || (lines.length === 1 && lines[0] === "")) {
 		ctx.ui.notify("No changes — working tree clean.", "info");
 		return;
 	}
 
-	await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
+	await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 		let scrollOffset = 0;
 		const maxVisible = Math.min(lines.length, 40);
 
@@ -289,19 +289,19 @@ async function showStatusViewer(
 				if (matchesKey(data, Key.up)) {
 					if (scrollOffset > 0) {
 						scrollOffset--;
-						_tui.requestRender();
+						tui.requestRender();
 					}
 				} else if (matchesKey(data, Key.down)) {
 					if (scrollOffset < lines.length - 1) {
 						scrollOffset++;
-						_tui.requestRender();
+						tui.requestRender();
 					}
 				} else if (
 					matchesKey(data, Key.pageUp) ||
 					matchesKey(data, Key.ctrl("b"))
 				) {
 					scrollOffset = Math.max(0, scrollOffset - 20);
-					_tui.requestRender();
+					tui.requestRender();
 				} else if (
 					matchesKey(data, Key.pageDown) ||
 					matchesKey(data, Key.ctrl("f"))
@@ -310,7 +310,7 @@ async function showStatusViewer(
 						Math.max(0, lines.length - 1),
 						scrollOffset + 20,
 					);
-					_tui.requestRender();
+					tui.requestRender();
 				}
 			},
 

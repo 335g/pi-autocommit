@@ -3,10 +3,11 @@
 [![npm version](https://img.shields.io/npm/v/@335g/pi-git.svg)](https://www.npmjs.com/package/@335g/pi-git)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/git-commit` and `/git-review` commands for generating [Conventional Commits](https://www.conventionalcommits.org/) messages using LLM or heuristic fallback.
+A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/git-commit`, `/git-review`, and `/git-status` commands for [Conventional Commits](https://www.conventionalcommits.org/) message generation and repository status inspection.
 
 ## Features
 
+- **`/git-status` command** – View working tree and staged changes in a scrollable, colour-coded TUI viewer without leaving pi
 - **`/git-commit` command** – Stage all changes, optionally select files, and commit with an AI-generated message
 - **`/git-review` command** – Stage, review changes with [crit](https://github.com/335g/crit) inline comments, then generate a commit message
 - **Inline message support** – `/git-commit fix typo` uses the message directly without AI generation
@@ -53,6 +54,21 @@ This will:
 5. Generate a Conventional Commits message via LLM
 6. Present the message for confirmation (Y/Edit/Cancel)
 7. Execute the commit
+
+### Git status
+
+```
+/git-status
+```
+
+Shows the working tree status in a scrollable, colour-coded TUI viewer—no need to drop to a shell with `!git status`.
+
+In TUI mode:
+- `↑↓` scroll one line
+- `PgUp` / `PgDn` scroll 20 lines
+- `Esc` / `Ctrl+C` close
+
+In non-TUI mode (RPC/JSON/print), the output is shown via `ctx.ui.notify()`.
 
 ### Inline commit message
 

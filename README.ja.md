@@ -4,10 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) の拡張機能です。
-LLM またはヒューリスティックフォールバックを用いて [Conventional Commits](https://www.conventionalcommits.org/) 形式のコミットメッセージを生成する `/git-commit`・`/git-review` コマンドを追加します。
+LLM またはヒューリスティックフォールバックを用いて [Conventional Commits](https://www.conventionalcommits.org/) 形式のコミットメッセージを生成する `/git-commit`・`/git-review` コマンドと、リポジトリステータスを表示する `/git-status` コマンドを追加します。
 
 ## 特徴
 
+- **`/git-status` コマンド** – ワーキングツリーとステージされた変更をスクロール可能なカラー表示の TUI ビューワで確認（pi から離れる必要なし）
 - **`/git-commit` コマンド** – 変更をステージし、ファイル選択、AI 生成、確認を経てコミット
 - **`/git-review` コマンド** – [crit](https://github.com/335g/crit) によるインラインレビューを経てコミットメッセージを生成
 - **インラインコミットメッセージ** – `/git-commit fix typo` のようにメッセージを直接指定すると AI 生成をスキップ
@@ -37,6 +38,22 @@ pi install @335g/pi-git
 ```
 
 ## 使い方
+
+### Git ステータスの表示
+
+```
+/git-status
+```
+
+ワーキングツリーの状態をスクロール可能なカラー表示の TUI ビューワで表示します。
+`!git status` でシェルに抜ける必要はありません。
+
+TUI モード:
+- `↑↓` 1行スクロール
+- `PgUp` / `PgDn` 20行ジャンプ
+- `Esc` / `Ctrl+C` 閉じる
+
+非 TUI モード（RPC/JSON/print）では `ctx.ui.notify()` で出力を表示します。
 
 ### 基本コミット
 
