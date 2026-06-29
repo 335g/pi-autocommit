@@ -169,15 +169,31 @@ export default function (pi: ExtensionAPI) {
 
 								if (ctx.hasUI) {
 									const choice = await ctx.ui.select(
-										"Review has unresolved comments. Continue with commit?",
+										"Review has unresolved comments. What would you like to do?",
 										[
-											"Yes — include comments in commit message context",
-											"No — cancel and fix issues first",
+											"Fix based on comments — unstages and sends to LLM for fixing",
+											"Include comments in commit message context and continue",
+											"Cancel — abort, fix issues manually, then re-run",
 										],
 									);
+
 									if (
-										choice !==
-										"Yes — include comments in commit message context"
+										choice === "Fix based on comments — unstages and sends to LLM for fixing"
+									) {
+										// Build full message including prompt if available
+										const fullSummary = result.prompt
+											? `${result.prompt}\n\n${commentSummary}`
+											: commentSummary;
+										// Store comments on the error so the handler can send them
+										const err = new Error(
+											"REVIEW_SEND_TO_AGENT",
+										);
+										(err as any).reviewComments = fullSummary;
+										throw err;
+									}
+
+									if (
+										choice !== "Include comments in commit message context and continue"
 									) {
 										throw new Error(
 											"Review cancelled by user — fix issues first.",
@@ -205,6 +221,30 @@ export default function (pi: ExtensionAPI) {
 			} catch (error) {
 				const message =
 					error instanceof Error ? error.message : String(error);
+
+				if (message === "REVIEW_SEND_TO_AGENT") {
+					const reviewComments = (error as any).reviewComments ?? "";
+					// Changes are already unstaged by the pipeline error handler.
+					// Send the review comments to the main agent so it can fix the code.
+					pi.sendUserMessage(
+						[{
+							type: "text",
+							text:
+								"The following review comments were made during code review. " +
+								"Please address each one by editing the affected files. " +
+								"All changes have been unstaged. After fixing, run `/git-commit` or `/git-review` again.\n\n" +
+								"--- Review Comments ---\n" +
+								reviewComments,
+						}],
+						{ deliverAs: "steer" },
+					);
+					ctx.ui.notify(
+						"Review comments sent to the LLM for fixing. Changes have been unstaged.",
+						"info",
+					);
+					return;
+				}
+
 				if (message.includes("cancelled")) {
 					ctx.ui.notify(message, "info");
 				} else {
