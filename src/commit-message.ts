@@ -5,7 +5,7 @@ import { type ParsedNameStatus, parseNameStatus } from "./git-parser.js";
 /**
  * Conventional Commits type.
  */
-export type CommitType = "feat" | "fix" | "refactor" | "chore" | "docs" | "test" | "style" | "perf";
+type CommitType = "feat" | "fix" | "refactor" | "chore" | "docs" | "test" | "style" | "perf";
 
 export interface CommitMessage {
 	type: CommitType;
@@ -25,7 +25,7 @@ export interface CommitMessage {
  * - **chore** when only config/build files changed
  * - For code changes, analyze diff keywords to distinguish feat/fix/perf/refactor
  */
-export function determineType(
+function determineType(
 	nameStatusEntries: ParsedNameStatus[],
 	diff: string,
 	stat: string,
@@ -91,7 +91,7 @@ export function determineType(
  * Uses the longest common directory prefix among the changed files.
  * Falls back to `null` when files span completely different areas.
  */
-export function determineScope(nameStatusEntries: ParsedNameStatus[]): string | null {
+function determineScope(nameStatusEntries: ParsedNameStatus[]): string | null {
 	const paths = nameStatusEntries.map((e) => e.path);
 	if (paths.length === 0) return null;
 
