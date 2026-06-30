@@ -1,11 +1,7 @@
 import type { PiGitConfig } from "./config.js";
 import { hasNoBody, isJapanese } from "./config.js";
 import { type ParsedNameStatus, parseNameStatus } from "./git-parser.js";
-
-/**
- * Conventional Commits type.
- */
-type CommitType = "feat" | "fix" | "refactor" | "chore" | "docs" | "test" | "style" | "perf";
+import type { CommitType } from "./commit-types.js";
 
 export interface CommitMessage {
 	type: CommitType;

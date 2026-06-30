@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PiGitConfig } from "./config.js";
 import { hasNoBody, isJapanese } from "./config.js";
+import { COMMIT_TYPES } from "./commit-types.js";
 import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
 
 /**
@@ -75,14 +76,9 @@ export async function generateCommitMessageWithLLM(
 		...rules,
 		"",
 		"Type reference (pick the most significant one):",
-		"  feat     — New feature, new command/option/API",
-		"  fix      — Bug fix, correction of unintended behavior",
-		"  refactor — Improve code structure without behavior change",
-		"  chore    — Build config, dependencies, CI, repository setup",
-		"  docs     — Documentation-only (README, SKILL.md, comments)",
-		"  test     — Adding or modifying tests",
-		"  style    — Code formatting (no behavioral impact)",
-		"  perf     — Performance improvements",
+		...Object.entries(COMMIT_TYPES).map(
+			([type, desc]) => `  ${type.padEnd(9)}— ${desc}`,
+		),
 		"",
 		"Scope: describe the affected area in parentheses if meaningful.",
 		"There is no fixed list; infer from the changed paths.",
