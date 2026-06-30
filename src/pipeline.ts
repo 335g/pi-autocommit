@@ -3,7 +3,7 @@ import type { PiGitConfig } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { selectFiles, type FileDetail } from "./file-selector.js";
 import { generateCommitMessageWithLLM } from "./llm-commit.js";
-import { parseNameStatus } from "./commit-message.js";
+import { parseNameStatus } from "./git-parser.js";
 import type { MessageAction } from "./confirmation.js";
 
 // ── Type definitions ─────────────────────────────────────

@@ -1,5 +1,5 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { parseNameStatus } from "./commit-message.js";
+import { parseNameStatus } from "./git-parser.js";
 import { matchesKey, Key, truncateToWidth } from "@earendil-works/pi-tui";
 
 /**
