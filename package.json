@@ -60,7 +60,5 @@
       "optional": true
     }
   },
-  "dependencies": {
-    "smol-toml": "^1.6.1"
-  }
+  "dependencies": {}
 }

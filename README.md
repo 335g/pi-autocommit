@@ -15,7 +15,7 @@ A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension
 - **Heuristic fallback** – When the LLM is unavailable, generates a commit message from diff analysis
 - **Interactive file selection** – Pick which staged files to include; preview diffs with QuickLook-style overlay (TUI mode)
 - **Interactive confirmation** – Review, edit, or cancel the proposed commit message before executing
-- **Language support** – Commit messages can be written in English or Japanese (configured via `.pi-git/config.toml`)
+- **Language support** – Commit messages can be written in English or Japanese (configured via `.pi/pi-git.json`)
 - **Auto-commit on every turn** – Automatically commit changes at the end of each agent turn when `commit_every_turn = true` is set in config
 - **Merge conflict detection** – Refuses to commit when a merge is in progress
 - **Dry-run mode** – Preview the generated commit message without executing
@@ -128,14 +128,21 @@ When running `/git-commit` or `/git-review` in TUI mode, an interactive file pic
 
 ### Configuration
 
-Create `.pi-git/config.toml` in your project root:
+Create `.pi/pi-git.json` in your project root:
 
-```toml
-# .pi-git/config.toml
-lang = "ja"              # Commit message language: "ja" (Japanese) or "en" (English, default)
-no_body = true           # Omit body, subject-only commit message (default: false)
-commit_every_turn = true # Auto-commit at the end of every agent turn (default: false)
+```json
+{
+  "lang": "ja",
+  "noBody": true,
+  "commitEveryTurn": false
+}
 ```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
+| `noBody` | boolean | `false` | Omit body, subject-only commit message |
+| `commitEveryTurn` | boolean | `false` | Auto-commit at the end of every agent turn |
 
 #### `commit_every_turn`
 
