@@ -361,7 +361,7 @@ export default function (pi: ExtensionAPI) {
       });
     } catch (err) {
       ctx.ui.notify(
-        `commit_every_turn: error — ${err instanceof Error ? err.message : String(err)}`,
+        `commitEveryTurn: error — ${err instanceof Error ? err.message : String(err)}`,
         "error",
       );
     }
@@ -406,7 +406,7 @@ export default function (pi: ExtensionAPI) {
 - **振る舞いの完全保存**: 既存の全フローを変更しない
   - インラインメッセージ → staging/file selection 実行、確認ループスキップ
   - dry-run → commit スキップ（unstage しない）
-  - agent_end → ファイル選択なし、確認なし、`commit_every_turn:` プレフィックス維持
+  - agent_end → ファイル選択なし、確認なし、`commitEveryTurn:` プレフィックス維持
   - `/commit` 確認ラベル "Cancel and retry" → "Cancel" に変更（機能に影響なし）
   - `/review` unresolved comments → ユーザー確認 → commit メッセージコンテキストに反映
 - **段階的リファクタリング**: 新規ファイルを先に作り、最後に index.ts から切り替える

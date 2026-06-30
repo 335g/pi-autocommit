@@ -16,7 +16,7 @@ A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension
 - **Interactive file selection** – Pick which staged files to include; preview diffs with QuickLook-style overlay (TUI mode)
 - **Interactive confirmation** – Review, edit, or cancel the proposed commit message before executing
 - **Language support** – Commit messages can be written in English or Japanese (configured via `.pi/pi-git.json`)
-- **Auto-commit on every turn** – Automatically commit changes at the end of each agent turn when `commit_every_turn = true` is set in config
+- **Auto-commit on every turn** – Automatically commit changes at the end of each agent turn when `commitEveryTurn: true` is set in config
 - **Merge conflict detection** – Refuses to commit when a merge is in progress
 - **Dry-run mode** – Preview the generated commit message without executing
 
@@ -144,7 +144,7 @@ Create `.pi/pi-git.json` in your project root:
 | `noBody` | boolean | `false` | Omit body, subject-only commit message |
 | `commitEveryTurn` | boolean | `false` | Auto-commit at the end of every agent turn |
 
-#### `commit_every_turn`
+#### `commitEveryTurn`
 
 When enabled, the extension listens for the `agent_end` event and automatically:
 1. Checks for uncommitted changes

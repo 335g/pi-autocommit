@@ -263,7 +263,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// ───────────────────────────────────────────────────────
-	// Auto-commit on agent_end (commit_every_turn)
+	// Auto-commit on agent_end (commitEveryTurn)
 	// ───────────────────────────────────────────────────────
 
 	pi.on("agent_end", async (_event, ctx) => {
@@ -283,7 +283,7 @@ export default function (pi: ExtensionAPI) {
 			const message =
 				error instanceof Error ? error.message : String(error);
 			ctx.ui.notify(
-				`commit_every_turn: error — ${message}`,
+				`commitEveryTurn: error — ${message}`,
 				"error",
 			);
 		}
