@@ -8,9 +8,9 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
  * - `cancel`: abort the entire commit flow
  */
 export type MessageAction =
-	| { action: "commit" }
-	| { action: "edit"; message: string }
-	| { action: "cancel" };
+  | { action: "commit" }
+  | { action: "edit"; message: string }
+  | { action: "cancel" };
 
 /**
  * Present the generated commit message to the user and let them
@@ -31,60 +31,60 @@ export type MessageAction =
  * @param dryRun - When true, only display without interactive confirmation
  */
 export async function confirmCommitMessage(
-	ctx: ExtensionContext,
-	message: string,
-	widgetId: string,
-	dryRun?: boolean,
+  ctx: ExtensionContext,
+  message: string,
+  widgetId: string,
+  dryRun?: boolean,
 ): Promise<MessageAction> {
-	if (dryRun) {
-		ctx.ui.notify(
-			`[DRY RUN] Would commit with the following message:\n\n${message}`,
-			"info",
-		);
-		return { action: "commit" };
-	}
+  if (dryRun) {
+    ctx.ui.notify(
+      `[DRY RUN] Would commit with the following message:\n\n${message}`,
+      "info",
+    );
+    return { action: "commit" };
+  }
 
-	// ── Non-TUI mode ──────────────────────────────────────
-	if (!ctx.hasUI) {
-		ctx.ui.notify(
-			`Proposed commit message:\n\n${message}\n\nReply with "y" to commit, or provide changes.`,
-			"info",
-		);
-		return { action: "commit" };
-	}
+  // ── Non-TUI mode ──────────────────────────────────────
+  if (!ctx.hasUI) {
+    ctx.ui.notify(
+      `Proposed commit message:\n\n${message}\n\nReply with "y" to commit, or provide changes.`,
+      "info",
+    );
+    return { action: "commit" };
+  }
 
-	// ── TUI mode: interactive confirmation ────────────────
-	const widgetLines = ["", ...message.split("\n"), ""];
-	ctx.ui.setWidget(widgetId, widgetLines);
+  // ── TUI mode: interactive confirmation ────────────────
+  const widgetLines = ["", ...message.split("\n"), ""];
+  ctx.ui.setWidget(widgetId, widgetLines);
 
-	const choice = await ctx.ui.select("Commit with the following message?", [
-		"Y - Execute commit",
-		"N - Cancel",
-		"Edit - Modify the message",
-	]);
+  const choice = await ctx.ui.select("Commit with the following message?", [
+    "Y - Execute commit",
+    "N - Cancel",
+    "Edit - Modify the message",
+  ]);
 
-	ctx.ui.setWidget(widgetId, []);
+  ctx.ui.setWidget(widgetId, []);
 
-	switch (choice) {
-		case "Y - Execute commit":
-			return { action: "commit" };
+  switch (choice) {
+    case "Y - Execute commit":
+      return { action: "commit" };
 
-		case "Edit - Modify the message": {
-			const edited = await ctx.ui.input(
-				"Edit the commit message (full message):",
-				message,
-			);
-			if (edited != null && edited !== message) {
-				return { action: "edit", message: edited.trim() };
-			}
-			// User cancelled editor or left unchanged → re-confirm
-			return {
-				action: "edit",
-				message,
-			};
-		}
+    case "Edit - Modify the message": {
+      const edited = await ctx.ui.input(
+        "Edit the commit message (full message):",
+        message,
+      );
+      if (edited != null && edited !== message) {
+        return { action: "edit", message: edited.trim() };
+      }
+      // User cancelled editor or left unchanged → re-confirm
+      return {
+        action: "edit",
+        message,
+      };
+    }
 
-		default:
-			return { action: "cancel" };
-	}
+    default:
+      return { action: "cancel" };
+  }
 }

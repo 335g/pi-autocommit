@@ -6,14 +6,14 @@
  * derive their type information from here.
  */
 export const COMMIT_TYPES = {
-	feat: "New feature, new command/option/API",
-	fix: "Bug fix, correction of unintended behavior",
-	refactor: "Improve code structure without behavior change",
-	chore: "Build config, dependencies, CI, repository setup",
-	docs: "Documentation-only (README, SKILL.md, comments)",
-	test: "Adding or modifying tests",
-	style: "Code formatting (no behavioral impact)",
-	perf: "Performance improvements",
+  feat: "New feature, new command/option/API",
+  fix: "Bug fix, correction of unintended behavior",
+  refactor: "Improve code structure without behavior change",
+  chore: "Build config, dependencies, CI, repository setup",
+  docs: "Documentation-only (README, SKILL.md, comments)",
+  test: "Adding or modifying tests",
+  style: "Code formatting (no behavioral impact)",
+  perf: "Performance improvements",
 } as const;
 
 /**

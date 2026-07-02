@@ -6,14 +6,14 @@
  */
 
 export interface ParsedCommitArgs {
-	/** Whether --dry-run flag is present */
-	dryRun: boolean;
-	/**
-	 * Inline commit message extracted from args.
-	 * Empty string when no inline message was provided.
-	 * The --dry-run flag is stripped from this value.
-	 */
-	inlineMessage: string;
+  /** Whether --dry-run flag is present */
+  dryRun: boolean;
+  /**
+   * Inline commit message extracted from args.
+   * Empty string when no inline message was provided.
+   * The --dry-run flag is stripped from this value.
+   */
+  inlineMessage: string;
 }
 
 /**
@@ -31,10 +31,10 @@ export interface ParsedCommitArgs {
  *   parseCommitArgs("--dry-run fix")   → { dryRun: true,  inlineMessage: "fix" }
  */
 export function parseCommitArgs(raw: string): ParsedCommitArgs {
-	const trimmed = raw.trim();
-	const dryRun = /(?:^|\s)--dry-run(?:$|\s)/.test(trimmed);
-	const inlineMessage = dryRun
-		? trimmed.replace(/\s*--dry-run\s*/, "").trim()
-		: trimmed;
-	return { dryRun, inlineMessage };
+  const trimmed = raw.trim();
+  const dryRun = /(?:^|\s)--dry-run(?:$|\s)/.test(trimmed);
+  const inlineMessage = dryRun
+    ? trimmed.replace(/\s*--dry-run\s*/, "").trim()
+    : trimmed;
+  return { dryRun, inlineMessage };
 }
