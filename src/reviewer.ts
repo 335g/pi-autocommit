@@ -266,34 +266,123 @@ function buildReviewDocument(
 }
 
 /**
+ * Extract a single top-level JSON object starting at `start`.
+ *
+ * Uses brace matching that respects strings and escapes, so nested
+ * objects and arrays are handled correctly.
+ *
+ * @internal Exported for testing only.
+ */
+export function extractJsonObjectAt(
+  text: string,
+  start: number,
+): { value: Record<string, unknown>; end: number } | null {
+  if (text[start] !== "{") return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return {
+            value: JSON.parse(text.slice(start, i + 1)) as Record<
+              string,
+              unknown
+            >,
+            end: i + 1,
+          };
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Parse crit's stdout JSON output.
  *
- * Crit may print startup messages before the JSON payload,
- * so we find the first JSON object in the output.
+ * Crit may print startup messages or event lines before the final JSON
+ * payload, and may emit multiple JSON objects during a comment rally.
+ * We scan for all valid top-level JSON objects and use the last one that
+ * looks like a crit review result.
  *
  * If no JSON is found, fall back to interpreting the raw text.
  * In some environments crit outputs the prompt message directly
  * (e.g. "Review approved with no comments — no changes requested.")
  * instead of the full JSON payload.
+ *
+ * @internal Exported for testing only.
  */
-function parseCritOutput(stdout: string): CritReviewResult {
-  // Find JSON in the output (may have startup messages before it)
-  const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-    } catch {
-      throw new Error(`Invalid JSON from crit:\n${stdout}`);
+export function parseCritOutput(stdout: string): CritReviewResult {
+  const objects: Record<string, unknown>[] = [];
+
+  for (let i = 0; i < stdout.length; i++) {
+    if (stdout[i] === "{") {
+      const parsed = extractJsonObjectAt(stdout, i);
+      if (parsed) {
+        objects.push(parsed.value);
+        i = parsed.end - 1;
+      }
+    }
+  }
+
+  if (objects.length > 0) {
+    // Prefer the last object that resembles a crit result payload.
+    // A crit result always has a comments array, so prefer that over
+    // event objects that may happen to carry an approved boolean or
+    // prompt string.
+    let result = objects[objects.length - 1];
+    for (let i = objects.length - 1; i >= 0; i--) {
+      if (Array.isArray(objects[i].comments)) {
+        result = objects[i];
+        break;
+      }
     }
 
-    const rawComments = (parsed.comments ?? []) as Array<
+    // Fallback: tolerate payloads that lack comments but look like a result.
+    if (!Array.isArray(result.comments)) {
+      for (let i = objects.length - 1; i >= 0; i--) {
+        const o = objects[i];
+        if (
+          typeof o.approved === "boolean" ||
+          typeof o.prompt === "string"
+        ) {
+          result = o;
+          break;
+        }
+      }
+    }
+
+    const rawComments = (result.comments ?? []) as Array<
       Record<string, unknown>
     >;
 
     return {
-      approved: (parsed.approved as boolean) ?? false,
-      prompt: parsed.prompt as string | undefined,
+      approved: (result.approved as boolean) ?? false,
+      prompt: result.prompt as string | undefined,
       comments: rawComments.map((c) => ({
         id: (c.id as string) ?? "",
         body: (c.body as string) ?? "",
