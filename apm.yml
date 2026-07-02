@@ -7,16 +7,6 @@ targets:
 dependencies:
   apm:
   - git: mattpocock/skills
-    skills:
-    - ask-matt
-    - setup-matt-pocock-skills
-    - domain-modeling
-    - grill-me
-    - grilling
-    - grill-with-docs
-    - to-prd
-    - improve-codebase-architecture
-    - implement
   mcp: []
 includes: auto
 scripts: {}

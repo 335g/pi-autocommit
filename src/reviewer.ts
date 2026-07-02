@@ -129,32 +129,51 @@ function buildReviewDocument(
  *
  * Crit may print startup messages before the JSON payload,
  * so we find the first JSON object in the output.
+ *
+ * If no JSON is found, fall back to interpreting the raw text.
+ * In some environments crit outputs the prompt message directly
+ * (e.g. "Review approved with no comments — no changes requested.")
+ * instead of the full JSON payload.
  */
 function parseCritOutput(stdout: string): CritReviewResult {
 	// Find JSON in the output (may have startup messages before it)
 	const jsonMatch = stdout.match(/\{[\s\S]*\}/);
-	if (!jsonMatch) {
-		throw new Error(`Could not parse crit output:\n${stdout}`);
+	if (jsonMatch) {
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+		} catch {
+			throw new Error(`Invalid JSON from crit:\n${stdout}`);
+		}
+
+		const rawComments = (parsed.comments ?? []) as Array<
+			Record<string, unknown>
+		>;
+
+		return {
+			approved: (parsed.approved as boolean) ?? false,
+			prompt: parsed.prompt as string | undefined,
+			comments: rawComments.map((c) => ({
+				id: (c.id as string) ?? "",
+				body: (c.body as string) ?? "",
+				quote: c.quote as string | undefined,
+				file: c.file as string | undefined,
+				resolved: (c.resolved as boolean) ?? false,
+			})),
+		};
 	}
 
-	let parsed: Record<string, unknown>;
-	try {
-		parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-	} catch {
-		throw new Error(`Invalid JSON from crit:\n${stdout}`);
-	}
-
-	const rawComments = (parsed.comments ?? []) as Array<Record<string, unknown>>;
+	// Fallback: no JSON found — treat raw output as prompt text.
+	// This handles cases where crit outputs the prompt message directly
+	// without JSON wrapping.
+	const trimmed = stdout.trim();
+	const approved =
+		trimmed.toLowerCase().includes("approved") ||
+		trimmed.toLowerCase().includes("no changes requested");
 
 	return {
-		approved: (parsed.approved as boolean) ?? false,
-		prompt: parsed.prompt as string | undefined,
-		comments: rawComments.map((c) => ({
-			id: (c.id as string) ?? "",
-			body: (c.body as string) ?? "",
-			quote: c.quote as string | undefined,
-			file: c.file as string | undefined,
-			resolved: (c.resolved as boolean) ?? false,
-		})),
+		approved,
+		prompt: trimmed || undefined,
+		comments: [],
 	};
 }
