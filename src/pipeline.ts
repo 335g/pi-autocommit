@@ -5,6 +5,7 @@ import { selectFiles, type FileDetail } from "./file-selector.js";
 import { generateCommitMessageWithLLM } from "./llm-commit.js";
 import { parseNameStatus } from "./git-parser.js";
 import type { MessageAction } from "./confirmation.js";
+import type { PipelineEvent, PipelineResult, PipelineCallbacks } from "./commit-events.js";
 
 // ── Type definitions ─────────────────────────────────────
 
@@ -68,6 +69,11 @@ export interface CommitPipelineOptions {
   hooks?: CommitPipelineHooks;
 
   /**
+   * Optional callbacks for real-time progress during execution.
+   */
+  callbacks?: PipelineCallbacks;
+
+  /**
    * When set, skip LLM generation and use this message directly.
    * Staging and file selection still run.
    */
@@ -123,35 +129,38 @@ export interface CommitPipelineOptions {
  *  10. Call `onMessageGenerated` hook for confirmation
  *  11. Execute `git commit` (unless dryRun)
  *  12. Call `postCommit` hook
- *  13. Update footer status
  *
- * Error boundary: the entire pipeline is wrapped in try/catch/finally.
- * On any error (hook throw, git failure, etc.), the pipeline guarantees
- * `unstageAll` + footer update, then re-throws to the caller.
- * The caller is responsible for user-facing error notification.
+ * Returns a `PipelineResult` with a structured events array that the caller
+ * (presenter in index.ts) maps to UI calls.
+ *
+ * Error boundary: on any error (hook throw, git failure, etc.), the pipeline
+ * guarantees `unstageAll` cleanup then re-throws. Footer-status updates
+ * are the caller's responsibility (handled in catch blocks in index.ts).
  */
 export async function runCommitPipeline(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   config: PiGitConfig,
   options?: CommitPipelineOptions,
-): Promise<void> {
+): Promise<PipelineResult> {
   const git = new GitOperations(pi);
   const hooks = options?.hooks;
   const dryRun = options?.dryRun ?? false;
-  const updateFooter = async () => {
+  const callbacks = options?.callbacks;
+  const events: PipelineEvent[] = [];
+  let committed = false;
+
+  // Helper to push a stage-changed event with current status.
+  const pushStageChanged = async () => {
     try {
       if (!(await git.isInsideGitRepo())) {
-        ctx.ui.setStatus("pi-git-uncommitted", undefined);
+        events.push({ type: "stage-changed" });
         return;
       }
       const hasChanges = await git.checkUncommittedChanges();
-      ctx.ui.setStatus(
-        "pi-git-uncommitted",
-        hasChanges ? "[has changes]" : undefined,
-      );
+      events.push({ type: "stage-changed", hasChanges });
     } catch {
-      ctx.ui.setStatus("pi-git-uncommitted", undefined);
+      events.push({ type: "stage-changed" });
     }
   };
 
@@ -159,25 +168,25 @@ export async function runCommitPipeline(
   try {
     // ── 1. Verify git repository ────────────────────────
     if (!(await git.isInsideGitRepo())) {
-      ctx.ui.notify("Not a git repository", "error");
-      return;
+      events.push({ type: "error", message: "Not a git repository" });
+      return { events, committed: false };
     }
 
     // ── 2. Check for merge conflict ─────────────────────
     if (await git.hasMergeConflict()) {
-      ctx.ui.notify(
-        "Merge conflict in progress. Please resolve conflicts first.",
-        "error",
-      );
-      return;
+      events.push({
+        type: "error",
+        message: "Merge conflict in progress. Please resolve conflicts first.",
+      });
+      return { events, committed: false };
     }
 
     // ── 3. Check for changes ────────────────────────────
     const status = await git.checkStatus();
     if (!status.hasChanges) {
-      ctx.ui.notify("No changes to commit", "info");
-      await updateFooter();
-      return;
+      events.push({ type: "info", message: "No changes to commit" });
+      await pushStageChanged();
+      return { events, committed: false };
     }
 
     // ── 4. Stage all files ──────────────────────────────
@@ -223,14 +232,14 @@ export async function runCommitPipeline(
     // Handle cancellation (null) or empty selection ([])
     if (selectedFiles === null || selectedFiles.length === 0) {
       await git.unstageAll();
-      ctx.ui.notify(
-        selectedFiles === null
+      events.push({
+        type: "cancelled",
+        reason: selectedFiles === null
           ? "Commit cancelled (no files selected)."
           : "No files selected — nothing to commit.",
-        "info",
-      );
-      await updateFooter();
-      return;
+      });
+      await pushStageChanged();
+      return { events, committed: false };
     }
 
     // ── 6. Unstage non-selected files ───────────────────
@@ -266,7 +275,13 @@ export async function runCommitPipeline(
     if (options?.inlineMessage) {
       fullMessage = options.inlineMessage;
     } else {
-      ctx.ui.notify("Generating commit message via LLM...", "info");
+      // Fire progress callback before the async LLM call.
+      // Defensive: swallow callback errors so the pipeline is not interrupted.
+      try {
+        callbacks?.onProgress?.({ type: "generating" });
+      } catch {
+        // Swallow — the presenter is responsible for its own error handling.
+      }
       fullMessage = await generateCommitMessageWithLLM(
         pi,
         ctx,
@@ -283,10 +298,10 @@ export async function runCommitPipeline(
       const action = await hooks.onMessageGenerated(fullMessage);
 
       if (action.action === "cancel") {
-        ctx.ui.notify("Commit cancelled.", "info");
+        events.push({ type: "cancelled", reason: "Commit cancelled." });
         await git.unstageAll();
-        await updateFooter();
-        return;
+        await pushStageChanged();
+        return { events, committed: false };
       }
 
       if (action.action === "edit") {
@@ -297,12 +312,12 @@ export async function runCommitPipeline(
 
     // ── 11. Execute commit ──────────────────────────────
     if (dryRun) {
-      ctx.ui.notify(
-        `[DRY RUN] Skipped. Would commit with:\n\n${fullMessage}`,
-        "info",
-      );
-      await updateFooter();
-      return;
+      events.push({
+        type: "dry-run",
+        message: `[DRY RUN] Skipped. Would commit with:\n\n${fullMessage}`,
+      });
+      await pushStageChanged();
+      return { events, committed: false };
     }
 
     const result = await git.commit(fullMessage);
@@ -312,27 +327,24 @@ export async function runCommitPipeline(
       );
     }
 
-    ctx.ui.notify(
-      `Committed successfully:\n${result.stdout.trim() || fullMessage.split("\n")[0]}`,
-      "info",
-    );
+    committed = true;
+    events.push({
+      type: "committed",
+      message: `Committed successfully:\n${result.stdout.trim() || fullMessage.split("\n")[0]}`,
+    });
 
     // ── 12. postCommit hook ─────────────────────────────
     if (hooks?.postCommit) {
       await hooks.postCommit();
     }
 
-    // ── 13. Update footer ───────────────────────────────
-    await updateFooter();
+    await pushStageChanged();
+    return { events, committed };
   } catch (error) {
-    // Error boundary: cleanup before re-throwing
+    // Error boundary: cleanup before re-throwing.
+    // Footer-status update is the caller's responsibility (catch block).
     try {
       await git.unstageAll();
-    } catch {
-      // Best-effort cleanup
-    }
-    try {
-      await updateFooter();
     } catch {
       // Best-effort cleanup
     }

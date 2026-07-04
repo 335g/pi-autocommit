@@ -8,6 +8,7 @@ import { GitOperations } from "./git-operations.js";
 import { generateCommitMessageWithLLM } from "./llm-commit.js";
 import { hasNoBody, isJapanese } from "./config.js";
 import { COMMIT_TYPES } from "./commit-types.js";
+import type { OrganizerEvent, OrganizerResult } from "./commit-events.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
@@ -34,17 +35,19 @@ export async function organizeWipCommits(
   ctx: ExtensionContext,
   config: PiGitConfig,
   event: AgentEndEvent,
-): Promise<void> {
+): Promise<OrganizerResult> {
   const git = new GitOperations(pi);
+  const events: OrganizerEvent[] = [];
+  let organised = false;
 
   if (!(await git.isInsideGitRepo())) {
-    return;
+    return { events, organised: false };
   }
 
   const wipCount = await git.countWipCommits(WIP_COMMIT_MARKER);
   if (wipCount === 0) {
-    await updateFooterStatus(pi, ctx);
-    return;
+    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    return { events, organised: false };
   }
 
   // Undo the WIP commits but keep all their changes staged.
@@ -54,8 +57,10 @@ export async function organizeWipCommits(
     const groups = await proposeCommitGroups(pi, ctx, config, event);
     if (groups.length === 0) {
       // No logical groups: fall back to one commit.
-      await fallbackSingleCommit(pi, ctx, config, git);
-      return;
+      await fallbackSingleCommit(pi, ctx, config, git, events);
+      organised = true;
+      events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+      return { events, organised };
     }
 
     // Stage and commit each logical group in order.
@@ -70,25 +75,30 @@ export async function organizeWipCommits(
       }
     }
 
-    ctx.ui.notify(
-      `Organised ${wipCount} checkpoint(s) into ${groups.length} commit(s).`,
-      "info",
-    );
+    events.push({
+      type: "organised",
+      checkpointCount: wipCount,
+      commitCount: groups.length,
+    });
+    organised = true;
+    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    return { events, organised };
   } catch (error) {
     // Fall back to a single commit so WIP commits are not left half-organised.
     try {
       await git.stageAll();
-      await fallbackSingleCommit(pi, ctx, config, git);
+      await fallbackSingleCommit(pi, ctx, config, git, events);
+      organised = true;
     } catch {
       const message =
         error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(
-        `commitEveryTurn: reorganisation failed — ${message}`,
-        "error",
-      );
+      events.push({
+        type: "error",
+        message: `commitEveryTurn: reorganisation failed — ${message}`,
+      });
     }
-  } finally {
-    await updateFooterStatus(pi, ctx);
+    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    return { events, organised };
   }
 }
 
@@ -303,12 +313,15 @@ export function parseCommitGroups(text: string): CommitGroup[] {
 
 /**
  * Fall back to a single Conventional Commit for all staged changes.
+ *
+ * Accepts an `events` array so the caller can collect the fallback notification.
  */
 async function fallbackSingleCommit(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   config: PiGitConfig,
   git: GitOperations,
+  events: OrganizerEvent[],
 ): Promise<void> {
   const stagedNameStatus = await git.getStagedNameStatus();
   const stagedStat = await git.getStagedStat();
@@ -330,31 +343,8 @@ async function fallbackSingleCommit(
     );
   }
 
-  ctx.ui.notify(
-    `Reorganisation fell back to a single commit:\n${message.split("\n")[0]}`,
-    "info",
-  );
-}
-
-/**
- * Update the footer status indicator.
- */
-async function updateFooterStatus(
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-): Promise<void> {
-  const git = new GitOperations(pi);
-  try {
-    if (!(await git.isInsideGitRepo())) {
-      ctx.ui.setStatus("pi-git-uncommitted", undefined);
-      return;
-    }
-    const hasChanges = await git.checkUncommittedChanges();
-    ctx.ui.setStatus(
-      "pi-git-uncommitted",
-      hasChanges ? "[has changes]" : undefined,
-    );
-  } catch {
-    ctx.ui.setStatus("pi-git-uncommitted", undefined);
-  }
+  events.push({
+    type: "fallback",
+    message: `Reorganisation fell back to a single commit:\n${message.split("\n")[0]}`,
+  });
 }

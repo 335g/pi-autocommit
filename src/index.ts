@@ -13,6 +13,7 @@ import {
   ReviewSendToAgentError,
   ReviewCancelledError,
 } from "./reviewer.js";
+import { StatusIndicator } from "./status-indicator.js";
 
 /**
  * pi-git extension — `/git-commit`, `/git-review`, and `/git-status` commands
@@ -23,30 +24,10 @@ import {
  * `/git-status` shows the working tree status in a scrollable TUI viewer.
  *
  * The heavy lifting is delegated to `runCommitPipeline` in `pipeline.ts`;
- * this module only registers commands and events.
+ * this module (the presenter) only registers commands and maps
+ * pipeline events to UI calls.
  */
 export default function (pi: ExtensionAPI) {
-  /**
-   * Update the footer status to show whether there are uncommitted changes.
-   * Shows "[has changes]" when changes exist, clears it otherwise.
-   */
-  async function updateFooterStatus(ctx: ExtensionContext) {
-    const git = new GitOperations(pi);
-    try {
-      if (!(await git.isInsideGitRepo())) {
-        ctx.ui.setStatus("pi-git-uncommitted", undefined);
-        return;
-      }
-      const hasChanges = await git.checkUncommittedChanges();
-      ctx.ui.setStatus(
-        "pi-git-uncommitted",
-        hasChanges ? "[has changes]" : undefined,
-      );
-    } catch {
-      ctx.ui.setStatus("pi-git-uncommitted", undefined);
-    }
-  }
-
   // ───────────────────────────────────────────────────────
   // /git-commit command
   // ───────────────────────────────────────────────────────
@@ -54,11 +35,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("git-commit", {
     description: "Stage all changes and generate a Conventional Commits message",
     handler: async (args, ctx) => {
+      const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
       const { dryRun, inlineMessage } = parseCommitArgs(args?.trim() ?? "");
       const config = loadConfig(ctx.cwd);
 
       try {
-        await runCommitPipeline(pi, ctx, config, {
+        const result = await runCommitPipeline(pi, ctx, config, {
           inlineMessage,
           dryRun,
           confirmLabel: "commit",
@@ -68,11 +50,45 @@ export default function (pi: ExtensionAPI) {
                 ? { action: "commit" }
                 : confirmCommitMessage(ctx, msg, "pi-git-commit", dryRun),
           },
+          callbacks: {
+            onProgress: (event) => {
+              if (event.type === "generating") {
+                ctx.ui.notify(
+                  "Generating commit message via LLM...",
+                  "info",
+                );
+              }
+            },
+          },
         });
+
+        for (const event of result.events) {
+          switch (event.type) {
+            case "info":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "error":
+              ctx.ui.notify(event.message, "error");
+              break;
+            case "dry-run":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "committed":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "cancelled":
+              ctx.ui.notify(event.reason, "info");
+              break;
+            case "stage-changed":
+              await statusIndicator.updateFooter();
+              break;
+          }
+        }
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`git-commit error: ${message}`, "error");
+        await statusIndicator.updateFooter();
       }
     },
   });
@@ -113,25 +129,24 @@ export default function (pi: ExtensionAPI) {
     description:
       "Stage, review with crit, generate commit message, and commit",
     handler: async (args, ctx) => {
+      const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
       const { dryRun } = parseCommitArgs(args?.trim() ?? "");
       const config = loadConfig(ctx.cwd);
 
       try {
-        await checkCritAvailable(pi);
-
-        await runCommitPipeline(pi, ctx, config, {
+        const result = await runCommitPipeline(pi, ctx, config, {
           dryRun,
           confirmLabel: "review",
           hooks: {
             onBeforeGenerate: async (pipelineCtx, opts) => {
-              const result = await runReviewFlow(pi, ctx, {
+              const reviewResult = await runReviewFlow(pi, ctx, {
                 selectedFiles: pipelineCtx.selectedFiles,
                 fileDetails: pipelineCtx.fileDetails,
                 stagedDiff: pipelineCtx.stagedDiff,
               });
 
-              if (result.reviewContext) {
-                opts.llmExtraContext = result.reviewContext;
+              if (reviewResult.reviewContext) {
+                opts.llmExtraContext = reviewResult.reviewContext;
               }
             },
             onMessageGenerated: async (msg) =>
@@ -142,7 +157,40 @@ export default function (pi: ExtensionAPI) {
                 dryRun,
               ),
           },
+          callbacks: {
+            onProgress: (event) => {
+              if (event.type === "generating") {
+                ctx.ui.notify(
+                  "Generating commit message via LLM...",
+                  "info",
+                );
+              }
+            },
+          },
         });
+
+        for (const event of result.events) {
+          switch (event.type) {
+            case "info":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "error":
+              ctx.ui.notify(event.message, "error");
+              break;
+            case "dry-run":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "committed":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "cancelled":
+              ctx.ui.notify(event.reason, "info");
+              break;
+            case "stage-changed":
+              await statusIndicator.updateFooter();
+              break;
+          }
+        }
       } catch (error) {
         if (error instanceof ReviewSendToAgentError) {
           const reviewComments = error.reviewComments;
@@ -164,17 +212,20 @@ export default function (pi: ExtensionAPI) {
             "Review comments sent to the LLM for fixing. Changes have been unstaged.",
             "info",
           );
+          await statusIndicator.updateFooter();
           return;
         }
 
         if (error instanceof ReviewCancelledError) {
           ctx.ui.notify(error.message, "info");
+          await statusIndicator.updateFooter();
           return;
         }
 
         const message =
           error instanceof Error ? error.message : String(error);
         ctx.ui.notify(`git-review error: ${message}`, "error");
+        await statusIndicator.updateFooter();
       }
     },
   });
@@ -184,7 +235,8 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
-    await updateFooterStatus(ctx);
+    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
+    await statusIndicator.updateFooter();
   });
 
   // ───────────────────────────────────────────────────────
@@ -192,6 +244,7 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("turn_end", async (event, ctx) => {
+    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     const config = loadConfig(ctx.cwd);
     const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
 
@@ -213,10 +266,33 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      await runCommitPipeline(pi, ctx, config, {
+      const result = await runCommitPipeline(pi, ctx, config, {
         skipFileSelection: true,
         inlineMessage: `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
       });
+
+      for (const event of result.events) {
+        switch (event.type) {
+          case "info":
+            ctx.ui.notify(event.message, "info");
+            break;
+          case "error":
+            ctx.ui.notify(event.message, "error");
+            break;
+          case "dry-run":
+            ctx.ui.notify(event.message, "info");
+            break;
+          case "committed":
+            ctx.ui.notify(event.message, "info");
+            break;
+          case "cancelled":
+            ctx.ui.notify(event.reason, "info");
+            break;
+          case "stage-changed":
+            await statusIndicator.updateFooter();
+            break;
+        }
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
@@ -224,6 +300,7 @@ export default function (pi: ExtensionAPI) {
         `commitEveryTurn: checkpoint error — ${message}`,
         "error",
       );
+      await statusIndicator.updateFooter();
     }
   });
 
@@ -232,22 +309,71 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("agent_end", async (event, ctx) => {
+    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     const config = loadConfig(ctx.cwd);
     const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
 
     if (!commitConfig.enabled) {
-      await updateFooterStatus(ctx);
+      await statusIndicator.updateFooter();
       return;
     }
 
     try {
       if (commitConfig.trigger === "turn_end") {
-        await organizeWipCommits(pi, ctx, config, event);
+        const result = await organizeWipCommits(pi, ctx, config, event);
+
+        for (const event of result.events) {
+          switch (event.type) {
+            case "info":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "error":
+              ctx.ui.notify(event.message, "error");
+              break;
+            case "organised":
+              ctx.ui.notify(
+                `Organised ${event.checkpointCount} checkpoint(s) into ${event.commitCount} commit(s).`,
+                "info",
+              );
+              break;
+            case "fallback":
+              ctx.ui.notify(event.message, "warning");
+              break;
+            case "stage-changed":
+              await statusIndicator.updateFooter();
+              break;
+          }
+        }
+        await statusIndicator.updateFooter();
       } else {
-        await runCommitPipeline(pi, ctx, config, {
+        const result = await runCommitPipeline(pi, ctx, config, {
           skipFileSelection: true,
           // No hooks → onMessageGenerated undefined → commit without confirmation
         });
+
+        for (const event of result.events) {
+          switch (event.type) {
+            case "info":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "error":
+              ctx.ui.notify(event.message, "error");
+              break;
+            case "dry-run":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "committed":
+              ctx.ui.notify(event.message, "info");
+              break;
+            case "cancelled":
+              ctx.ui.notify(event.reason, "info");
+              break;
+            case "stage-changed":
+              await statusIndicator.updateFooter();
+              break;
+          }
+        }
+        await statusIndicator.updateFooter();
       }
     } catch (error) {
       const message =
@@ -256,7 +382,7 @@ export default function (pi: ExtensionAPI) {
         `commitEveryTurn: error — ${message}`,
         "error",
       );
+      await statusIndicator.updateFooter();
     }
   });
 }
-
