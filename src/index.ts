@@ -1,10 +1,12 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveCommitEveryTurnConfig } from "./config.js";
 import { showStatusViewer } from "./status-viewer.js";
 import { runCommitPipeline } from "./pipeline.js";
 import { parseCommitArgs } from "./args.js";
 import { confirmCommitMessage } from "./confirmation.js";
 import { GitOperations } from "./git-operations.js";
+import { shouldCreateWipCommit } from "./commit-decider.js";
+import { organizeWipCommits } from "./commit-organizer.js";
 import {
   checkCritAvailable,
   runReviewFlow,
@@ -186,22 +188,67 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ───────────────────────────────────────────────────────
-  // Auto-commit on agent_end (commitEveryTurn)
+  // Auto-commit on turn_end (commitEveryTurn.trigger === "turn_end")
   // ───────────────────────────────────────────────────────
 
-  pi.on("agent_end", async (_event, ctx) => {
+  pi.on("turn_end", async (event, ctx) => {
     const config = loadConfig(ctx.cwd);
+    const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
 
-    if (!config.commitEveryTurn) {
-      await updateFooterStatus(ctx);
+    if (!commitConfig.enabled || commitConfig.trigger !== "turn_end") {
+      return;
+    }
+
+    if (!shouldCreateWipCommit(event.toolResults)) {
+      return;
+    }
+
+    const git = new GitOperations(pi);
+    if (!(await git.isInsideGitRepo())) {
+      return;
+    }
+
+    if (!(await git.checkUncommittedChanges())) {
       return;
     }
 
     try {
       await runCommitPipeline(pi, ctx, config, {
         skipFileSelection: true,
-        // No hooks → onMessageGenerated undefined → commit without confirmation
+        inlineMessage: `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
       });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(
+        `commitEveryTurn: checkpoint error — ${message}`,
+        "error",
+      );
+    }
+  });
+
+  // ───────────────────────────────────────────────────────
+  // Auto-commit on agent_end (commitEveryTurn)
+  // ───────────────────────────────────────────────────────
+
+  pi.on("agent_end", async (event, ctx) => {
+    const config = loadConfig(ctx.cwd);
+    const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
+
+    if (!commitConfig.enabled) {
+      await updateFooterStatus(ctx);
+      return;
+    }
+
+    try {
+      if (commitConfig.trigger === "turn_end") {
+        await organizeWipCommits(pi, ctx, config, event);
+      } else {
+        await runCommitPipeline(pi, ctx, config, {
+          skipFileSelection: true,
+          // No hooks → onMessageGenerated undefined → commit without confirmation
+        });
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);

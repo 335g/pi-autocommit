@@ -142,15 +142,31 @@ Create `.pi/pi-git.json` in your project root:
 |-----|------|---------|-------------|
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
 | `noBody` | boolean | `false` | Omit body, subject-only commit message |
-| `commitEveryTurn` | boolean | `false` | Auto-commit at the end of every agent turn |
+| `commitEveryTurn` | `boolean` \| `{ trigger: "agent_end" \| "turn_end" }` | `false` | Auto-commit strategy |
 
 #### `commitEveryTurn`
 
-When enabled, the extension listens for the `agent_end` event and automatically:
-1. Checks for uncommitted changes
-2. Stages all files (`git add -A`)
-3. Generates a Conventional Commits message via LLM
-4. Executes the commit
+Controls when and how the extension commits automatically.
+
+```json
+{
+  "commitEveryTurn": {
+    "trigger": "agent_end"
+  }
+}
+```
+
+- `false` — disabled.
+- `true` — legacy alias for `{ "trigger": "agent_end" }`.
+- `{ "trigger": "agent_end" }` — commit once at the end of every agent loop.
+- `{ "trigger": "turn_end" }` — create lightweight checkpoint commits at the end
+  of each turn that mutates files, then reorganise those checkpoints into logical
+  Conventional Commits at the end of the agent loop.
+
+The `turn_end` strategy is useful for long agent sessions (for example, a goal
+command that makes many changes in one request). Each file-mutating turn is
+immediately checkpointed, and at `agent_end` the checkpoints are soft-reset and
+re-analysed by the LLM to produce clean, logical commits.
 
 This runs silently in the background — notifications appear in the UI for progress
 and errors, but no interactive confirmation is required.

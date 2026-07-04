@@ -172,4 +172,67 @@ export class GitOperations {
     const { stdout } = await this.pi.exec("git", ["status", "--porcelain"]);
     return stdout.trim().length > 0;
   }
+
+  /**
+   * Count how many consecutive WIP checkpoint commits exist at HEAD.
+   *
+   * Walks backwards from HEAD and stops at the first commit whose subject
+   * does not start with the given marker.
+   */
+  async countWipCommits(marker: string): Promise<number> {
+    const { stdout, code } = await this.pi.exec("git", [
+      "log",
+      "--pretty=format:%s",
+      "--no-decorate",
+    ]);
+    if (code !== 0) {
+      return 0;
+    }
+
+    const subjects = stdout.split("\n");
+    let count = 0;
+    for (const subject of subjects) {
+      if (subject.startsWith(marker)) {
+        count++;
+      } else {
+        break;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Soft reset the last N commits, keeping their changes staged.
+   * Equivalent to `git reset --soft HEAD~N`.
+   */
+  async resetSoft(commitCount: number): Promise<void> {
+    if (commitCount <= 0) {
+      return;
+    }
+    const result = await this.pi.exec("git", [
+      "reset",
+      "--soft",
+      `HEAD~${commitCount}`,
+    ]);
+    if (result.code !== 0) {
+      throw new Error(
+        `git reset --soft HEAD~${commitCount} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+      );
+    }
+  }
+
+  /**
+   * Stage only the given files (`git add -- <file>...`).
+   */
+  async stageFiles(files: string[]): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    const result = await this.pi.exec("git", ["add", "--", ...files]);
+    if (result.code !== 0) {
+      throw new Error(
+        `git add failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+      );
+    }
+  }
 }
