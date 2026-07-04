@@ -1,6 +1,6 @@
 {
   "name": "@335g/pi-git",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "description": "Git utilities extension for pi-coding-agent",
   "type": "module",
   "main": "./dist/index.js",
