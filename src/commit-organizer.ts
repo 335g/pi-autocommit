@@ -8,7 +8,7 @@ import { GitOperations } from "./git-operations.js";
 import { generateCommitMessageWithLLM } from "./llm-commit.js";
 import { hasNoBody, isJapanese } from "./config.js";
 import { COMMIT_TYPES } from "./commit-types.js";
-import type { OrganizerEvent, OrganizerResult } from "./commit-events.js";
+import type { PipelineEvent, OrganizerResult } from "./commit-events.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
@@ -37,7 +37,7 @@ export async function organizeWipCommits(
   event: AgentEndEvent,
 ): Promise<OrganizerResult> {
   const git = new GitOperations(pi);
-  const events: OrganizerEvent[] = [];
+  const events: PipelineEvent[] = [];
   let organised = false;
 
   if (!(await git.isInsideGitRepo())) {
@@ -321,7 +321,7 @@ async function fallbackSingleCommit(
   ctx: ExtensionContext,
   config: PiGitConfig,
   git: GitOperations,
-  events: OrganizerEvent[],
+  events: PipelineEvent[],
 ): Promise<void> {
   const stagedNameStatus = await git.getStagedNameStatus();
   const stagedStat = await git.getStagedStat();

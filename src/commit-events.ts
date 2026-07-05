@@ -7,7 +7,9 @@ export type PipelineEvent =
   | { type: "committed"; message: string }
   | { type: "cancelled"; reason: string }
   | { type: "generating" }          // for progress callback only
-  | { type: "stage-changed"; hasChanges?: boolean };  // footer status changed
+  | { type: "organised"; checkpointCount: number; commitCount: number }
+  | { type: "fallback"; message: string }
+  | { type: "stage-changed"; hasChanges?: boolean };
 
 export interface PipelineResult {
   events: PipelineEvent[];
@@ -24,16 +26,7 @@ export interface PipelineCallbacks {
   onProgress?: (event: PipelineEvent) => void;
 }
 
-// ── Event types for the commit organiser ─────────────────
-
-export type OrganizerEvent =
-  | { type: "info"; message: string }
-  | { type: "error"; message: string }
-  | { type: "organised"; checkpointCount: number; commitCount: number }
-  | { type: "fallback"; message: string }
-  | { type: "stage-changed"; hasChanges?: boolean };
-
 export interface OrganizerResult {
-  events: OrganizerEvent[];
+  events: PipelineEvent[];
   organised: boolean;
 }

@@ -9,6 +9,52 @@ import { shouldCreateWipCommit } from "./commit-decider.js";
 import { organizeWipCommits } from "./commit-organizer.js";
 
 import { StatusIndicator } from "./status-indicator.js";
+import type { PipelineEvent } from "./commit-events.js";
+
+/**
+ * Dispatch pipeline events to the UI.
+ *
+ * Shared by `/git-commit`, checkpoint commits (`turn_end`),
+ * and the reorganiser (`agent_end`) — replaces three copies
+ * of the same switch statement.
+ */
+async function handlePipelineEvents(
+  ctx: ExtensionContext,
+  statusIndicator: StatusIndicator,
+  events: PipelineEvent[],
+): Promise<void> {
+  for (const event of events) {
+    switch (event.type) {
+      case "info":
+        ctx.ui.notify(event.message, "info");
+        break;
+      case "error":
+        ctx.ui.notify(event.message, "error");
+        break;
+      case "dry-run":
+        ctx.ui.notify(event.message, "info");
+        break;
+      case "committed":
+        ctx.ui.notify(event.message, "info");
+        break;
+      case "cancelled":
+        ctx.ui.notify(event.reason, "info");
+        break;
+      case "organised":
+        ctx.ui.notify(
+          `Organised ${event.checkpointCount} checkpoint(s) into ${event.commitCount} commit(s).`,
+          "info",
+        );
+        break;
+      case "fallback":
+        ctx.ui.notify(event.message, "warning");
+        break;
+      case "stage-changed":
+        await statusIndicator.updateFooter();
+        break;
+    }
+  }
+}
 
 /**
  * pi-git extension — `/git-commit` and `/git-status` commands
@@ -56,28 +102,7 @@ export default function (pi: ExtensionAPI) {
           },
         });
 
-        for (const event of result.events) {
-          switch (event.type) {
-            case "info":
-              ctx.ui.notify(event.message, "info");
-              break;
-            case "error":
-              ctx.ui.notify(event.message, "error");
-              break;
-            case "dry-run":
-              ctx.ui.notify(event.message, "info");
-              break;
-            case "committed":
-              ctx.ui.notify(event.message, "info");
-              break;
-            case "cancelled":
-              ctx.ui.notify(event.reason, "info");
-              break;
-            case "stage-changed":
-              await statusIndicator.updateFooter();
-              break;
-          }
-        }
+        await handlePipelineEvents(ctx, statusIndicator, result.events);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : String(error);
@@ -157,28 +182,7 @@ export default function (pi: ExtensionAPI) {
         inlineMessage: `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
       });
 
-      for (const event of result.events) {
-        switch (event.type) {
-          case "info":
-            ctx.ui.notify(event.message, "info");
-            break;
-          case "error":
-            ctx.ui.notify(event.message, "error");
-            break;
-          case "dry-run":
-            ctx.ui.notify(event.message, "info");
-            break;
-          case "committed":
-            ctx.ui.notify(event.message, "info");
-            break;
-          case "cancelled":
-            ctx.ui.notify(event.reason, "info");
-            break;
-          case "stage-changed":
-            await statusIndicator.updateFooter();
-            break;
-        }
-      }
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error);
@@ -207,28 +211,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const result = await organizeWipCommits(pi, ctx, config, event);
 
-      for (const event of result.events) {
-        switch (event.type) {
-          case "info":
-            ctx.ui.notify(event.message, "info");
-            break;
-          case "error":
-            ctx.ui.notify(event.message, "error");
-            break;
-          case "organised":
-            ctx.ui.notify(
-              `Organised ${event.checkpointCount} checkpoint(s) into ${event.commitCount} commit(s).`,
-              "info",
-            );
-            break;
-          case "fallback":
-            ctx.ui.notify(event.message, "warning");
-            break;
-          case "stage-changed":
-            await statusIndicator.updateFooter();
-            break;
-        }
-      }
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
     } catch (error) {
       const message =
