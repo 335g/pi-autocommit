@@ -1,5 +1,4 @@
 {
 	"lang": "ja",
-	"noBody": true,
-	"commitEveryTurn": false
+	"commitEveryTurn": true
 }
