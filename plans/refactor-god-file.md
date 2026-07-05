@@ -1,8 +1,16 @@
 # リファクタリング計画: God File の分割と重複除去 (v6)
 
+> **2026-07-05 更新**: この計画の完了後に以下の変更が行われました。
+> - `/git-review` コマンド（crit レビューフロー全体）を削除
+> - `agent_end` 単発コミットモード（`trigger: "agent_end"`）を削除
+> - `commitEveryTurn` は `turn_end` checkpoint + reorganise 戦略のみに単純化
+> - `src/reviewer.ts` / `src/reviewer.test.ts` を削除
+> - `src/config.ts` の `ResolvedCommitEveryTurnConfig` から `trigger` フィールドを削除
+> - 削除された分、index.ts はさらに短縮されました
+
 ## 概要
 
-`src/index.ts` (約686行) に `/commit`・`/review`・`agent_end` auto-commit の3つのフローが重複して実装されている。共通パイプラインを抽出し、責務ごとにファイル分割する。
+`src/index.ts` (約686行→短縮済み) に `/commit`・`/review`・`agent_end` auto-commit の3つのフローが重複して実装されていた。共通パイプラインを抽出し、責務ごとにファイル分割する。
 
 ---
 

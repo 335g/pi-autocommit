@@ -1,5 +1,10 @@
 # Plan: Move UI notifications out of the commit pipeline
 
+> **2026-07-05 update**: This plan was completed. After completion,
+> `/git-review` command and `agent_end` standalone commit mode were
+> removed. The pipeline now only serves `/git-commit` and checkpoint
+> auto-commit. The `reviewer.ts` module has been deleted.
+
 Candidate 1 from architecture review. Deepen the commit pipeline module
 by removing embedded `ctx.ui.notify` / `ctx.ui.setStatus` calls.
 

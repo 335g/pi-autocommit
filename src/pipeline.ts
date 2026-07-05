@@ -34,11 +34,7 @@ export interface CommitPipelineHooks {
   /**
    * Called after staging and file selection, before LLM message generation.
    *
-   * Use this for crit review or other pre-generation workflows.
-   * The `options` parameter is the same mutable object passed to
-   * `runCommitPipeline`, so hooks can set `options.llmExtraContext`
-   * to pass data to the LLM generation step.
-   *
+   * Use this for pre-generation workflows.
    * Throw to abort the pipeline (cleanup is handled automatically).
    */
   onBeforeGenerate?: (
