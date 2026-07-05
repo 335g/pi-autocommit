@@ -13,7 +13,7 @@ import type { PipelineEvent, PipelineResult, PipelineCallbacks } from "./commit-
  * Snapshot of pipeline state passed to hooks.
  */
 export interface PipelineContext {
-  /** pi extension API, needed for crit review etc. */
+  /** pi extension API, needed for pipeline operations. */
   pi: ExtensionAPI;
   /** Files the user selected to include in this commit */
   selectedFiles: string[];
@@ -51,7 +51,7 @@ export interface CommitPipelineHooks {
    * resolved). Implement the confirmation loop here.
    *
    * When undefined, the pipeline commits immediately without confirmation
-   * (used by agent_end auto-commit).
+   * (used by auto-commit).
    */
   onMessageGenerated?: (message: string) => Promise<MessageAction>;
 
@@ -89,7 +89,7 @@ export interface CommitPipelineOptions {
   /**
    * When true, skip the interactive file selection UI.
    * All staged files are included in the commit.
-   * Used by agent_end auto-commit.
+   * Used by auto-commit.
    */
   skipFileSelection?: boolean;
 
@@ -99,16 +99,7 @@ export interface CommitPipelineOptions {
    */
   confirmLabel?: string;
 
-  /**
-   * Extra context string passed to the LLM when generating the commit
-   * message. Used to pass crit review comments as additional context.
-   *
-   * Typically set by the `onBeforeGenerate` hook via the mutable options
-   * reference.
-   *
-   * NOTE: Ignored when `inlineMessage` is set (no LLM generation occurs).
-   */
-  llmExtraContext?: string;
+
 }
 
 // ── Pipeline implementation ──────────────────────────────
@@ -289,7 +280,6 @@ export async function runCommitPipeline(
         stagedStat,
         stagedDiff,
         config,
-        options?.llmExtraContext,
       );
     }
 

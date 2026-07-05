@@ -12,10 +12,6 @@ import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
  *
  * Falls back to the heuristic `commit-message.ts` generator when
  * the LLM is unavailable or the response can't be parsed.
- *
- * @param reviewContext - Optional review comment text from crit.
- *   When provided, it is included in the LLM prompt so the commit
- *   message can reference or be informed by reviewer feedback.
  */
 export async function generateCommitMessageWithLLM(
   pi: ExtensionAPI,
@@ -24,7 +20,6 @@ export async function generateCommitMessageWithLLM(
   stat: string,
   diff: string,
   config: PiGitConfig,
-  reviewContext?: string,
 ): Promise<string> {
   const lang = isJapanese(config) ? "ja" : "en";
 
@@ -82,16 +77,6 @@ export async function generateCommitMessageWithLLM(
     "",
     "Scope: describe the affected area in parentheses if meaningful.",
     "There is no fixed list; infer from the changed paths.",
-    ...(reviewContext
-      ? [
-          "",
-          "--- Reviewer notes ---",
-          "The following feedback was provided during code review. Incorporate relevant",
-          "points into the commit message body where appropriate (e.g. explaining why a",
-          "particular approach was chosen, noting that feedback was addressed, etc.).",
-          reviewContext,
-        ]
-      : []),
     "",
     "Output ONLY the commit message — no explanations, no markdown fences, no extra text.",
   ].join("\n");
@@ -99,7 +84,6 @@ export async function generateCommitMessageWithLLM(
   const userContent = [
     "--- Staged changes ---",
     diff,
-    ...(reviewContext ? ["", "--- Reviewer notes ---", reviewContext] : []),
     "",
     "Commit message:",
   ].join("\n");

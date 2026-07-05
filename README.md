@@ -3,13 +3,12 @@
 [![npm version](https://img.shields.io/npm/v/@335g/pi-git.svg)](https://www.npmjs.com/package/@335g/pi-git)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/git-commit`, `/git-review`, and `/git-status` commands for [Conventional Commits](https://www.conventionalcommits.org/) message generation and repository status inspection.
+A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/git-commit` and `/git-status` commands for [Conventional Commits](https://www.conventionalcommits.org/) message generation and repository status inspection.
 
 ## Features
 
 - **`/git-status` command** – View working tree and staged changes in a scrollable, colour-coded TUI viewer without leaving pi
 - **`/git-commit` command** – Stage all changes, optionally select files, and commit with an AI-generated message
-- **`/git-review` command** – Stage, review changes with [crit](https://github.com/335g/crit) inline comments, then generate a commit message
 - **Inline message support** – `/git-commit fix typo` uses the message directly without AI generation
 - **AI-powered generation** – Leverages pi's LLM to produce Conventional Commits messages from staged diffs
 - **Heuristic fallback** – When the LLM is unavailable, generates a commit message from diff analysis
@@ -78,35 +77,19 @@ In non-TUI mode (RPC/JSON/print), the output is shown via `ctx.ui.notify()`.
 
 Skips AI generation and commits directly with the provided message. File selection still runs (TUI mode).
 
-### Review-then-commit
-
-Requires [crit](https://github.com/335g/crit) to be installed (`npm install -g crit`).
-
-```
-/git-review
-```
-
-Same flow as `/git-commit`, but after staging and file selection:
-1. Opens a crit review in your browser for inline comments on the diff
-2. After finishing the review, unresolved comments are shown
-3. Choose whether to include comments in the commit message context
-4. A commit message is generated incorporating the review feedback
-5. Confirm or edit the message, then commit
-
 ### Dry-run mode
 
 Preview without committing:
 
 ```
 /git-commit --dry-run
-/git-review --dry-run
 ```
 
 The full pipeline (stage, file selection, LLM generation, confirmation) runs, but the actual `git commit` is skipped. No files are unstaged.
 
 ### Interactive file selection (TUI mode)
 
-When running `/git-commit` or `/git-review` in TUI mode, an interactive file picker appears:
+When running `/git-commit` in TUI mode, an interactive file picker appears:
 
 ```
  Select files to commit  (3/5)
@@ -142,31 +125,24 @@ Create `.pi/pi-git.json` in your project root:
 |-----|------|---------|-------------|
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
 | `noBody` | boolean | `false` | Omit body, subject-only commit message |
-| `commitEveryTurn` | `boolean` \| `{ trigger: "agent_end" \| "turn_end" }` | `false` | Auto-commit strategy |
+| `commitEveryTurn` | `boolean` | `false` | Auto-commit (checkpoint-then-reorganise strategy) |
 
 #### `commitEveryTurn`
 
-Controls when and how the extension commits automatically.
+When `true`, the extension creates lightweight checkpoint commits at the end
+of each turn that mutates files, then reorganises those checkpoints into logical
+Conventional Commits at the end of the agent loop.
 
 ```json
 {
-  "commitEveryTurn": {
-    "trigger": "agent_end"
-  }
+  "commitEveryTurn": true
 }
 ```
 
-- `false` — disabled.
-- `true` — legacy alias for `{ "trigger": "agent_end" }`.
-- `{ "trigger": "agent_end" }` — commit once at the end of every agent loop.
-- `{ "trigger": "turn_end" }` — create lightweight checkpoint commits at the end
-  of each turn that mutates files, then reorganise those checkpoints into logical
-  Conventional Commits at the end of the agent loop.
-
-The `turn_end` strategy is useful for long agent sessions (for example, a goal
-command that makes many changes in one request). Each file-mutating turn is
-immediately checkpointed, and at `agent_end` the checkpoints are soft-reset and
-re-analysed by the LLM to produce clean, logical commits.
+This strategy is useful for long agent sessions (for example, a goal command that
+makes many changes in one request). Each file-mutating turn is immediately
+checkpointed, and at `agent_end` the checkpoints are soft-reset and re-analysed
+by the LLM to produce clean, logical commits.
 
 This runs silently in the background — notifications appear in the UI for progress
 and errors, but no interactive confirmation is required.
@@ -217,7 +193,7 @@ npm test
 - [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) (peer dependency)
 - [pi-ai](https://github.com/earendil-works/pi-ai) (peer dependency)
 - [pi-tui](https://github.com/earendil-works/pi-tui) (optional peer dependency – enables interactive file selection and confirmation UI)
-- [crit](https://github.com/335g/crit) (optional – required for `/git-review` command)
+
 
 ## License
 
