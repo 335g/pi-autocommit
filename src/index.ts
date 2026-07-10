@@ -1,8 +1,8 @@
 import type {
-  AutocompleteItem,
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
 import { organizeWipCommits } from "./commit-organizer.js";
@@ -64,6 +64,10 @@ async function handlePipelineEvents(
  * so the user can spot unintended files before a checkpoint captures them.
  */
 export default function (pi: ExtensionAPI) {
+  // Captured from session_start so getArgumentCompletions (which has no
+  // ctx) can access the model registry.
+  let cachedModelRegistry: ExtensionContext["modelRegistry"] | undefined;
+
   // ───────────────────────────────────────────────────────
   // /autocommit-enable [true|false]
   // ───────────────────────────────────────────────────────
@@ -111,7 +115,6 @@ export default function (pi: ExtensionAPI) {
     ctx: ExtensionContext,
     currentModel: string | undefined,
   ): string[] {
-    const current = currentModel ?? "session model";
     const markCurrent = (label: string, value: string | undefined): string =>
       value === currentModel ? `${label} (current)` : label;
 
@@ -162,7 +165,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("autocommit-model", {
     description:
       "Set the LLM model for commit message generation (provider/modelId). No arg shows a selector popup. Pass \"clear\" to fall back to the session model.",
-    getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] => {
+    getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
+      if (!cachedModelRegistry) {
+        return null;
+      }
+
       const items: AutocompleteItem[] = [
         {
           value: "clear",
@@ -171,7 +178,7 @@ export default function (pi: ExtensionAPI) {
         },
       ];
 
-      for (const model of ctxModelRegistryPlaceholder.getAvailable()) {
+      for (const model of cachedModelRegistry.getAvailable()) {
         const value = `${model.provider}/${model.id}`;
         items.push({
           value,
@@ -181,11 +188,12 @@ export default function (pi: ExtensionAPI) {
       }
 
       const prefix = argumentPrefix.toLowerCase();
-      return items.filter(
+      const filtered = items.filter(
         (item) =>
           item.value.toLowerCase().startsWith(prefix) ||
           item.label.toLowerCase().includes(prefix),
       );
+      return filtered.length > 0 ? filtered : null;
     },
     handler: async (args, ctx) => {
       const config = loadConfig(ctx.cwd);
@@ -232,6 +240,7 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("session_start", async (_event, ctx) => {
+    cachedModelRegistry = ctx.modelRegistry;
     const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     await statusIndicator.updateFooter();
   });
