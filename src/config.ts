@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // Known config keys (camelCase as they appear in JSON)
-const KNOWN_KEYS = new Set(["lang", "enable", "model"]);
+const KNOWN_KEYS = new Set(["lang", "enable", "model", "scope"]);
 
 /** Config file name, relative to `.pi/`. */
 const CONFIG_FILENAME = "pi-autocommit.json";
@@ -21,6 +21,14 @@ export interface PiAutocommitConfig {
    * When omitted, the session's current model is used.
    */
   model?: string;
+  /**
+   * Path-to-scope mapping that fixes the Conventional Commits scope
+   * deterministically. Keys are picomatch globs evaluated against changed
+   * file paths; values are the scope to apply. When set, the LLM is told to
+   * omit scope and the scope is injected by `scope-resolver.ts`.
+   * When unset (or empty), the LLM infers the scope as before.
+   */
+  scope?: Record<string, string>;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
@@ -64,10 +72,36 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? parsed.model.trim()
         : undefined;
 
-    return { lang, enable, model };
+    const scope =
+      parsed.scope !== null &&
+      typeof parsed.scope === "object" &&
+      !Array.isArray(parsed.scope)
+        ? normaliseScope(parsed.scope as Record<string, unknown>)
+        : undefined;
+
+    return { lang, enable, model, scope };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
+}
+
+/**
+ * Normalise a raw `scope` object into a `path → scope` record.
+ *
+ * Drops entries whose value is not a non-empty string. Returns `undefined`
+ * when the result would be empty, so an absent/empty scope is treated the
+ * same as no scope at all.
+ */
+function normaliseScope(
+  raw: Record<string, unknown>,
+): Record<string, string> | undefined {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      result[key] = value.trim();
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 /**

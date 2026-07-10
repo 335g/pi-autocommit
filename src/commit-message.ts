@@ -2,6 +2,7 @@ import type { CommitType } from "./commit-types.js";
 import type { PiAutocommitConfig } from "./config.js";
 import { isJapanese } from "./config.js";
 import { type ParsedNameStatus, parseNameStatus } from "./git-parser.js";
+import { resolveScope } from "./scope-resolver.js";
 
 export interface CommitMessage {
   type: CommitType;
@@ -60,41 +61,6 @@ function determineType(nameStatusEntries: ParsedNameStatus[]): CommitType {
   if (nameStatusEntries.some((e) => e.status === "A")) return "feat";
 
   return "refactor";
-}
-
-/**
- * Determine the scope from changed file paths.
- */
-function determineScope(nameStatusEntries: ParsedNameStatus[]): string | null {
-  const paths = nameStatusEntries.map((e) => e.path);
-  if (paths.length === 0) return null;
-
-  const dirs = paths.map((p) => {
-    const idx = p.indexOf("/");
-    return idx >= 0 ? p.substring(0, idx) : p;
-  });
-
-  const uniqueDirs = [...new Set(dirs)];
-  if (uniqueDirs.length === 1 && uniqueDirs[0] !== "") return uniqueDirs[0];
-
-  // Two-level scope
-  const dirs2 = paths.map((p) => {
-    const parts = p.split("/");
-    return parts.length >= 3
-      ? `${parts[0]}/${parts[1]}`
-      : parts.length >= 2
-        ? parts[0]
-        : p;
-  });
-  const uniqueDirs2 = [...new Set(dirs2)];
-  if (uniqueDirs2.length === 1) return uniqueDirs2[0];
-
-  // Single file → use its stem name
-  if (paths.length === 1) {
-    return paths[0].replace(/\.[^.]+$/, "");
-  }
-
-  return null;
 }
 
 /**
@@ -236,7 +202,8 @@ export function generateCommitMessage(
   const entries = parseNameStatus(nameStatusRaw);
 
   const type = determineType(entries);
-  const scope = determineScope(entries);
+  const paths = entries.map((e) => e.path);
+  const scope = resolveScope(paths, config);
   const summary = extractSubject(type, entries, isJapanese(config));
   const subject = formatSubject(type, scope, summary);
   const body = generateBody(entries, config);

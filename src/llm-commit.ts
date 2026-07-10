@@ -7,6 +7,8 @@ import { formatFullMessage, generateCommitMessage } from "./commit-message.js";
 import { COMMIT_TYPES } from "./commit-types.js";
 import type { PiAutocommitConfig } from "./config.js";
 import { isJapanese } from "./config.js";
+import { parseNameStatus } from "./git-parser.js";
+import { hasScopeMapping, injectScopeIntoMessage } from "./scope-resolver.js";
 
 /**
  * Validation result for a model string in `"provider/modelId"` format.
@@ -117,8 +119,12 @@ export async function generateCommitMessageWithLLM(
       ? "Write the subject in Japanese (日本語). No period, 50 chars or fewer."
       : "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
 
+  const scopeManaged = hasScopeMapping(config);
+
   const rules = [
-    "Subject format: `type(scope): brief summary`",
+    scopeManaged
+      ? "Subject format: `type: brief summary` — do NOT add a scope; the scope is applied automatically from the changed paths."
+      : "Subject format: `type(scope): brief summary`",
     `Subject: ${subjectLangInstruction}`,
     `Body: list each changed file, describe what changed and why. ${bodyLangInstruction}`,
     "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
@@ -139,8 +145,9 @@ export async function generateCommitMessageWithLLM(
       ([type, desc]) => `  ${type.padEnd(9)}— ${desc}`,
     ),
     "",
-    "Scope: describe the affected area in parentheses if meaningful.",
-    "There is no fixed list; infer from the changed paths.",
+    scopeManaged
+      ? "Scope: do not include one. The scope will be inserted automatically based on the changed paths."
+      : "Scope: describe the affected area in parentheses if meaningful. There is no fixed list; infer from the changed paths.",
     "",
     "Output ONLY the commit message — no explanations, no markdown fences, no extra text.",
   ].join("\n");
@@ -180,7 +187,15 @@ export async function generateCommitMessageWithLLM(
       .trim();
 
     if (text) {
-      return cleanupResponse(text);
+      const cleaned = cleanupResponse(text);
+      // LLM path: the LLM produced the message. When mapping is active,
+      // inject the deterministic scope, normalising away any LLM-emitted
+      // scope first. (See ADR 0003.)
+      if (scopeManaged) {
+        const paths = parseNameStatus(nameStatus).map((e) => e.path);
+        return injectScopeIntoMessage(cleaned, paths, config);
+      }
+      return cleaned;
     }
   } catch {
     // LLM path failed — fall through to heuristic
@@ -216,3 +231,4 @@ function cleanupResponse(raw: string): string {
 
   return text.trim();
 }
+

@@ -9,6 +9,7 @@ import type { PiAutocommitConfig } from "./config.js";
 import { isJapanese } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { generateCommitMessageWithLLM, resolveModel } from "./llm-commit.js";
+import { hasScopeMapping, injectScopeIntoMessage } from "./scope-resolver.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
@@ -159,7 +160,17 @@ async function proposeCommitGroups(
     throw new Error("Empty reorganiser response");
   }
 
-  return parseCommitGroups(text);
+  const groups = parseCommitGroups(text);
+
+  // When mapping is active, the LLM is told to omit scope and we reattach
+  // it deterministically from each group's files. (ADR 0003.)
+  if (hasScopeMapping(config)) {
+    for (const group of groups) {
+      group.message = injectScopeIntoMessage(group.message, group.files, config);
+    }
+  }
+
+  return groups;
 }
 
 /**
@@ -193,6 +204,7 @@ function extractAssistantContext(messages: AgentEndEvent["messages"]): string {
 
 function buildOrganizerSystemPrompt(config: PiAutocommitConfig): string {
   const lang = isJapanese(config) ? "ja" : "en";
+  const scopeManaged = hasScopeMapping(config);
 
   const subjectLangInstruction =
     lang === "ja"
@@ -204,6 +216,10 @@ function buildOrganizerSystemPrompt(config: PiAutocommitConfig): string {
       ? "Write the body in Japanese (日本語)."
       : "Write the body in English.";
 
+  const subjectFormat = scopeManaged
+    ? "Subject format: `type: brief summary` — do NOT add a scope; the scope is applied automatically from the changed paths."
+    : "Subject format: `type(scope): brief summary`";
+
   const rules = [
     "You are reorganising checkpoint commits into logical Conventional Commits.",
     "",
@@ -213,7 +229,7 @@ function buildOrganizerSystemPrompt(config: PiAutocommitConfig): string {
     "- Every file must appear in exactly ONE group. No overlaps, no omissions.",
     "- If the diff is too small to split meaningfully, output a single group.",
     "",
-    "Subject format: `type(scope): brief summary`",
+    subjectFormat,
     `Subject: ${subjectLangInstruction}`,
     `Body: describe what changed and why. ${bodyLangInstruction}`,
     "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
@@ -229,7 +245,7 @@ function buildOrganizerSystemPrompt(config: PiAutocommitConfig): string {
     "Output format — repeat for each group:",
     "",
     "=== COMMIT N ===",
-    "type(scope): description",
+    scopeManaged ? "type: description (no scope — it will be added automatically)" : "type(scope): description",
     "",
     "Body paragraph(s).",
     "=== FILES ===",

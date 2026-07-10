@@ -91,6 +91,78 @@ void describe("loadConfig", () => {
   });
 });
 
+void describe("loadConfig scope", () => {
+  void it("parses a path-to-scope mapping", () => {
+    const dir = withConfigFile({
+      scope: { "packages/frontend/**": "frontend", "**": "app" },
+    });
+    try {
+      const config = loadConfig(dir);
+      assert.deepStrictEqual(config.scope, {
+        "packages/frontend/**": "frontend",
+        "**": "app",
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("omits scope when empty", () => {
+    const dir = withConfigFile({ scope: {} });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.scope, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("omits scope when not an object", () => {
+    const dir = withConfigFile({ scope: ["a", "b"] });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.scope, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("drops entries with non-string values", () => {
+    const dir = withConfigFile({
+      scope: { "**": "app", bad: 123, also: null },
+    });
+    try {
+      const config = loadConfig(dir);
+      assert.deepStrictEqual(config.scope, { "**": "app" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("omits scope when all values are invalid", () => {
+    const dir = withConfigFile({ scope: { a: "", b: 0 } });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.scope, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("warns on unknown key but still loads scope", () => {
+    const dir = withConfigFile({
+      scope: { "**": "app" },
+      unknown_key: true,
+    });
+    try {
+      const config = loadConfig(dir);
+      assert.deepStrictEqual(config.scope, { "**": "app" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 void describe("saveEnable", () => {
   void it("creates a default file when none exists", () => {
     const dir = mkdtempSync("/tmp/pi-autocommit-test-");
