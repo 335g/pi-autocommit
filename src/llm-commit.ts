@@ -33,7 +33,7 @@ export function resolveModel(
 
   const provider = modelStr.slice(0, slashIdx);
   const modelId = modelStr.slice(slashIdx + 1);
-  const resolved = ctx.modelRegistry?.find(provider, modelId);
+  const resolved = ctx.modelRegistry.find(provider, modelId);
 
   if (!resolved) {
     console.warn(
@@ -43,7 +43,7 @@ export function resolveModel(
     return ctx.model;
   }
 
-  if (!ctx.modelRegistry?.hasConfiguredAuth(resolved)) {
+  if (!ctx.modelRegistry.hasConfiguredAuth(resolved)) {
     console.warn(
       `[pi-git] Model "${modelStr}" not configured (no API key). ` +
         `Falling back to session model.`,
