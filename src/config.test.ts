@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadConfig, saveEnable } from "./config.js";
+import { loadConfig, saveEnable, saveModel } from "./config.js";
 
 /**
  * Create a temporary directory with a `.pi/pi-autocommit.json` file.
@@ -140,6 +140,77 @@ void describe("saveEnable", () => {
       saveEnable(dir, true);
       assert.strictEqual(loadConfig(dir).enable, true);
       assert.strictEqual(loadConfig(dir).lang, "ja");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe("saveModel", () => {
+  void it("creates a default file when none exists", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      saveModel(dir, "anthropic/claude-sonnet-4");
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.model, "anthropic/claude-sonnet-4");
+      assert.strictEqual(parsed.lang, "en");
+      assert.strictEqual(parsed.enable, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("overwrites only model and preserves other known keys", () => {
+    const dir = withConfigFile({ lang: "ja", enable: false, model: "openai/gpt-4o" });
+    try {
+      saveModel(dir, "anthropic/claude-sonnet-4");
+      const config = loadConfig(dir);
+      assert.strictEqual(config.model, "anthropic/claude-sonnet-4");
+      assert.strictEqual(config.lang, "ja");
+      assert.strictEqual(config.enable, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("preserves unknown keys", () => {
+    const dir = withConfigFile({ enable: true, model: "openai/gpt-4o", custom_key: "keep-me" });
+    try {
+      saveModel(dir, "anthropic/claude-sonnet-4");
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.model, "anthropic/claude-sonnet-4");
+      assert.strictEqual(parsed.custom_key, "keep-me");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("deletes the model key when passed undefined", () => {
+    const dir = withConfigFile({ lang: "ja", enable: true, model: "anthropic/claude-sonnet-4" });
+    try {
+      saveModel(dir, undefined);
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.model, undefined);
+      assert.strictEqual(parsed.lang, "ja");
+      assert.strictEqual(parsed.enable, true);
+      assert.strictEqual(loadConfig(dir).model, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("can set then clear then set again", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      saveModel(dir, "anthropic/claude-sonnet-4");
+      assert.strictEqual(loadConfig(dir).model, "anthropic/claude-sonnet-4");
+      saveModel(dir, undefined);
+      assert.strictEqual(loadConfig(dir).model, undefined);
+      saveModel(dir, "openai/gpt-4o");
+      assert.strictEqual(loadConfig(dir).model, "openai/gpt-4o");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

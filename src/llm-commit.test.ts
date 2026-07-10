@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import type { PiAutocommitConfig } from "./config.js";
-import { resolveModel } from "./llm-commit.js";
+import { resolveModel, validateModelString } from "./llm-commit.js";
 
 /**
  * Minimal stub for the `ModelRegistry` surface used by `resolveModel`.
@@ -203,5 +203,111 @@ void describe("resolveModel", () => {
     const result = resolveModel(makeCtx(undefined, registry) as never, config);
 
     assert.strictEqual(result, undefined);
+  });
+});
+
+void describe("validateModelString", () => {
+  void it("returns ok with the model when found and configured", () => {
+    const configuredModel = { id: "claude-sonnet-4" };
+    const registry: RegistryStub = {
+      find: () => configuredModel,
+      hasConfiguredAuth: () => true,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "anthropic/claude-sonnet-4",
+    );
+
+    assert.strictEqual(result.ok, true);
+    if (result.ok) {
+      assert.strictEqual(result.model, configuredModel);
+    }
+  });
+
+  void it("rejects invalid format (missing slash)", () => {
+    const registry: RegistryStub = {
+      find: () => undefined,
+      hasConfiguredAuth: () => true,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "invalid",
+    );
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /Invalid model format/);
+    }
+  });
+
+  void it("rejects invalid format (leading slash)", () => {
+    const registry: RegistryStub = {
+      find: () => undefined,
+      hasConfiguredAuth: () => true,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "/foo",
+    );
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /Invalid model format/);
+    }
+  });
+
+  void it("rejects invalid format (trailing slash)", () => {
+    const registry: RegistryStub = {
+      find: () => undefined,
+      hasConfiguredAuth: () => true,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "foo/",
+    );
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /Invalid model format/);
+    }
+  });
+
+  void it("rejects when model is not found in registry", () => {
+    const registry: RegistryStub = {
+      find: () => undefined,
+      hasConfiguredAuth: () => true,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "anthropic/unknown-model",
+    );
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /not found in registry/);
+    }
+  });
+
+  void it("rejects when model has no configured auth", () => {
+    const unconfiguredModel = { id: "claude-sonnet-4" };
+    const registry: RegistryStub = {
+      find: () => unconfiguredModel,
+      hasConfiguredAuth: () => false,
+    };
+
+    const result = validateModelString(
+      makeCtx(undefined, registry) as never,
+      "anthropic/claude-sonnet-4",
+    );
+
+    assert.strictEqual(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /not configured/);
+    }
   });
 });
