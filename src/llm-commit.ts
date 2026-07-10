@@ -1,8 +1,58 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { Model, Api } from "@earendil-works/pi-ai/compat";
 import type { PiGitConfig } from "./config.js";
 import { hasNoBody, isJapanese } from "./config.js";
 import { COMMIT_TYPES } from "./commit-types.js";
 import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
+
+/**
+ * Resolve the model to use for commit message generation.
+ *
+ * When `config.model` is set (in `"provider/modelId"` format), attempt to
+ * look it up in the model registry. If the model is not found or has no
+ * configured auth, fall back to `ctx.model` and log a warning.
+ */
+export function resolveModel(
+  ctx: ExtensionContext,
+  config: PiGitConfig,
+): Model<Api> | undefined {
+  const modelStr = config.model;
+  if (!modelStr || !ctx.model) {
+    return ctx.model;
+  }
+
+  const slashIdx = modelStr.indexOf("/");
+  if (slashIdx < 1 || slashIdx >= modelStr.length - 1) {
+    console.warn(
+      `[pi-git] Invalid model format "${modelStr}". ` +
+        `Expected "provider/modelId" (e.g. "anthropic/claude-sonnet-4"). ` +
+        `Falling back to session model.`,
+    );
+    return ctx.model;
+  }
+
+  const provider = modelStr.slice(0, slashIdx);
+  const modelId = modelStr.slice(slashIdx + 1);
+  const resolved = ctx.modelRegistry?.find(provider, modelId);
+
+  if (!resolved) {
+    console.warn(
+      `[pi-git] Model "${modelStr}" not found in registry. ` +
+        `Falling back to session model.`,
+    );
+    return ctx.model;
+  }
+
+  if (!ctx.modelRegistry?.hasConfiguredAuth(resolved)) {
+    console.warn(
+      `[pi-git] Model "${modelStr}" not configured (no API key). ` +
+        `Falling back to session model.`,
+    );
+    return ctx.model;
+  }
+
+  return resolved;
+}
 
 /**
  * Try to generate a commit message using pi's LLM.
@@ -91,7 +141,8 @@ export async function generateCommitMessageWithLLM(
   // Direct LLM call — no visible message in chat history.
   // Wrapped in try-catch so any error gracefully falls back to heuristic.
   try {
-    if (!ctx.model) {
+    const model = resolveModel(ctx, config);
+    if (!model) {
       throw new Error("No model available");
     }
 
@@ -100,7 +151,7 @@ export async function generateCommitMessageWithLLM(
     // lacks this subpath). If the import fails, falls through to heuristic.
     const { completeSimple } = await import("@earendil-works/pi-ai/compat");
 
-    const result = await completeSimple(ctx.model, {
+    const result = await completeSimple(model, {
       systemPrompt,
       messages: [
         { role: "user", content: userContent, timestamp: Date.now() },

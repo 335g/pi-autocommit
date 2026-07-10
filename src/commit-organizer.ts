@@ -5,7 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { PiGitConfig } from "./config.js";
 import { GitOperations } from "./git-operations.js";
-import { generateCommitMessageWithLLM } from "./llm-commit.js";
+import { generateCommitMessageWithLLM, resolveModel } from "./llm-commit.js";
 import { hasNoBody, isJapanese } from "./config.js";
 import { COMMIT_TYPES } from "./commit-types.js";
 import type { PipelineEvent, OrganizerResult } from "./commit-events.js";
@@ -114,7 +114,8 @@ async function proposeCommitGroups(
   config: PiGitConfig,
   event: AgentEndEvent,
 ): Promise<CommitGroup[]> {
-  if (!ctx.model) {
+  const model = resolveModel(ctx, config);
+  if (!model) {
     throw new Error("No model available");
   }
 
@@ -130,7 +131,7 @@ async function proposeCommitGroups(
   const systemPrompt = buildOrganizerSystemPrompt(config);
   const userContent = buildOrganizerUserContent(diff, assistantContext);
 
-  const result = await completeSimple(ctx.model, {
+  const result = await completeSimple(model, {
     systemPrompt,
     messages: [{ role: "user", content: userContent, timestamp: Date.now() }],
   });
