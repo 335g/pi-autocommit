@@ -3,12 +3,12 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { PiGitConfig } from "./config.js";
+import type { OrganizerResult, PipelineEvent } from "./commit-events.js";
+import { COMMIT_TYPES } from "./commit-types.js";
+import type { PiAutocommitConfig } from "./config.js";
+import { isJapanese } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { generateCommitMessageWithLLM, resolveModel } from "./llm-commit.js";
-import { hasNoBody, isJapanese } from "./config.js";
-import { COMMIT_TYPES } from "./commit-types.js";
-import type { PipelineEvent, OrganizerResult } from "./commit-events.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
@@ -33,7 +33,7 @@ export interface CommitGroup {
 export async function organizeWipCommits(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
   event: AgentEndEvent,
 ): Promise<OrganizerResult> {
   const git = new GitOperations(pi);
@@ -46,7 +46,10 @@ export async function organizeWipCommits(
 
   const wipCount = await git.countWipCommits(WIP_COMMIT_MARKER);
   if (wipCount === 0) {
-    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await git.checkUncommittedChanges(),
+    });
     return { events, organised: false };
   }
 
@@ -59,7 +62,10 @@ export async function organizeWipCommits(
       // No logical groups: fall back to one commit.
       await fallbackSingleCommit(pi, ctx, config, git, events);
       organised = true;
-      events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+      events.push({
+        type: "stage-changed",
+        hasChanges: await git.checkUncommittedChanges(),
+      });
       return { events, organised };
     }
 
@@ -81,7 +87,10 @@ export async function organizeWipCommits(
       commitCount: groups.length,
     });
     organised = true;
-    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await git.checkUncommittedChanges(),
+    });
     return { events, organised };
   } catch (error) {
     // Fall back to a single commit so WIP commits are not left half-organised.
@@ -90,14 +99,16 @@ export async function organizeWipCommits(
       await fallbackSingleCommit(pi, ctx, config, git, events);
       organised = true;
     } catch {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       events.push({
         type: "error",
-        message: `commitEveryTurn: reorganisation failed — ${message}`,
+        message: `pi-autocommit: reorganisation failed — ${message}`,
       });
     }
-    events.push({ type: "stage-changed", hasChanges: await git.checkUncommittedChanges() });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await git.checkUncommittedChanges(),
+    });
     return { events, organised };
   }
 }
@@ -111,7 +122,7 @@ export async function organizeWipCommits(
 async function proposeCommitGroups(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
   event: AgentEndEvent,
 ): Promise<CommitGroup[]> {
   const model = resolveModel(ctx, config);
@@ -138,8 +149,7 @@ async function proposeCommitGroups(
 
   const text = result.content
     .filter(
-      (c): c is { type: "text"; text: string } =>
-        c.type === "text" && !!c.text,
+      (c): c is { type: "text"; text: string } => c.type === "text" && !!c.text,
     )
     .map((c) => c.text)
     .join("\n")
@@ -181,18 +191,16 @@ function extractAssistantContext(messages: AgentEndEvent["messages"]): string {
   return parts.join("\n\n---\n\n");
 }
 
-function buildOrganizerSystemPrompt(config: PiGitConfig): string {
+function buildOrganizerSystemPrompt(config: PiAutocommitConfig): string {
   const lang = isJapanese(config) ? "ja" : "en";
-  const noBody = hasNoBody(config);
 
   const subjectLangInstruction =
     lang === "ja"
       ? "Write the subject in Japanese (日本語). No period, 50 chars or fewer."
       : "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
 
-  const bodyLangInstruction = noBody
-    ? ""
-    : lang === "ja"
+  const bodyLangInstruction =
+    lang === "ja"
       ? "Write the body in Japanese (日本語)."
       : "Write the body in English.";
 
@@ -207,21 +215,9 @@ function buildOrganizerSystemPrompt(config: PiGitConfig): string {
     "",
     "Subject format: `type(scope): brief summary`",
     `Subject: ${subjectLangInstruction}`,
+    `Body: describe what changed and why. ${bodyLangInstruction}`,
+    "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
   ];
-
-  if (noBody) {
-    rules.push("Body: NONE — output ONLY the subject line, no body.");
-    rules.push(
-      "Footer: add `BREAKING CHANGE: ...` when there is a breaking change (optional).",
-    );
-  } else {
-    rules.push(
-      `Body: describe what changed and why. ${bodyLangInstruction}`,
-    );
-    rules.push(
-      "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
-    );
-  }
 
   rules.push(
     "",
@@ -320,7 +316,7 @@ export function parseCommitGroups(text: string): CommitGroup[] {
 async function fallbackSingleCommit(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
   git: GitOperations,
   events: PipelineEvent[],
 ): Promise<void> {

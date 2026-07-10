@@ -1,7 +1,7 @@
-import { describe, it } from "node:test";
 import assert from "node:assert";
+import { describe, it } from "node:test";
+import type { PiAutocommitConfig } from "./config.js";
 import { resolveModel } from "./llm-commit.js";
-import type { PiGitConfig } from "./config.js";
 
 /**
  * Minimal stub for the `ModelRegistry` surface used by `resolveModel`.
@@ -29,7 +29,7 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en" };
+    const config: PiAutocommitConfig = { lang: "en", enable: true };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -45,7 +45,7 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en", model: "" };
+    const config: PiAutocommitConfig = { lang: "en", enable: true, model: "" };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -62,8 +62,9 @@ void describe("resolveModel", () => {
       find: () => configuredModel,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = {
+    const config: PiAutocommitConfig = {
       lang: "en",
+      enable: true,
       model: "anthropic/claude-sonnet-4",
     };
 
@@ -81,8 +82,9 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = {
+    const config: PiAutocommitConfig = {
       lang: "en",
+      enable: true,
       model: "anthropic/unknown-model",
     };
 
@@ -101,8 +103,9 @@ void describe("resolveModel", () => {
       find: () => unconfiguredModel,
       hasConfiguredAuth: () => false,
     };
-    const config: PiGitConfig = {
+    const config: PiAutocommitConfig = {
       lang: "en",
+      enable: true,
       model: "anthropic/claude-sonnet-4",
     };
 
@@ -120,7 +123,11 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en", model: "invalid" };
+    const config: PiAutocommitConfig = {
+      lang: "en",
+      enable: true,
+      model: "invalid",
+    };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -136,7 +143,11 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en", model: "/foo" };
+    const config: PiAutocommitConfig = {
+      lang: "en",
+      enable: true,
+      model: "/foo",
+    };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -152,7 +163,11 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en", model: "foo/" };
+    const config: PiAutocommitConfig = {
+      lang: "en",
+      enable: true,
+      model: "foo/",
+    };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -167,12 +182,9 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = { lang: "en" };
+    const config: PiAutocommitConfig = { lang: "en", enable: true };
 
-    const result = resolveModel(
-      makeCtx(undefined, registry) as never,
-      config,
-    );
+    const result = resolveModel(makeCtx(undefined, registry) as never, config);
 
     assert.strictEqual(result, undefined);
   });
@@ -182,15 +194,13 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiGitConfig = {
+    const config: PiAutocommitConfig = {
       lang: "en",
+      enable: true,
       model: "anthropic/unknown",
     };
 
-    const result = resolveModel(
-      makeCtx(undefined, registry) as never,
-      config,
-    );
+    const result = resolveModel(makeCtx(undefined, registry) as never, config);
 
     assert.strictEqual(result, undefined);
   });

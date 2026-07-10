@@ -1,7 +1,7 @@
-import type { PiGitConfig } from "./config.js";
-import { hasNoBody, isJapanese } from "./config.js";
-import { type ParsedNameStatus, parseNameStatus } from "./git-parser.js";
 import type { CommitType } from "./commit-types.js";
+import type { PiAutocommitConfig } from "./config.js";
+import { isJapanese } from "./config.js";
+import { type ParsedNameStatus, parseNameStatus } from "./git-parser.js";
 
 export interface CommitMessage {
   type: CommitType;
@@ -25,10 +25,7 @@ function determineType(nameStatusEntries: ParsedNameStatus[]): CommitType {
   // Docs-only
   if (
     paths.every(
-      (p) =>
-        /\.(md|txt)$/i.test(p) ||
-        /^docs\//i.test(p) ||
-        /^README/i.test(p),
+      (p) => /\.(md|txt)$/i.test(p) || /^docs\//i.test(p) || /^README/i.test(p),
     )
   ) {
     return "docs";
@@ -132,7 +129,6 @@ function extractSubject(
         return "コードスタイルを統一";
       case "perf":
         return "パフォーマンスを改善";
-      case "refactor":
       default:
         if (hasRenames) return "ファイルをリネーム";
         if (hasDeletionsOnly) return "不要コードを削除";
@@ -155,7 +151,6 @@ function extractSubject(
       return "format code";
     case "perf":
       return "improve performance";
-    case "refactor":
     default:
       if (hasRenames) return "rename files";
       if (hasDeletionsOnly) return "remove dead code";
@@ -168,10 +163,8 @@ function extractSubject(
  */
 function generateBody(
   nameStatusEntries: ParsedNameStatus[],
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
 ): string {
-  if (hasNoBody(config)) return "";
-
   const jp = isJapanese(config);
   const lines: string[] = [jp ? "変更内容:" : "Changes:"];
 
@@ -238,7 +231,7 @@ export function generateCommitMessage(
   nameStatusRaw: string,
   _stat: string,
   _diff: string,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
 ): CommitMessage {
   const entries = parseNameStatus(nameStatusRaw);
 

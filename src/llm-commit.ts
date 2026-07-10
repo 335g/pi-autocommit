@@ -1,9 +1,12 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Model, Api } from "@earendil-works/pi-ai/compat";
-import type { PiGitConfig } from "./config.js";
-import { hasNoBody, isJapanese } from "./config.js";
+import type { Api, Model } from "@earendil-works/pi-ai/compat";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import { formatFullMessage, generateCommitMessage } from "./commit-message.js";
 import { COMMIT_TYPES } from "./commit-types.js";
-import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
+import type { PiAutocommitConfig } from "./config.js";
+import { isJapanese } from "./config.js";
 
 /**
  * Resolve the model to use for commit message generation.
@@ -14,7 +17,7 @@ import { generateCommitMessage, formatFullMessage } from "./commit-message.js";
  */
 export function resolveModel(
   ctx: ExtensionContext,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
 ): Model<Api> | undefined {
   const modelStr = config.model;
   if (!modelStr || !ctx.model) {
@@ -24,7 +27,7 @@ export function resolveModel(
   const slashIdx = modelStr.indexOf("/");
   if (slashIdx < 1 || slashIdx >= modelStr.length - 1) {
     console.warn(
-      `[pi-git] Invalid model format "${modelStr}". ` +
+      `[pi-autocommit] Invalid model format "${modelStr}". ` +
         `Expected "provider/modelId" (e.g. "anthropic/claude-sonnet-4"). ` +
         `Falling back to session model.`,
     );
@@ -37,7 +40,7 @@ export function resolveModel(
 
   if (!resolved) {
     console.warn(
-      `[pi-git] Model "${modelStr}" not found in registry. ` +
+      `[pi-autocommit] Model "${modelStr}" not found in registry. ` +
         `Falling back to session model.`,
     );
     return ctx.model;
@@ -45,7 +48,7 @@ export function resolveModel(
 
   if (!ctx.modelRegistry.hasConfiguredAuth(resolved)) {
     console.warn(
-      `[pi-git] Model "${modelStr}" not configured (no API key). ` +
+      `[pi-autocommit] Model "${modelStr}" not configured (no API key). ` +
         `Falling back to session model.`,
     );
     return ctx.model;
@@ -64,23 +67,19 @@ export function resolveModel(
  * the LLM is unavailable or the response can't be parsed.
  */
 export async function generateCommitMessageWithLLM(
-  pi: ExtensionAPI,
+  _pi: ExtensionAPI,
   ctx: ExtensionContext,
   nameStatus: string,
   stat: string,
   diff: string,
-  config: PiGitConfig,
+  config: PiAutocommitConfig,
 ): Promise<string> {
   const lang = isJapanese(config) ? "ja" : "en";
 
-  const noBody = hasNoBody(config);
-
   const bodyLangInstruction =
-    noBody
-      ? ""
-      : lang === "ja"
-        ? "Write the body in Japanese (日本語)."
-        : "Write the body in English.";
+    lang === "ja"
+      ? "Write the body in Japanese (日本語)."
+      : "Write the body in English.";
 
   const subjectLangInstruction =
     lang === "ja"
@@ -90,28 +89,12 @@ export async function generateCommitMessageWithLLM(
   const rules = [
     "Subject format: `type(scope): brief summary`",
     `Subject: ${subjectLangInstruction}`,
+    `Body: list each changed file, describe what changed and why. ${bodyLangInstruction}`,
+    "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
+    "",
+    "When a change spans multiple types, select the most significant one and",
+    "describe the rest in the body.",
   ];
-
-  if (noBody) {
-    rules.push(
-      "Body: NONE — output ONLY the subject line, no body.",
-    );
-    rules.push(
-      "Footer: add `BREAKING CHANGE: ...` when there is a breaking change (optional).",
-    );
-  } else {
-    rules.push(
-      `Body: list each changed file, describe what changed and why. ${bodyLangInstruction}`,
-    );
-    rules.push(
-      "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
-    );
-    rules.push(
-      "",
-      "When a change spans multiple types, select the most significant one and",
-      "describe the rest in the body.",
-    );
-  }
 
   const systemPrompt = [
     "You are a commit message generator. Generate a Conventional Commits",
@@ -153,25 +136,20 @@ export async function generateCommitMessageWithLLM(
 
     const result = await completeSimple(model, {
       systemPrompt,
-      messages: [
-        { role: "user", content: userContent, timestamp: Date.now() },
-      ],
+      messages: [{ role: "user", content: userContent, timestamp: Date.now() }],
     });
 
     const text = result.content
       .filter(
-        (c): c is { type: "text"; text: string } => c.type === "text" && !!c.text,
+        (c): c is { type: "text"; text: string } =>
+          c.type === "text" && !!c.text,
       )
       .map((c) => c.text)
       .join("\n")
       .trim();
 
     if (text) {
-      const cleaned = cleanupResponse(text);
-      if (noBody) {
-        return enforceNoBody(cleaned);
-      }
-      return cleaned;
+      return cleanupResponse(text);
     }
   } catch {
     // LLM path failed — fall through to heuristic
@@ -180,27 +158,6 @@ export async function generateCommitMessageWithLLM(
   // Fallback: heuristic generation
   const fallback = generateCommitMessage(nameStatus, stat, diff, config);
   return formatFullMessage(fallback);
-}
-
-/**
- * Enforce no-body mode: keep only the subject line.
- *
- * LLMs may still output a body despite the "NONE" instruction,
- * so this post-processing guarantees subject-only output.
- * Also preserves an optional BREAKING CHANGE footer.
- */
-function enforceNoBody(text: string): string {
-  const lines = text.split("\n");
-  const subject = lines[0];
-  // Preserve BREAKING CHANGE footer even in no-body mode
-  const footerLines = lines.filter((l) =>
-    /^BREAKING\s+CHANGE:/i.test(l.trim()),
-  );
-  const footer =
-    footerLines.length > 0
-      ? "\n\n" + footerLines.join("\n")
-      : "";
-  return subject + footer;
 }
 
 /**
