@@ -40,9 +40,13 @@ keeps the old URL as a redirect.
   confirmation, file selector, status viewer) are deleted in a
   follow-up change.
 - Config file becomes `.pi/pi-autocommit.json`; `commitEveryTurn` is
-  renamed to `enable`, and `noBody` is removed.
-- The uncommitted-changes footer indicator stays; its purpose is to give
-  users a pre-commit cue to spot unintended files.
+  renamed to `enable` with default `true`, and `noBody` is removed. The
+  old `.pi/pi-git.json` is not read (no backward-compat shim, since the
+  package is pre-0.1).
+- `enable` defaults to `true`: installing a package named autocommit and
+  getting nothing would be surprising. The uncommitted-changes footer
+  indicator stays to give users a pre-commit cue to spot unintended files
+  before a checkpoint captures them.
 - Scope is now explicitly git operations outside of commit-message
   generation and checkpoint/reorganise auto-commit (push, pull, branch,
   merge, rebase, log viewer, stash). A "view recent commits" feature may

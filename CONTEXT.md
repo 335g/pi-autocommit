@@ -23,3 +23,9 @@ _Avoid_: commit splitter, commit cleaner
 **Commit strategy**
 The checkpoint-then-reorganise strategy: lightweight checkpoint commits are created during the agent loop and reorganised into logical Conventional Commits at `agent_end`.
 _Avoid_: commit mode, commit timing
+
+## Status
+
+**Uncommitted-changes indicator**
+A footer element that shows whether the working tree has uncommitted changes. Its purpose is to give the user a pre-commit cue to spot unintended files before a checkpoint commit captures them.
+_Avoid_: status badge, dirty flag
