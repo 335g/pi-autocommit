@@ -97,6 +97,37 @@ export function saveEnable(cwd: string, enable: boolean): void {
 }
 
 /**
+ * Persist `model` to `.pi/pi-autocommit.json`, preserving every other key.
+ *
+ * Reads the existing file (if any) and replaces only the `model` field,
+ * so unknown keys and other known keys (`lang`, `enable`) are kept intact.
+ * Pass `undefined` to clear the `model` key entirely (fall back to the
+ * session model). When the file does not exist, it is created with default
+ * values (`lang: "en"`, `enable: true`) and the given `model` value.
+ */
+export function saveModel(cwd: string, model: string | undefined): void {
+  const configPath = join(cwd, ".pi", CONFIG_FILENAME);
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    // Missing or unreadable file — start from defaults.
+    parsed = { lang: DEFAULT_CONFIG.lang, enable: DEFAULT_CONFIG.enable };
+  }
+
+  if (model === undefined) {
+    delete parsed.model;
+  } else {
+    parsed.model = model;
+  }
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+}
+
+/**
  * Returns `true` when the commit message should be written in Japanese.
  */
 export function isJapanese(config: PiAutocommitConfig): boolean {
