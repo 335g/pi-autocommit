@@ -1,5 +1,7 @@
 # Plan: Move UI notifications out of the commit pipeline
 
+> **2026-07-10 note**: This plan is a historical record from the `pi-git` era. The extension was later renamed (`pi-git` → `pi-autocommit`) and narrowed to auto-commit only (`/git-commit`, `/git-status` removed). See ADR 0002.
+
 > **2026-07-05 update**: This plan was completed. After completion,
 > `/git-review` command and `agent_end` standalone commit mode were
 > removed. The pipeline now only serves `/git-commit` and checkpoint

@@ -1,28 +1,25 @@
-# @335g/pi-git
+# @335g/pi-autocommit
 
-[![npm version](https://img.shields.io/npm/v/@335g/pi-git.svg)](https://www.npmjs.com/package/@335g/pi-git)
+[![npm version](https://img.shields.io/npm/v/@335g/pi-autocommit.svg)](https://www.npmjs.com/package/@335g/pi-autocommit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that adds `/git-commit` and `/git-status` commands for [Conventional Commits](https://www.conventionalcommits.org/) message generation and repository status inspection.
+A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension that automatically commits your changes so you never have to write a commit message. It uses a **checkpoint-then-reorganise** strategy: lightweight checkpoint commits are created at the end of each turn that mutates files, then at the end of the agent loop they are soft-reset and reorganised into logical [Conventional Commits](https://www.conventionalcommits.org/) by the LLM.
+
+> **Migrated from `@335g/pi-git`?** See [Migration](#migration-from-335gpi-git) below. The `/git-commit` and `/git-status` commands were removed; auto-commit is now the sole feature.
 
 ## Features
 
-- **`/git-status` command** – View working tree and staged changes in a scrollable, colour-coded TUI viewer without leaving pi
-- **`/git-commit` command** – Stage all changes, optionally select files, and commit with an AI-generated message
-- **Inline message support** – `/git-commit fix typo` uses the message directly without AI generation
-- **AI-powered generation** – Leverages pi's LLM to produce Conventional Commits messages from staged diffs
-- **Heuristic fallback** – When the LLM is unavailable, generates a commit message from diff analysis
-- **Interactive file selection** – Pick which staged files to include; preview diffs with QuickLook-style overlay (TUI mode)
-- **Interactive confirmation** – Review, edit, or cancel the proposed commit message before executing
-- **Language support** – Commit messages can be written in English or Japanese (configured via `.pi/pi-git.json`)
-- **Auto-commit on every turn** – Automatically commit changes at the end of each agent turn when `commitEveryTurn: true` is set in config
-- **Merge conflict detection** – Refuses to commit when a merge is in progress
-- **Dry-run mode** – Preview the generated commit message without executing
+- **Automatic checkpoints** — commits changes at the end of every turn that mutates files, so intermediate state is never lost.
+- **LLM-powered reorganisation** — at the end of the agent loop, checkpoints are soft-reset and split into coherent Conventional Commits using the assistant's own reasoning as context.
+- **Heuristic fallback** — when the LLM is unavailable, a single Conventional Commit is produced from diff analysis.
+- **Uncommitted-changes footer indicator** — a footer cue shows whether the working tree has changes, so you can spot unintended files *before* a checkpoint captures them.
+- **Language support** — commit messages can be written in English or Japanese.
+- **Merge conflict detection** — skips committing when a merge is in progress.
 
 ## Installation
 
 ```bash
-pi install @335g/pi-git
+pi install @335g/pi-autocommit
 ```
 
 Or add it to your pi package config:
@@ -30,94 +27,33 @@ Or add it to your pi package config:
 ```json
 {
   "packages": {
-    "@335g/pi-git": "latest"
+    "@335g/pi-autocommit": "latest"
   }
 }
 ```
 
-## Usage
+## How it works
 
-### Basic commit
+Auto-commit is **enabled by default**. Once installed, the extension:
 
-In a pi session, inside a git repository:
+1. **`turn_end`** — After each turn that ran a file-mutating tool (`write`, `edit`, `bash`), if the working tree has changes, it stages everything (`git add -A`) and creates a checkpoint commit:
+   ```
+   wip(checkpoint): auto-commit at turn N
+   ```
+2. **`agent_end`** — At the end of the agent loop, it counts the checkpoint commits at HEAD, soft-resets them, and asks the LLM to split the combined diff into logical Conventional Commits (using the assistant's own messages as context). Each logical group is then staged and committed separately.
 
-```
-/git-commit
-```
+The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files.
 
-This will:
-1. Check for merge conflicts
-2. Check for uncommitted changes
-3. Stage all files (`git add -A`)
-4. Present an interactive file selector (TUI mode) — pick files to include, preview diffs with Space
-5. Generate a Conventional Commits message via LLM
-6. Present the message for confirmation (Y/Edit/Cancel)
-7. Execute the commit
+This runs silently in the background. Notifications appear for progress and errors, but no interactive confirmation is required.
 
-### Git status
+## Configuration
 
-```
-/git-status
-```
-
-Shows the working tree status in a scrollable, colour-coded TUI viewer—no need to drop to a shell with `!git status`.
-
-In TUI mode:
-- `↑↓` scroll one line
-- `PgUp` / `PgDn` scroll 20 lines
-- `Esc` / `Ctrl+C` close
-
-In non-TUI mode (RPC/JSON/print), the output is shown via `ctx.ui.notify()`.
-
-### Inline commit message
-
-```
-/git-commit fix typo in header
-```
-
-Skips AI generation and commits directly with the provided message. File selection still runs (TUI mode).
-
-### Dry-run mode
-
-Preview without committing:
-
-```
-/git-commit --dry-run
-```
-
-The full pipeline (stage, file selection, LLM generation, confirmation) runs, but the actual `git commit` is skipped. No files are unstaged.
-
-### Interactive file selection (TUI mode)
-
-When running `/git-commit` in TUI mode, an interactive file picker appears:
-
-```
- Select files to commit  (3/5)
-   select   stat    type  file
-  ─────── ─────── ──── ────
-  ▸ ●     +10/-2  mod  src/index.ts
-    ○              new  src/pipeline.ts
-    ●     +5/-0   mod  src/config.ts
-
-  ↑↓ navigate  → select  ← deselect  space preview  a all  enter commit  esc cancel
-```
-
-- `↑↓` navigate
-- `→` select, `←` deselect
-- `Space` — open a full-screen diff preview (QuickLook-style)
-- `a` — toggle all
-- `Enter` — confirm selection
-- `Esc` / `Ctrl+C` — cancel
-
-### Configuration
-
-Create `.pi/pi-git.json` in your project root:
+Create `.pi/pi-autocommit.json` in your project root:
 
 ```json
 {
   "lang": "ja",
-  "noBody": true,
-  "commitEveryTurn": false,
+  "enable": true,
   "model": "anthropic/claude-sonnet-4"
 }
 ```
@@ -125,32 +61,18 @@ Create `.pi/pi-git.json` in your project root:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
-| `noBody` | boolean | `false` | Omit body, subject-only commit message |
-| `commitEveryTurn` | `boolean` | `false` | Auto-commit (checkpoint-then-reorganise strategy) |
+| `enable` | boolean | `true` | Whether auto-commit is active |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 
-#### `commitEveryTurn`
-
-When `true`, the extension creates lightweight checkpoint commits at the end
-of each turn that mutates files, then reorganises those checkpoints into logical
-Conventional Commits at the end of the agent loop.
+### Disabling auto-commit
 
 ```json
 {
-  "commitEveryTurn": true
+  "enable": false
 }
 ```
 
-This strategy is useful for long agent sessions (for example, a goal command that
-makes many changes in one request). Each file-mutating turn is immediately
-checkpointed, and at `agent_end` the checkpoints are soft-reset and re-analysed
-by the LLM to produce clean, logical commits.
-
-This runs silently in the background — notifications appear in the UI for progress
-and errors, but no interactive confirmation is required.
-
-The feature is safe to enable alongside manual `/git-commit` usage; it only commits
-when there are actual changes.
+Outside a git repository, the extension does nothing regardless of config.
 
 ## Commit Message Convention
 
@@ -177,6 +99,34 @@ footer
 | `style`    | Code formatting (no behavioral impact)              |
 | `perf`     | Performance improvements                            |
 
+## Migration from `@335g/pi-git`
+
+`@335g/pi-git` has been renamed and narrowed in scope to become `@335g/pi-autocommit`:
+
+- The `/git-commit` and `/git-status` commands **were removed**. Use `!git commit` / `!git status` in pi for manual operations.
+- The config file moved from `.pi/pi-git.json` to **`.pi/pi-autocommit.json`**. The old file is **not** read.
+- `commitEveryTurn` was renamed to **`enable`** and now defaults to **`true`** (installing an autocommit package and getting nothing would be surprising).
+- `noBody` was removed — commit messages now always include a body.
+
+To migrate:
+
+```bash
+pi uninstall @335g/pi-git
+pi install @335g/pi-autocommit
+```
+
+Then rename your config and adjust keys:
+
+```json
+// .pi/pi-autocommit.json
+{
+  "lang": "ja",
+  "enable": true
+}
+```
+
+The old `@335g/pi-git` package is marked `deprecated` on npm but remains installable.
+
 ## Development
 
 ```bash
@@ -194,7 +144,7 @@ npm test
 
 - [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) (peer dependency)
 - [pi-ai](https://github.com/earendil-works/pi-ai) (peer dependency)
-- [pi-tui](https://github.com/earendil-works/pi-tui) (optional peer dependency – enables interactive file selection and confirmation UI)
+- [pi-tui](https://github.com/earendil-works/pi-tui) (optional peer dependency — enables the footer status indicator)
 
 
 ## License

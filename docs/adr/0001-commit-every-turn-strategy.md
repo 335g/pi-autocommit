@@ -8,7 +8,7 @@ Conventional Commits by the LLM.
 Previously there was also a simpler `agent_end` trigger that committed
 all changes once per agent loop without checkpoints. That mode has
 been removed; the checkpoint strategy is the only available behaviour
-when `commitEveryTurn` is enabled.
+when `enable` is true.
 
 ## Rationale
 
@@ -22,7 +22,9 @@ assistant's own reasoning as context.
 
 ## Consequences
 
-- `commitEveryTurn` is a boolean: `true` enables the checkpoint strategy.
+- `enable` is a boolean (default `true`): enables the checkpoint strategy.
+  (Formerly `commitEveryTurn`; renamed in the `pi-git` → `pi-autocommit`
+  rename — see ADR 0002.)
 - Checkpoint commits use `wip(checkpoint):` message prefix as a marker.
   The reorganiser looks for that prefix when deciding how far to
   `git reset --soft`.

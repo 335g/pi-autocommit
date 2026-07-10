@@ -1,4 +1,4 @@
-# pi-git
+# pi-autocommit
 
 The skill suite is configured in AGENTS.md so any agent or skill reading this repo sees the right default behaviour.
 
