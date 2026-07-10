@@ -30,6 +30,10 @@ _Avoid_: commit mode, commit timing
 The LLM model used to generate commit messages. Specified in `config.model` in `"provider/modelId"` format. When omitted, the session's current model (the one driving the conversation) is used as a fallback.
 _Avoid_: commit model, LLM model
 
+**Scope mapping**
+A user-defined mapping from changed file paths to a fixed Conventional Commits scope, specified in `.pi/pi-autocommit.json` under `scope`. When present, the commit scope is determined by a deterministic path-matching module rather than the LLM, so the scope stays stable across reorganised commits.
+_Avoid_: scope config, scope rules
+
 ## Status
 
 **Uncommitted-changes indicator**

@@ -63,6 +63,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
 | `enable` | boolean | `true` | Whether auto-commit is active |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
+| `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 
 ### Disabling auto-commit
 
@@ -73,6 +74,30 @@ Create `.pi/pi-autocommit.json` in your project root:
 ```
 
 Outside a git repository, the extension does nothing regardless of config.
+
+### Scope mapping
+
+By default, the commit scope is inferred by the LLM from the changed file paths. When you want the scope to stay fixed — for example, while working on a feature, or when a sub-project lives under a specific directory — set `scope` to a path-to-scope mapping:
+
+```json
+{
+  "scope": {
+    "packages/frontend/**": "frontend",
+    "packages/backend/**": "backend",
+    "**": "app"
+  }
+}
+```
+
+Keys are [picomatch](https://github.com/micromatch/picomatch) globs evaluated against the changed file paths. When a commit touches files that all resolve to the **same** scope, that scope is used; if files resolve to **different** scopes (or none match), the scope is omitted (`type: subject`). The most specific (longest literal) glob wins on conflict.
+
+Once `scope` is set, the LLM is instructed to write `type: subject` (no scope) and the scope is injected deterministically — so the scope never drifts. When `scope` is unset, the previous LLM-driven behaviour is preserved.
+
+The `**` glob is a handy way to set a single fixed scope for the whole repo:
+
+```json
+{ "scope": { "**": "auth" } }
+```
 
 ## Commit Message Convention
 

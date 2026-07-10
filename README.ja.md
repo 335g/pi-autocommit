@@ -65,6 +65,7 @@ pi install @335g/pi-autocommit
 | `lang` | string | `"en"` | コミットメッセージの言語: `"ja"`（日本語）または `"en"`（英語） |
 | `enable` | boolean | `true` | 自動コミットを有効にするか |
 | `model` | string | — | コミットメッセージ生成に使用する LLM モデルを `"provider/modelId"` 形式で指定（例: `"anthropic/claude-sonnet-4"`）。省略時はセッションの現在のモデルを使用 |
+| `scope` | object | — | パスから scope へのマッピング。Conventional Commits の scope を決定論的に固定します。設定すると LLM は scope を推論せず、変更ファイルパスから解決されます。下記の [スコープマッピング](#スコープマッピング) を参照 |
 
 ### 自動コミットを無効化する
 
@@ -75,6 +76,30 @@ pi install @335g/pi-autocommit
 ```
 
 git リポジトリ外では設定に関わらず何もしません。
+
+### スコープマッピング
+
+デフォルトでは、コミットの scope は LLM が変更ファイルパスから推論します。機能開発中やサブプロジェクトが特定ディレクトリ以下にある場合など、scope を固定したい時は `scope` にパス→scope のマッピングを設定します:
+
+```json
+{
+  "scope": {
+    "packages/frontend/**": "frontend",
+    "packages/backend/**": "backend",
+    "**": "app"
+  }
+}
+```
+
+キーは [picomatch](https://github.com/micromatch/picomatch) の glob で、変更ファイルパスに対して評価されます。1コミット内の全ファイルが **同じ scope** に解決された時その scope が採用され、**異なる scope** に解決された時（またはどれにもマッチしない時）は scope が省略されます（`type: subject`）。複数マッチした時は最も具体的な（リテラルが長い）glob が優先されます。
+
+`scope` を設定すると LLM には `type: subject`（scope なし）で書くよう指示し、scope は決定論モジュールが注入します — これにより scope がブレることがありません。`scope` 未設定時は従来通り LLM が推論する挙動が維持されます。
+
+`**` glob を使えば、リポジトリ全体を単一の scope に固定できます:
+
+```json
+{ "scope": { "**": "auth" } }
+```
 
 ## コミットメッセージ規約
 
