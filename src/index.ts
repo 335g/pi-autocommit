@@ -63,10 +63,10 @@ async function handlePipelineEvents(
  */
 export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
-  // /git-autocommit-enable [true|false]
+  // /autocommit-enable [true|false]
   // ───────────────────────────────────────────────────────
 
-  pi.registerCommand("git-autocommit-enable", {
+  pi.registerCommand("autocommit-enable", {
     description: "Toggle auto-commit enable (true|false). No arg shows current state.",
     handler: async (args, ctx) => {
       const config = loadConfig(ctx.cwd);
@@ -82,7 +82,7 @@ export default function (pi: ExtensionAPI) {
 
       if (trimmed !== "true" && trimmed !== "false") {
         ctx.ui.notify(
-          "Usage: /git-autocommit-enable <true|false>",
+          "Usage: /autocommit-enable <true|false>",
           "error",
         );
         return;
