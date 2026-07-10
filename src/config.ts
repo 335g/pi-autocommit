@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Known config keys (camelCase as they appear in JSON)
-const KNOWN_KEYS = new Set(["lang", "noBody", "commitEveryTurn"]);
+const KNOWN_KEYS = new Set(["lang", "noBody", "commitEveryTurn", "model"]);
 
 /**
  * Setting that controls the auto-commit behaviour.
@@ -32,6 +32,12 @@ export interface PiGitConfig {
   noBody?: boolean;
   /** Controls automatic commit behaviour. See {@link CommitEveryTurnConfig}. */
   commitEveryTurn?: CommitEveryTurnConfig;
+  /**
+   * LLM model for commit message generation, in `"provider/modelId"` format
+   * (e.g. `"anthropic/claude-sonnet-4"`).
+   * When omitted, the session's current model is used.
+   */
+  model?: string;
 }
 
 const DEFAULT_CONFIG: PiGitConfig = {
@@ -73,7 +79,12 @@ export function loadConfig(cwd: string): PiGitConfig {
         ? DEFAULT_CONFIG.commitEveryTurn
         : (parsed.commitEveryTurn as CommitEveryTurnConfig);
 
-    return { lang, noBody, commitEveryTurn };
+    const model =
+      typeof parsed.model === "string" && parsed.model.trim().length > 0
+        ? parsed.model.trim()
+        : undefined;
+
+    return { lang, noBody, commitEveryTurn, model };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
