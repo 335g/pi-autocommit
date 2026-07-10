@@ -1,7 +1,7 @@
 {
-  "name": "@335g/pi-git",
+  "name": "@335g/pi-autocommit",
   "version": "0.0.18",
-  "description": "Git utilities extension for pi-coding-agent",
+  "description": "Auto-commit extension for pi-coding-agent (checkpoint-then-reorganise strategy)",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
@@ -26,18 +26,19 @@
     "pi-extension",
     "git",
     "conventional-commits",
-    "automation"
+    "automation",
+    "autocommit"
   ],
   "author": "Yoshiki Kudo",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/335g/pi-git.git"
+    "url": "git+https://github.com/335g/pi-autocommit.git"
   },
   "bugs": {
-    "url": "https://github.com/335g/pi-git/issues"
+    "url": "https://github.com/335g/pi-autocommit/issues"
   },
-  "homepage": "https://github.com/335g/pi-git#readme",
+  "homepage": "https://github.com/335g/pi-autocommit#readme",
   "pi": {
     "extensions": [
       "./dist/index.js"
