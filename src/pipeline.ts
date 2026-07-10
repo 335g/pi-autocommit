@@ -1,157 +1,34 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { PiGitConfig } from "./config.js";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { PipelineEvent, PipelineResult } from "./commit-events.js";
 import { GitOperations } from "./git-operations.js";
-import { selectFiles, type FileDetail } from "./file-selector.js";
-import { generateCommitMessageWithLLM } from "./llm-commit.js";
-import { parseNameStatus } from "./git-parser.js";
-import type { MessageAction } from "./confirmation.js";
-import type { PipelineEvent, PipelineResult, PipelineCallbacks } from "./commit-events.js";
 
-// ── Type definitions ─────────────────────────────────────
+// ── Checkpoint commit ──────────────────────────────────────
 
 /**
- * Snapshot of pipeline state passed to hooks.
- */
-export interface PipelineContext {
-  /** pi extension API, needed for pipeline operations. */
-  pi: ExtensionAPI;
-  /** Files the user selected to include in this commit */
-  selectedFiles: string[];
-  /** Per-file diff details (for QuickLook preview) */
-  fileDetails: Map<string, FileDetail> | undefined;
-  /** Combined staged diff (git diff --cached) */
-  stagedDiff: string;
-  /** Staged stat (git diff --cached --stat) */
-  stagedStat: string;
-  /** Staged name-status (git diff --cached --name-status) */
-  stagedNameStatus: string;
-}
-
-/**
- * Hooks to customise pipeline behaviour per command.
- */
-export interface CommitPipelineHooks {
-  /**
-   * Called after staging and file selection, before LLM message generation.
-   *
-   * Use this for pre-generation workflows.
-   * Throw to abort the pipeline (cleanup is handled automatically).
-   */
-  onBeforeGenerate?: (
-    ctx: PipelineContext,
-    options: CommitPipelineOptions,
-  ) => Promise<void>;
-
-  /**
-   * Called after the commit message has been generated (or inline message
-   * resolved). Implement the confirmation loop here.
-   *
-   * When undefined, the pipeline commits immediately without confirmation
-   * (used by auto-commit).
-   */
-  onMessageGenerated?: (message: string) => Promise<MessageAction>;
-
-  /**
-   * Called after a successful commit. Reserved for future extensions
-   * (e.g. post-commit actions).
-   */
-  postCommit?: () => Promise<void>;
-}
-
-/**
- * Options for customising the commit pipeline.
- */
-export interface CommitPipelineOptions {
-  hooks?: CommitPipelineHooks;
-
-  /**
-   * Optional callbacks for real-time progress during execution.
-   */
-  callbacks?: PipelineCallbacks;
-
-  /**
-   * When set, skip LLM generation and use this message directly.
-   * Staging and file selection still run.
-   */
-  inlineMessage?: string;
-
-  /**
-   * When true, skip the actual `git commit` command.
-   * All other steps (staging, file selection, LLM generation,
-   * confirmation) run normally. No files are unstaged on dry-run.
-   */
-  dryRun?: boolean;
-
-  /**
-   * When true, skip the interactive file selection UI.
-   * All staged files are included in the commit.
-   * Used by auto-commit.
-   */
-  skipFileSelection?: boolean;
-
-  /**
-   * Label for the confirm button in the file selector.
-   * Defaults to "confirm" when omitted.
-   */
-  confirmLabel?: string;
-
-
-}
-
-// ── Pipeline implementation ──────────────────────────────
-
-/**
- * Run the full commit pipeline.
+ * Create a lightweight checkpoint commit at `turn_end`.
  *
  * Steps:
  *   1. Verify git repository
  *   2. Check for merge conflicts
  *   3. Check for uncommitted changes
  *   4. Stage all files (`git add -A`)
- *   5. File selection (interactive or skip)
- *   6. Unstage files the user did NOT select
- *   7. Collect staged diff/stat/name-status
- *   8. Call `onBeforeGenerate` hook
- *   9. Determine commit message (inline, LLM, or heuristic fallback)
- *  10. Call `onMessageGenerated` hook for confirmation
- *  11. Execute `git commit` (unless dryRun)
- *  12. Call `postCommit` hook
+ *   5. Execute `git commit -m <message>`
  *
- * Returns a `PipelineResult` with a structured events array that the caller
- * (presenter in index.ts) maps to UI calls.
+ * The checkpoint message (e.g. `wip(checkpoint): auto-commit at turn N`)
+ * is supplied by the caller. Checkpoint commits are later reorganised
+ * into logical Conventional Commits at `agent_end` by the organiser.
  *
- * Error boundary: on any error (hook throw, git failure, etc.), the pipeline
- * guarantees `unstageAll` cleanup then re-throws. Footer-status updates
- * are the caller's responsibility (handled in catch blocks in index.ts).
+ * Error boundary: on any error, `unstageAll` runs before re-throwing.
+ * Footer-status updates are the caller's responsibility.
  */
-export async function runCommitPipeline(
+export async function runCheckpointCommit(
   pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  config: PiGitConfig,
-  options?: CommitPipelineOptions,
+  message: string,
 ): Promise<PipelineResult> {
   const git = new GitOperations(pi);
-  const hooks = options?.hooks;
-  const dryRun = options?.dryRun ?? false;
-  const callbacks = options?.callbacks;
   const events: PipelineEvent[] = [];
   let committed = false;
 
-  // Helper to push a stage-changed event with current status.
-  const pushStageChanged = async () => {
-    try {
-      if (!(await git.isInsideGitRepo())) {
-        events.push({ type: "stage-changed" });
-        return;
-      }
-      const hasChanges = await git.checkUncommittedChanges();
-      events.push({ type: "stage-changed", hasChanges });
-    } catch {
-      events.push({ type: "stage-changed" });
-    }
-  };
-
-  // Error boundary: cleanup + re-throw
   try {
     // ── 1. Verify git repository ────────────────────────
     if (!(await git.isInsideGitRepo())) {
@@ -163,7 +40,7 @@ export async function runCommitPipeline(
     if (await git.hasMergeConflict()) {
       events.push({
         type: "error",
-        message: "Merge conflict in progress. Please resolve conflicts first.",
+        message: "Merge conflict in progress. Skipping checkpoint commit.",
       });
       return { events, committed: false };
     }
@@ -171,142 +48,16 @@ export async function runCommitPipeline(
     // ── 3. Check for changes ────────────────────────────
     const status = await git.checkStatus();
     if (!status.hasChanges) {
-      events.push({ type: "info", message: "No changes to commit" });
-      await pushStageChanged();
+      events.push({ type: "info", message: "No changes to checkpoint" });
+      events.push({ type: "stage-changed", hasChanges: false });
       return { events, committed: false };
     }
 
     // ── 4. Stage all files ──────────────────────────────
     await git.stageAll();
 
-    // ── 5. File selection ───────────────────────────────
-    const nameStatusBeforeSelect = await git.getStagedNameStatus();
-
-    // Pre-fetch per-file diffs and stats for QuickLook preview (TUI only)
-    let fileDetails: Map<string, FileDetail> | undefined;
-    if (ctx.mode === "tui" && !options?.skipFileSelection) {
-      fileDetails = new Map();
-      const parsed = parseNameStatus(nameStatusBeforeSelect);
-      await Promise.all(
-        parsed.map(async (entry) => {
-          const [diffResult, numstatResult] = await Promise.all([
-            git.getFileStagedDiff(entry.path),
-            git.getFileStagedNumstat(entry.path),
-          ]);
-          fileDetails!.set(entry.path, {
-            diff: diffResult,
-            additions: numstatResult.additions,
-            deletions: numstatResult.deletions,
-          });
-        }),
-      );
-    }
-
-    let selectedFiles: string[] | null;
-    if (options?.skipFileSelection) {
-      selectedFiles = parseNameStatus(nameStatusBeforeSelect).map(
-        (e) => e.path,
-      );
-    } else {
-      selectedFiles = await selectFiles(ctx, nameStatusBeforeSelect, {
-        fileDetails: fileDetails && fileDetails.size > 0
-          ? fileDetails
-          : undefined,
-        confirmLabel: options?.confirmLabel,
-      });
-    }
-
-    // Handle cancellation (null) or empty selection ([])
-    if (selectedFiles === null || selectedFiles.length === 0) {
-      await git.unstageAll();
-      events.push({
-        type: "cancelled",
-        reason: selectedFiles === null
-          ? "Commit cancelled (no files selected)."
-          : "No files selected — nothing to commit.",
-      });
-      await pushStageChanged();
-      return { events, committed: false };
-    }
-
-    // ── 6. Unstage non-selected files ───────────────────
-    const allParsed = parseNameStatus(nameStatusBeforeSelect);
-    for (const entry of allParsed) {
-      if (!selectedFiles.includes(entry.path)) {
-        await git.unstageFile(entry.path);
-      }
-    }
-
-    // ── 7. Collect staged info ──────────────────────────
-    const stagedNameStatus = await git.getStagedNameStatus();
-    const stagedStat = await git.getStagedStat();
-    const stagedDiff = await git.getStagedDiff();
-
-    const pipelineCtx: PipelineContext = {
-      pi,
-      selectedFiles,
-      fileDetails,
-      stagedDiff,
-      stagedStat,
-      stagedNameStatus,
-    };
-
-    // ── 8. onBeforeGenerate hook ────────────────────────
-    if (hooks?.onBeforeGenerate) {
-      await hooks.onBeforeGenerate(pipelineCtx, options ?? {});
-    }
-
-    // ── 9. Determine commit message ─────────────────────
-    let fullMessage: string;
-
-    if (options?.inlineMessage) {
-      fullMessage = options.inlineMessage;
-    } else {
-      // Fire progress callback before the async LLM call.
-      // Defensive: swallow callback errors so the pipeline is not interrupted.
-      try {
-        callbacks?.onProgress?.({ type: "generating" });
-      } catch {
-        // Swallow — the presenter is responsible for its own error handling.
-      }
-      fullMessage = await generateCommitMessageWithLLM(
-        pi,
-        ctx,
-        stagedNameStatus,
-        stagedStat,
-        stagedDiff,
-        config,
-      );
-    }
-
-    // ── 10. onMessageGenerated hook (confirmation) ──────
-    if (hooks?.onMessageGenerated) {
-      const action = await hooks.onMessageGenerated(fullMessage);
-
-      if (action.action === "cancel") {
-        events.push({ type: "cancelled", reason: "Commit cancelled." });
-        await git.unstageAll();
-        await pushStageChanged();
-        return { events, committed: false };
-      }
-
-      if (action.action === "edit") {
-        fullMessage = action.message;
-      }
-      // "commit" → proceed as-is
-    }
-
-    // ── 11. Execute commit ──────────────────────────────
-    if (dryRun) {
-      events.push({
-        type: "dry-run",
-        message: `[DRY RUN] Skipped. Would commit with:\n\n${fullMessage}`,
-      });
-      await pushStageChanged();
-      return { events, committed: false };
-    }
-
-    const result = await git.commit(fullMessage);
+    // ── 5. Execute commit ───────────────────────────────
+    const result = await git.commit(message);
     if (result.code !== 0) {
       throw new Error(
         `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
@@ -316,19 +67,12 @@ export async function runCommitPipeline(
     committed = true;
     events.push({
       type: "committed",
-      message: `Committed successfully:\n${result.stdout.trim() || fullMessage.split("\n")[0]}`,
+      message: result.stdout.trim() || message.split("\n")[0],
     });
-
-    // ── 12. postCommit hook ─────────────────────────────
-    if (hooks?.postCommit) {
-      await hooks.postCommit();
-    }
-
-    await pushStageChanged();
+    events.push({ type: "stage-changed", hasChanges: false });
     return { events, committed };
   } catch (error) {
     // Error boundary: cleanup before re-throwing.
-    // Footer-status update is the caller's responsibility (catch block).
     try {
       await git.unstageAll();
     } catch {
