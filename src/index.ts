@@ -1,22 +1,19 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { loadConfig, resolveCommitEveryTurnConfig } from "./config.js";
-import { showStatusViewer } from "./status-viewer.js";
-import { runCommitPipeline } from "./pipeline.js";
-import { parseCommitArgs } from "./args.js";
-import { confirmCommitMessage } from "./confirmation.js";
-import { GitOperations } from "./git-operations.js";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { shouldCreateWipCommit } from "./commit-decider.js";
-import { organizeWipCommits } from "./commit-organizer.js";
-
-import { StatusIndicator } from "./status-indicator.js";
 import type { PipelineEvent } from "./commit-events.js";
+import { organizeWipCommits } from "./commit-organizer.js";
+import { loadConfig } from "./config.js";
+import { GitOperations } from "./git-operations.js";
+import { runCheckpointCommit } from "./pipeline.js";
+import { StatusIndicator } from "./status-indicator.js";
 
 /**
  * Dispatch pipeline events to the UI.
  *
- * Shared by `/git-commit`, checkpoint commits (`turn_end`),
- * and the reorganiser (`agent_end`) — replaces three copies
- * of the same switch statement.
+ * Shared by checkpoint commits (`turn_end`) and the reorganiser (`agent_end`).
  */
 async function handlePipelineEvents(
   ctx: ExtensionContext,
@@ -31,14 +28,8 @@ async function handlePipelineEvents(
       case "error":
         ctx.ui.notify(event.message, "error");
         break;
-      case "dry-run":
-        ctx.ui.notify(event.message, "info");
-        break;
       case "committed":
         ctx.ui.notify(event.message, "info");
-        break;
-      case "cancelled":
-        ctx.ui.notify(event.reason, "info");
         break;
       case "organised":
         ctx.ui.notify(
@@ -57,90 +48,20 @@ async function handlePipelineEvents(
 }
 
 /**
- * pi-git extension — `/git-commit` and `/git-status` commands
+ * pi-autocommit extension
  *
- * `/git-commit` stages all current files, generates a Conventional Commits
- * message, and commits.
- * `/git-status` shows the working tree status in a scrollable TUI viewer.
+ * Automatically commits changes inside pi using a checkpoint-then-reorganise
+ * strategy so the user does not have to write commit messages.
  *
- * The heavy lifting is delegated to `runCommitPipeline` in `pipeline.ts`;
- * this module (the presenter) only registers commands and maps
- * pipeline events to UI calls.
+ * - `turn_end`: create a lightweight checkpoint commit when a turn mutated
+ *   files.
+ * - `agent_end`: soft-reset the checkpoint commits and reorganise them into
+ *   logical Conventional Commits via the LLM.
+ *
+ * A footer indicator shows whether the working tree has uncommitted changes,
+ * so the user can spot unintended files before a checkpoint captures them.
  */
 export default function (pi: ExtensionAPI) {
-  // ───────────────────────────────────────────────────────
-  // /git-commit command
-  // ───────────────────────────────────────────────────────
-
-  pi.registerCommand("git-commit", {
-    description: "Stage all changes and generate a Conventional Commits message",
-    handler: async (args, ctx) => {
-      const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
-      const { dryRun, inlineMessage } = parseCommitArgs(args?.trim() ?? "");
-      const config = loadConfig(ctx.cwd);
-
-      try {
-        const result = await runCommitPipeline(pi, ctx, config, {
-          inlineMessage,
-          dryRun,
-          confirmLabel: "commit",
-          hooks: {
-            onMessageGenerated: async (msg) =>
-              inlineMessage
-                ? { action: "commit" }
-                : confirmCommitMessage(ctx, msg, "pi-git-commit", dryRun),
-          },
-          callbacks: {
-            onProgress: (event) => {
-              if (event.type === "generating") {
-                ctx.ui.notify(
-                  "Generating commit message via LLM...",
-                  "info",
-                );
-              }
-            },
-          },
-        });
-
-        await handlePipelineEvents(ctx, statusIndicator, result.events);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`git-commit error: ${message}`, "error");
-        await statusIndicator.updateFooter();
-      }
-    },
-  });
-
-  // ───────────────────────────────────────────────────────
-  // /git-status command
-  // ───────────────────────────────────────────────────────
-
-  pi.registerCommand("git-status", {
-    description: "Show git status (working tree and staged changes)",
-    handler: async (args, ctx) => {
-      const git = new GitOperations(pi);
-      try {
-        if (!(await git.isInsideGitRepo())) {
-          ctx.ui.notify("Not a git repository", "error");
-          return;
-        }
-        const status = await git.getFullStatus();
-
-        if (ctx.mode === "tui") {
-          await showStatusViewer(ctx, status);
-        } else {
-          ctx.ui.notify(status || "No changes", "info");
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
-        ctx.ui.notify(`git-status error: ${message}`, "error");
-      }
-    },
-  });
-
-
   // ───────────────────────────────────────────────────────
   // Show uncommitted changes indicator in footer
   // ───────────────────────────────────────────────────────
@@ -157,9 +78,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_end", async (event, ctx) => {
     const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     const config = loadConfig(ctx.cwd);
-    const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
 
-    if (!commitConfig.enabled) {
+    if (!config.enable) {
       return;
     }
 
@@ -177,19 +97,15 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      const result = await runCommitPipeline(pi, ctx, config, {
-        skipFileSelection: true,
-        inlineMessage: `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
-      });
+      const result = await runCheckpointCommit(
+        pi,
+        `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
+      );
 
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(
-        `commitEveryTurn: checkpoint error — ${message}`,
-        "error",
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`pi-autocommit: checkpoint error — ${message}`, "error");
       await statusIndicator.updateFooter();
     }
   });
@@ -201,9 +117,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     const config = loadConfig(ctx.cwd);
-    const commitConfig = resolveCommitEveryTurnConfig(config.commitEveryTurn);
 
-    if (!commitConfig.enabled) {
+    if (!config.enable) {
       await statusIndicator.updateFooter();
       return;
     }
@@ -214,12 +129,8 @@ export default function (pi: ExtensionAPI) {
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(
-        `commitEveryTurn: error — ${message}`,
-        "error",
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.ui.notify(`pi-autocommit: error — ${message}`, "error");
       await statusIndicator.updateFooter();
     }
   });

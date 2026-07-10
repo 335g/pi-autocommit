@@ -1,11 +1,11 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { GitOperations } from "./git-operations.js";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { GitOperations } from "./git-operations.js";
 
 /**
- * Shared footer-status updater for the commit pipeline and organiser.
+ * Shared footer-status updater for the checkpoint pipeline and organiser.
  *
- * Pipeline and organiser never import this class — it is used exclusively
- * by the presenter in index.ts, both in the success and error paths.
+ * Used exclusively by the presenter in index.ts, both in the success and
+ * error paths.
  */
 export class StatusIndicator {
   constructor(
@@ -16,16 +16,16 @@ export class StatusIndicator {
   async updateFooter(): Promise<void> {
     try {
       if (!(await this.git.isInsideGitRepo())) {
-        this.ctx.ui.setStatus("pi-git-uncommitted", undefined);
+        this.ctx.ui.setStatus("pi-autocommit-uncommitted", undefined);
         return;
       }
       const hasChanges = await this.git.checkUncommittedChanges();
       this.ctx.ui.setStatus(
-        "pi-git-uncommitted",
+        "pi-autocommit-uncommitted",
         hasChanges ? "[has changes]" : undefined,
       );
     } catch {
-      this.ctx.ui.setStatus("pi-git-uncommitted", undefined);
+      this.ctx.ui.setStatus("pi-autocommit-uncommitted", undefined);
     }
   }
 }
