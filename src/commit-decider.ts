@@ -26,7 +26,5 @@ export function shouldCreateWipCommit(
   if (!toolResults || toolResults.length === 0) {
     return false;
   }
-  return toolResults.some((r) =>
-    POTENTIALLY_MUTATING_TOOLS.has(r.toolName),
-  );
+  return toolResults.some((r) => POTENTIALLY_MUTATING_TOOLS.has(r.toolName));
 }

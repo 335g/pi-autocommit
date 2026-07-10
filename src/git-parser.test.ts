@@ -1,5 +1,5 @@
-import { describe, it } from "node:test";
 import assert from "node:assert";
+import { describe, it } from "node:test";
 import { parseNameStatus } from "./git-parser.js";
 
 void describe("parseNameStatus", () => {
@@ -36,7 +36,11 @@ void describe("parseNameStatus", () => {
   });
 
   void it("parses multiple entries", () => {
-    const input = ["A\tsrc/new.ts", "M\tsrc/modified.ts", "D\tsrc/deleted.ts"].join("\n");
+    const input = [
+      "A\tsrc/new.ts",
+      "M\tsrc/modified.ts",
+      "D\tsrc/deleted.ts",
+    ].join("\n");
     assert.deepStrictEqual(parseNameStatus(input), [
       { status: "A", path: "src/new.ts", oldPath: undefined },
       { status: "M", path: "src/modified.ts", oldPath: undefined },

@@ -22,9 +22,12 @@ export function parseNameStatus(raw: string): ParsedNameStatus[] {
   return lines.map((line) => {
     const parts = line.split("\t");
     const statusRaw = parts[0].trim();
-    const status = (statusRaw[0] === "R" ? "R" : statusRaw[0]) as ParsedNameStatus["status"];
+    const status = (
+      statusRaw[0] === "R" ? "R" : statusRaw[0]
+    ) as ParsedNameStatus["status"];
     const path = parts[parts.length - 1]?.trim() ?? "";
-    const oldPath = status === "R" && parts.length >= 3 ? parts[1].trim() : undefined;
+    const oldPath =
+      status === "R" && parts.length >= 3 ? parts[1].trim() : undefined;
     return { status, path, oldPath };
   });
 }

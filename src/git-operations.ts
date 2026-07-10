@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExecResult } from "@earendil-works/pi-coding-agent";
+import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
  * Result of checking the repository state.
@@ -22,7 +22,10 @@ export class GitOperations {
    * Returns `true` on success, `false` if not a git repo.
    */
   async isInsideGitRepo(): Promise<boolean> {
-    const { code } = await this.pi.exec("git", ["rev-parse", "--is-inside-work-tree"]);
+    const { code } = await this.pi.exec("git", [
+      "rev-parse",
+      "--is-inside-work-tree",
+    ]);
     return code === 0;
   }
 
@@ -51,7 +54,11 @@ export class GitOperations {
    * Get the stat summary of staged changes (`git diff --cached --stat`).
    */
   async getStagedStat(): Promise<string> {
-    const { stdout } = await this.pi.exec("git", ["diff", "--cached", "--stat"]);
+    const { stdout } = await this.pi.exec("git", [
+      "diff",
+      "--cached",
+      "--stat",
+    ]);
     return stdout.trim();
   }
 
@@ -67,7 +74,11 @@ export class GitOperations {
    * Get the name-status of staged changes (`git diff --cached --name-status`).
    */
   async getStagedNameStatus(): Promise<string> {
-    const { stdout } = await this.pi.exec("git", ["diff", "--cached", "--name-status"]);
+    const { stdout } = await this.pi.exec("git", [
+      "diff",
+      "--cached",
+      "--name-status",
+    ]);
     return stdout.trim();
   }
 
@@ -98,7 +109,12 @@ export class GitOperations {
    * instead of silently committing unselected files.
    */
   async unstageFile(file: string): Promise<void> {
-    const result = await this.pi.exec("git", ["restore", "--staged", "--", file]);
+    const result = await this.pi.exec("git", [
+      "restore",
+      "--staged",
+      "--",
+      file,
+    ]);
     if (result.code !== 0) {
       throw new Error(
         `git restore --staged -- ${file} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
