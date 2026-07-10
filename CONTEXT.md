@@ -24,6 +24,12 @@ _Avoid_: commit splitter, commit cleaner
 The checkpoint-then-reorganise strategy: lightweight checkpoint commits are created during the agent loop and reorganised into logical Conventional Commits at `agent_end`.
 _Avoid_: commit mode, commit timing
 
+## Commit message generation
+
+**Commit message model**
+The LLM model used to generate commit messages. Specified in `config.model` in `"provider/modelId"` format. When omitted, the session's current model (the one driving the conversation) is used as a fallback.
+_Avoid_: commit model, LLM model
+
 ## Status
 
 **Uncommitted-changes indicator**
