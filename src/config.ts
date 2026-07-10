@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 // Known config keys (camelCase as they appear in JSON)
 const KNOWN_KEYS = new Set(["lang", "enable", "model"]);
@@ -68,6 +68,32 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
   } catch {
     return { ...DEFAULT_CONFIG };
   }
+}
+
+/**
+ * Persist `enable` to `.pi/pi-autocommit.json`, preserving every other key.
+ *
+ * Reads the existing file (if any) and replaces only the `enable` field,
+ * so unknown keys and other known keys (`lang`, `model`) are kept intact.
+ * When the file does not exist, it is created with default values
+ * (`lang: "en"`, no `model`) and the given `enable` value.
+ */
+export function saveEnable(cwd: string, enable: boolean): void {
+  const configPath = join(cwd, ".pi", CONFIG_FILENAME);
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const raw = readFileSync(configPath, "utf-8");
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    // Missing or unreadable file — start from defaults.
+    parsed = { lang: DEFAULT_CONFIG.lang };
+  }
+
+  parsed.enable = enable;
+
+  mkdirSync(dirname(configPath), { recursive: true });
+  writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
 }
 
 /**

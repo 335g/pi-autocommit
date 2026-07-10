@@ -1,8 +1,8 @@
 import assert from "node:assert";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadConfig } from "./config.js";
+import { loadConfig, saveEnable } from "./config.js";
 
 /**
  * Create a temporary directory with a `.pi/pi-autocommit.json` file.
@@ -85,6 +85,61 @@ void describe("loadConfig", () => {
     try {
       const config = loadConfig(dir);
       assert.strictEqual(config.model, "openai/gpt-4o");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe("saveEnable", () => {
+  void it("creates a default file when none exists", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      saveEnable(dir, false);
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.enable, false);
+      assert.strictEqual(parsed.lang, "en");
+      assert.strictEqual(parsed.model, undefined);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("overwrites only enable and preserves other known keys", () => {
+    const dir = withConfigFile({ lang: "ja", enable: true, model: "anthropic/claude-sonnet-4" });
+    try {
+      saveEnable(dir, false);
+      const config = loadConfig(dir);
+      assert.strictEqual(config.enable, false);
+      assert.strictEqual(config.lang, "ja");
+      assert.strictEqual(config.model, "anthropic/claude-sonnet-4");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("preserves unknown keys", () => {
+    const dir = withConfigFile({ enable: true, custom_key: "keep-me" });
+    try {
+      saveEnable(dir, false);
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.enable, false);
+      assert.strictEqual(parsed.custom_key, "keep-me");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("can re-enable after disabling", () => {
+    const dir = withConfigFile({ enable: true, lang: "ja" });
+    try {
+      saveEnable(dir, false);
+      assert.strictEqual(loadConfig(dir).enable, false);
+      saveEnable(dir, true);
+      assert.strictEqual(loadConfig(dir).enable, true);
+      assert.strictEqual(loadConfig(dir).lang, "ja");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
