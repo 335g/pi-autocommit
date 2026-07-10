@@ -2,36 +2,19 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Known config keys (camelCase as they appear in JSON)
-const KNOWN_KEYS = new Set(["lang", "noBody", "commitEveryTurn", "model"]);
+const KNOWN_KEYS = new Set(["lang", "enable", "model"]);
+
+/** Config file name, relative to `.pi/`. */
+const CONFIG_FILENAME = "pi-autocommit.json";
 
 /**
- * Setting that controls the auto-commit behaviour.
- *
- * - `false`: disabled.
- * - `true`: create lightweight checkpoint commits at the end of each turn
- *   that modifies files, then reorganise those checkpoints into logical
- *   Conventional Commits at `agent_end`.
+ * Normalised configuration for the pi-autocommit extension.
  */
-export type CommitEveryTurnConfig = boolean;
-
-/**
- * Normalised, resolved auto-commit configuration.
- */
-export interface ResolvedCommitEveryTurnConfig {
-  /** Whether auto-commit is enabled. */
-  enabled: boolean;
-}
-
-/**
- * Language configuration for commit messages.
- */
-export interface PiGitConfig {
+export interface PiAutocommitConfig {
   /** Language for the commit message (subject and body). `"ja"` → Japanese, anything else → English */
   lang: string;
-  /** When `true`, the commit message is generated without a body (subject-only). */
-  noBody?: boolean;
-  /** Controls automatic commit behaviour. See {@link CommitEveryTurnConfig}. */
-  commitEveryTurn?: CommitEveryTurnConfig;
+  /** Whether auto-commit is enabled. Defaults to `true`. */
+  enable: boolean;
   /**
    * LLM model for commit message generation, in `"provider/modelId"` format
    * (e.g. `"anthropic/claude-sonnet-4"`).
@@ -40,20 +23,20 @@ export interface PiGitConfig {
   model?: string;
 }
 
-const DEFAULT_CONFIG: PiGitConfig = {
+const DEFAULT_CONFIG: PiAutocommitConfig = {
   lang: "en",
-  noBody: false,
-  commitEveryTurn: false,
+  enable: true,
 };
 
 /**
- * Load `.pi/pi-git.json` from the project root.
+ * Load `.pi/pi-autocommit.json` from the project root.
  *
- * Returns default config (English body) when the file is missing or unreadable.
+ * Returns default config (English, auto-commit enabled) when the file is
+ * missing or unreadable.
  */
-export function loadConfig(cwd: string): PiGitConfig {
+export function loadConfig(cwd: string): PiAutocommitConfig {
   try {
-    const configPath = join(cwd, ".pi", "pi-git.json");
+    const configPath = join(cwd, ".pi", CONFIG_FILENAME);
     const raw = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
 
@@ -61,54 +44,35 @@ export function loadConfig(cwd: string): PiGitConfig {
     const unknownKeys = Object.keys(parsed).filter((k) => !KNOWN_KEYS.has(k));
     if (unknownKeys.length > 0) {
       console.warn(
-        `[pi-git] Unknown config key(s): ${unknownKeys.join(", ")}. ` +
+        `[pi-autocommit] Unknown config key(s): ${unknownKeys.join(", ")}. ` +
           `Valid keys: ${[...KNOWN_KEYS].join(", ")}`,
       );
     }
 
-    const lang = typeof parsed.lang === "string" && parsed.lang.trim().length > 0
-      ? parsed.lang.trim()
-      : DEFAULT_CONFIG.lang;
+    const lang =
+      typeof parsed.lang === "string" && parsed.lang.trim().length > 0
+        ? parsed.lang.trim()
+        : DEFAULT_CONFIG.lang;
 
-    const noBody = typeof parsed.noBody === "boolean"
-      ? parsed.noBody
-      : DEFAULT_CONFIG.noBody;
-
-    const commitEveryTurn =
-      parsed.commitEveryTurn === undefined
-        ? DEFAULT_CONFIG.commitEveryTurn
-        : (parsed.commitEveryTurn as CommitEveryTurnConfig);
+    const enable =
+      typeof parsed.enable === "boolean"
+        ? parsed.enable
+        : DEFAULT_CONFIG.enable;
 
     const model =
       typeof parsed.model === "string" && parsed.model.trim().length > 0
         ? parsed.model.trim()
         : undefined;
 
-    return { lang, noBody, commitEveryTurn, model };
+    return { lang, enable, model };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
 }
 
 /**
- * Resolve the raw `commitEveryTurn` config value into a normalised form.
- */
-export function resolveCommitEveryTurnConfig(
-  value: CommitEveryTurnConfig | undefined,
-): ResolvedCommitEveryTurnConfig {
-  return { enabled: value === true };
-}
-
-/**
  * Returns `true` when the commit message should be written in Japanese.
  */
-export function isJapanese(config: PiGitConfig): boolean {
+export function isJapanese(config: PiAutocommitConfig): boolean {
   return config.lang === "ja";
-}
-
-/**
- * Returns `true` when the commit message should omit the body.
- */
-export function hasNoBody(config: PiGitConfig): boolean {
-  return config.noBody === true;
 }

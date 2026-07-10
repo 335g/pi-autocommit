@@ -1,40 +1,55 @@
-import { describe, it } from "node:test";
 import assert from "node:assert";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveCommitEveryTurnConfig, loadConfig } from "./config.js";
+import { describe, it } from "node:test";
+import { loadConfig } from "./config.js";
 
 /**
- * Create a temporary directory with a `.pi/pi-git.json` file.
+ * Create a temporary directory with a `.pi/pi-autocommit.json` file.
  */
 function withConfigFile(data: Record<string, unknown>): string {
-  const dir = mkdtempSync("/tmp/pi-git-test-");
+  const dir = mkdtempSync("/tmp/pi-autocommit-test-");
   mkdirSync(join(dir, ".pi"), { recursive: true });
-  writeFileSync(join(dir, ".pi", "pi-git.json"), JSON.stringify(data), "utf-8");
+  writeFileSync(
+    join(dir, ".pi", "pi-autocommit.json"),
+    JSON.stringify(data),
+    "utf-8",
+  );
   return dir;
 }
 
-void describe("resolveCommitEveryTurnConfig", () => {
-  void it("treats undefined as disabled", () => {
-    assert.deepStrictEqual(resolveCommitEveryTurnConfig(undefined), {
-      enabled: false,
-    });
-  });
-
-  void it("treats false as disabled", () => {
-    assert.deepStrictEqual(resolveCommitEveryTurnConfig(false), {
-      enabled: false,
-    });
-  });
-
-  void it("treats true as enabled", () => {
-    assert.deepStrictEqual(resolveCommitEveryTurnConfig(true), {
-      enabled: true,
-    });
-  });
-});
-
 void describe("loadConfig", () => {
+  void it("defaults to enabled when no config file exists", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.enable, true);
+      assert.strictEqual(config.lang, "en");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("respects enable: false", () => {
+    const dir = withConfigFile({ enable: false });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.enable, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("parses lang", () => {
+    const dir = withConfigFile({ lang: "ja" });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.lang, "ja");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   void it("parses model from config", () => {
     const dir = withConfigFile({ model: "anthropic/claude-sonnet-4" });
     try {
