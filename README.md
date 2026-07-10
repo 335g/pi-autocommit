@@ -117,7 +117,8 @@ Create `.pi/pi-git.json` in your project root:
 {
   "lang": "ja",
   "noBody": true,
-  "commitEveryTurn": false
+  "commitEveryTurn": false,
+  "model": "anthropic/claude-sonnet-4"
 }
 ```
 
@@ -126,6 +127,7 @@ Create `.pi/pi-git.json` in your project root:
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
 | `noBody` | boolean | `false` | Omit body, subject-only commit message |
 | `commitEveryTurn` | `boolean` | `false` | Auto-commit (checkpoint-then-reorganise strategy) |
+| `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 
 #### `commitEveryTurn`
 
