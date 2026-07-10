@@ -5,7 +5,7 @@ import type {
 import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
 import { organizeWipCommits } from "./commit-organizer.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, saveEnable } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { runCheckpointCommit } from "./pipeline.js";
 import { StatusIndicator } from "./status-indicator.js";
@@ -62,6 +62,38 @@ async function handlePipelineEvents(
  * so the user can spot unintended files before a checkpoint captures them.
  */
 export default function (pi: ExtensionAPI) {
+  // ───────────────────────────────────────────────────────
+  // /git-autocommit-enable [true|false]
+  // ───────────────────────────────────────────────────────
+
+  pi.registerCommand("git-autocommit-enable", {
+    description: "Toggle auto-commit enable (true|false). No arg shows current state.",
+    handler: async (args, ctx) => {
+      const config = loadConfig(ctx.cwd);
+      const trimmed = args?.trim().toLowerCase();
+
+      if (trimmed === "") {
+        ctx.ui.notify(
+          `pi-autocommit: enable = ${config.enable}`,
+          "info",
+        );
+        return;
+      }
+
+      if (trimmed !== "true" && trimmed !== "false") {
+        ctx.ui.notify(
+          "Usage: /git-autocommit-enable <true|false>",
+          "error",
+        );
+        return;
+      }
+
+      const enable = trimmed === "true";
+      saveEnable(ctx.cwd, enable);
+      ctx.ui.notify(`pi-autocommit: enable = ${enable}`, "info");
+    },
+  });
+
   // ───────────────────────────────────────────────────────
   // Show uncommitted changes indicator in footer
   // ───────────────────────────────────────────────────────
