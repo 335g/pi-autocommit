@@ -275,6 +275,16 @@ export class GitOperations {
   }
 
   /**
+   * Check whether the index contains any staged changes.
+   * Uses `git diff --cached --quiet`: exit code 1 means there are differences,
+   * 0 means the index matches HEAD.
+   */
+  async hasStagedChanges(): Promise<boolean> {
+    const { code } = await this.pi.exec("git", ["diff", "--cached", "--quiet"]);
+    return code === 1;
+  }
+
+  /**
    * Stage only the given files (`git add -- <file>...`).
    */
   async stageFiles(files: string[]): Promise<void> {

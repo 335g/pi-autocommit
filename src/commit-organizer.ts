@@ -84,13 +84,26 @@ export async function organizeCheckpointCommits(
     }
 
     // Stage and commit each logical group in order.
+    let commitCount = 0;
     for (const group of groups) {
       await store.unstageAll();
       await store.stageFiles(group.files);
+
+      // Skip groups with no staged changes (e.g. duplicate files already committed).
+      if (!(await store.hasStagedChanges())) {
+        events.push({
+          type: "info",
+          message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
+        });
+        continue;
+      }
+
+      commitCount++;
       const result = await store.commit(group.message);
       if (result.code !== 0) {
+        const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
         throw new Error(
-          `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+          `Commit failed (code ${result.code}): ${detail}`,
         );
       }
     }
@@ -98,7 +111,7 @@ export async function organizeCheckpointCommits(
     events.push({
       type: "organised",
       checkpointCount: checkpointCount,
-      commitCount: groups.length,
+      commitCount,
     });
     organised = true;
     events.push({
@@ -274,13 +287,26 @@ async function assembleAndCommit(
       return { events, organised };
     }
 
+    let commitCount = 0;
     for (const group of groups) {
       await store.unstageAll();
       await store.stageFiles(group.files);
+
+      // Skip groups with no staged changes (e.g. duplicate files already committed).
+      if (!(await store.hasStagedChanges())) {
+        events.push({
+          type: "info",
+          message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
+        });
+        continue;
+      }
+
+      commitCount++;
       const result = await store.commit(group.message);
       if (result.code !== 0) {
+        const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
         throw new Error(
-          `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+          `Commit failed (code ${result.code}): ${detail}`,
         );
       }
     }
@@ -288,7 +314,7 @@ async function assembleAndCommit(
     events.push({
       type: "organised",
       checkpointCount,
-      commitCount: groups.length,
+      commitCount,
     });
     organised = true;
     events.push({
@@ -407,8 +433,9 @@ async function fallbackSingleCommit(
 
   const result = await store.commit(message);
   if (result.code !== 0) {
+    const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
     throw new Error(
-      `Fallback commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+      `Fallback commit failed (code ${result.code}): ${detail}`,
     );
   }
 

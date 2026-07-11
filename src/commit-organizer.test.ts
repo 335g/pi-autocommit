@@ -204,6 +204,16 @@ class InMemoryCommitStore implements CommitStore {
       insideRepo?: boolean;
       /** Ordered from HEAD (index 0) backward. */
       checkpointCommits?: CheckpointCommit[];
+      /**
+       * File paths that are considered "already committed" — staging them
+       * produces no staged changes (simulates duplicate files across groups).
+       */
+      alreadyCommitted?: string[];
+      /**
+       * Override the default commit return value. When set, every call to
+       * `commit()` returns this instead of the default success response.
+       */
+      commitResult?: ExecResult;
     } = {},
   ) {
     // Normalise session to null when absent.
@@ -279,9 +289,15 @@ class InMemoryCommitStore implements CommitStore {
     this.stagedFiles = [];
   }
 
+  async hasStagedChanges(): Promise<boolean> {
+    this.operations.push("hasStagedChanges");
+    return this.stagedFiles.length > 0;
+  }
+
   async stageFiles(files: string[]): Promise<void> {
     this.operations.push(`stageFiles:${files.join(",")}`);
-    this.stagedFiles = [...files];
+    const committed = this.options.alreadyCommitted ?? [];
+    this.stagedFiles = files.filter((f) => !committed.includes(f));
   }
 
   async stageAll(): Promise<void> {
@@ -292,7 +308,7 @@ class InMemoryCommitStore implements CommitStore {
     this.operations.push(`commit:${message.split("\n")[0]}`);
     this.commits.push(message);
     this.stagedFiles = [];
-    return { code: 0, stdout: "", stderr: "", killed: false };
+    return this.options.commitResult ?? { code: 0, stdout: "", stderr: "", killed: false };
   }
 
   async findReachableCheckpoints(
@@ -530,6 +546,104 @@ src/b.ts
       "stageFiles:src/b.ts",
     ]);
     assert.deepStrictEqual(store.stagedFiles, []);
+  });
+
+  void it("includes stdout in error message when stderr is empty", async () => {
+    const store = new InMemoryCommitStore({
+      checkpointCommits: [
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+        },
+      ],
+      // commit fails with code 1, empty stderr, but stdout has the actual message.
+      commitResult: { code: 1, stdout: "nothing to commit, working tree clean", stderr: "", killed: false },
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(a): change a
+=== FILES ===
+src/a.ts
+=== END ===
+`.trim();
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+    );
+
+    // Both the group commit and the fallback commit fail, so reorganisation
+    // itself fails — but the error message should contain stdout content
+    // rather than "Unknown error".
+    assert.strictEqual(result.organised, false);
+    const errorEvent = result.events.find((e) => e.type === "error");
+    assert.ok(errorEvent, "Expected an error event");
+    assert.ok(
+      errorEvent.message.includes("nothing to commit, working tree clean"),
+      `Error message should include stdout content, got: ${errorEvent.message}`,
+    );
+    assert.ok(
+      !errorEvent.message.includes("Unknown error"),
+      "Error message should not contain 'Unknown error'",
+    );
+  });
+
+  void it("skips empty commit groups during reorganisation", async () => {
+    const store = new InMemoryCommitStore({
+      checkpointCommits: [
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts", "src/b.ts"],
+        },
+      ],
+      // "src/a.ts" is already committed — staging it produces no changes.
+      alreadyCommitted: ["src/a.ts"],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(a): change a
+=== FILES ===
+src/a.ts
+=== END ===
+=== COMMIT 2 ===
+feat(b): change b
+=== FILES ===
+src/b.ts
+=== END ===
+`.trim();
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+    );
+
+    assert.strictEqual(result.organised, true);
+
+    // Info event about the skipped group.
+    const infoEvent = result.events.find(
+      (e) => e.type === "info" && e.message.startsWith("Skipped empty commit group"),
+    );
+    assert.ok(infoEvent, "Expected an info event about skipped empty commit group");
+
+    // Only the second group was committed.
+    assert.strictEqual(store.commits.length, 1);
+    assert.ok(store.commits[0]?.startsWith("feat(b):"));
+
+    // commitCount reflects actual commits (1), not groups.length (2).
+    const organisedEvent = result.events.find((e) => e.type === "organised");
+    assert.ok(organisedEvent, "Expected an organised event");
+    assert.strictEqual(organisedEvent.commitCount, 1);
+
+    // And we verified hasStagedChanges was called.
+    assert.ok(store.operations.includes("hasStagedChanges"));
   });
 
   // ── Session-aware agent_end tests ────────────────────────

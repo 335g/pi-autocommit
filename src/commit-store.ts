@@ -49,6 +49,12 @@ export interface CommitStore {
   /** Unstage all changes. */
   unstageAll(): Promise<void>;
 
+  /**
+   * Check whether the index contains any staged changes.
+   * Returns true when there are staged differences vs HEAD.
+   */
+  hasStagedChanges(): Promise<boolean>;
+
   /** Stage only the given files. */
   stageFiles(files: string[]): Promise<void>;
 
@@ -129,6 +135,10 @@ export class GitCommitStore implements CommitStore {
 
   async unstageAll(): Promise<void> {
     return this.git.unstageAll();
+  }
+
+  async hasStagedChanges(): Promise<boolean> {
+    return this.git.hasStagedChanges();
   }
 
   async stageFiles(files: string[]): Promise<void> {
