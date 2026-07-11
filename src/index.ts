@@ -116,7 +116,7 @@ export default function (pi: ExtensionAPI) {
    *
    * Used only by the non-TUI fallback (`ctx.ui.select`), which takes string
    * options. The TUI path uses `buildModelSelectItems` (SelectItem[]) with a
-   * bounded, scrollable `SelectList` overlay.
+   * bounded, scrollable `SelectList` in the editor region.
    */
   function buildModelOptions(
     ctx: ExtensionContext,
@@ -165,11 +165,13 @@ export default function (pi: ExtensionAPI) {
   /**
    * Show the model selector popup and persist the user's choice.
    *
-   * In the TUI, uses a centered overlay with a `SelectList` whose viewport is
-   * capped at `MAX_VISIBLE_MODELS` rows and scrolls, so the list never
-   * overflows the terminal (which previously clipped the top of a long model
-   * list). `overlayOptions.margin` reserves a row of space above and below the
-   * popup. In non-TUI modes (e.g. RPC), falls back to `ctx.ui.select`.
+   * In the TUI, renders a `SelectList` in the editor region via
+   * `ctx.ui.custom()` (non-overlay), matching pi's built-in `/model` selector
+   * UX: the chat history stays visible above and the popup does not overlap
+   * it (previously the overlay rendered on top of the history, mixing the
+   * backgrounds' text with the list). The viewport is capped at
+   * `MAX_VISIBLE_MODELS` rows and scrolls, so the list never overflows the
+   * terminal. In non-TUI modes (e.g. RPC), falls back to `ctx.ui.select`.
    */
   async function showModelPopup(
     ctx: ExtensionContext,
@@ -222,14 +224,6 @@ export default function (pi: ExtensionAPI) {
               tui.requestRender();
             },
           };
-        },
-        {
-          overlay: true,
-          overlayOptions: {
-            anchor: "center",
-            maxHeight: "80%",
-            margin: 1,
-          },
         },
       );
 
