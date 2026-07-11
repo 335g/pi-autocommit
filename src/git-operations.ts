@@ -193,25 +193,62 @@ export class GitOperations {
    * Count how many consecutive WIP checkpoint commits exist at HEAD.
    *
    * Walks backwards from HEAD and stops at the first commit whose subject
-   * does not start with the given marker.
+   * does not start with the given marker (or, when `sessionId` is provided,
+   * whose `Checkpoint-Session` trailer does not match).
+   *
+   * @param marker Subject prefix to match (e.g. `"wip(checkpoint):"`).
+   * @param sessionId When provided, only count commits whose
+   *   `Checkpoint-Session` trailer equals this value. When omitted, count
+   *   every consecutive subject-matching commit (backward-compatible
+   *   behaviour).
    */
-  async countWipCommits(marker: string): Promise<number> {
+  async countWipCommits(marker: string, sessionId?: string): Promise<number> {
+    if (sessionId === undefined) {
+      // Original behaviour: subject-prefix match only.
+      const { stdout, code } = await this.pi.exec("git", [
+        "log",
+        "--pretty=format:%s",
+        "--no-decorate",
+      ]);
+      if (code !== 0) {
+        return 0;
+      }
+
+      const subjects = stdout.split("\n");
+      let count = 0;
+      for (const subject of subjects) {
+        if (subject.startsWith(marker)) {
+          count++;
+        } else {
+          break;
+        }
+      }
+      return count;
+    }
+
+    // Session-aware: match subject AND trailer.
     const { stdout, code } = await this.pi.exec("git", [
       "log",
-      "--pretty=format:%s",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
       "--no-decorate",
     ]);
     if (code !== 0) {
       return 0;
     }
 
-    const subjects = stdout.split("\n");
+    const lines = stdout.trim().split("\n");
     let count = 0;
-    for (const subject of subjects) {
-      if (subject.startsWith(marker)) {
-        count++;
+    for (const line of lines) {
+      if (!line) continue;
+      const [, subject, trailerSession] = line.split("\0");
+      if (subject?.startsWith(marker)) {
+        if (trailerSession?.trim() === sessionId) {
+          count++;
+        } else {
+          break; // Non-matching session stops the scan.
+        }
       } else {
-        break;
+        break; // Non-wip subject stops the scan.
       }
     }
     return count;
@@ -250,5 +287,79 @@ export class GitOperations {
         `git add failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
       );
     }
+  }
+
+  /**
+   * Walk backwards from HEAD and return every reachable commit whose subject
+   * starts with `marker`, along with its SHA and `Checkpoint-Session` trailer
+   * value (or `null` when absent).
+   *
+   * Uses `%(trailers:key=...,valueonly)` so the trailer value is the empty
+   * string (not `"NONE"`) when the key is missing — which becomes `null`
+   * after `.trim() || null`.
+   */
+  async findReachableWips(
+    marker: string,
+  ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
+    const { stdout, code } = await this.pi.exec("git", [
+      "log",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+      "--no-decorate",
+    ]);
+    if (code !== 0) return [];
+
+    const result: Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+    }> = [];
+    const lines = stdout.trim().split("\n");
+    for (const line of lines) {
+      if (!line) continue;
+      const [sha, subject, sessionRaw] = line.split("\0");
+      if (subject?.startsWith(marker)) {
+        result.push({ sha, subject, session: sessionRaw?.trim() || null });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Extract the diff of a single commit (relative to its first parent) and
+   * apply it to the index via `git apply --cached`.
+   *
+   * Used for scattered checkpoint reassembly: when target-session checkpoints
+   * are interleaved with foreign checkpoints, each target commit's diff is
+   * staged independently without moving HEAD.
+   *
+   * Returns `{ success: true }` on success, or `{ success: false, error }
+   * when the apply fails (e.g. conflict).
+   */
+  async applyCommitDiffToIndex(
+    sha: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    // Get the first parent of the commit.
+    const {
+      stdout: parent,
+      code: parentCode,
+    } = await this.pi.exec("git", ["rev-parse", `${sha}^`]);
+    if (parentCode !== 0 || !parent.trim()) {
+      return { success: false, error: `No parent for commit ${sha}` };
+    }
+
+    const parentSha = parent.trim();
+
+    // Pipe `git diff <parent> <sha>` into `git apply --cached`.
+    const { code, stderr } = await this.pi.exec("sh", [
+      "-c",
+      `git diff ${parentSha} ${sha} | git apply --cached`,
+    ]);
+    if (code !== 0) {
+      return {
+        success: false,
+        error: stderr.trim() || `git apply --cached failed for ${sha}`,
+      };
+    }
+    return { success: true };
   }
 }
