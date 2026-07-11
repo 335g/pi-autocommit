@@ -17,6 +17,19 @@ import type { CommitStore } from "./commit-store.js";
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
 
 /**
+ * Result of checking whether matching checkpoints are contiguous at HEAD.
+ */
+interface ContiguityCheck {
+  /** True when every matching wip is contiguous at the top of HEAD. */
+  contiguous: boolean;
+  /**
+   * Number of consecutive matching wips from HEAD (only meaningful when
+   * `contiguous` is true).
+   */
+  matchCount: number;
+}
+
+/**
  * At `agent_end`, detect any WIP checkpoint commits created during the agent
  * loop and reorganise them into logical Conventional Commits.
  *
@@ -24,6 +37,11 @@ export const WIP_COMMIT_MARKER = "wip(checkpoint):";
  * assistant's own explanations (from `event.messages`) to decide how to split
  * the changes. If the LLM call fails or the response cannot be parsed, it
  * falls back to a single Conventional Commit containing all changes.
+ *
+ * @param targetSessionId When provided, only reorganise checkpoint commits
+ *   whose `Checkpoint-Session` trailer matches. Scattered (non-consecutive)
+ *   matching commits from older sessions are NOT handled here — use
+ *   {@link reorganiseWipsManual} for that.
  */
 export async function organizeWipCommits(
   ctx: ExtensionContext,
@@ -31,6 +49,7 @@ export async function organizeWipCommits(
   event: AgentEndEvent,
   store: CommitStore,
   complete?: CompleteFn,
+  targetSessionId?: string,
 ): Promise<OrganizerResult> {
   const events: PipelineEvent[] = [];
   let organised = false;
@@ -39,7 +58,7 @@ export async function organizeWipCommits(
     return { events, organised: false };
   }
 
-  const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER);
+  const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER, targetSessionId);
   if (wipCount === 0) {
     events.push({
       type: "stage-changed",
@@ -109,6 +128,223 @@ export async function organizeWipCommits(
 }
 
 /**
+ * Entry point for the manual `/autocommit-organise` command.
+ *
+ * When `targetSessionId` is omitted, reorganises ALL reachable WIP commits at
+ * HEAD (same as the no-argument manual command). When provided, reorganises
+ * only the commits that carry that session's `Checkpoint-Session` trailer,
+ * handling both contiguous and scattered (interleaved) cases.
+ *
+ * @param complete Optional LLM adapter (injected in tests).
+ */
+export async function reorganiseWipsManual(
+  ctx: ExtensionContext,
+  config: PiAutocommitConfig,
+  store: CommitStore,
+  targetSessionId?: string,
+  complete?: CompleteFn,
+): Promise<OrganizerResult> {
+  const events: PipelineEvent[] = [];
+  let organised = false;
+
+  if (!(await store.isInsideGitRepo())) {
+    return { events, organised: false };
+  }
+
+  const reachableWips = await store.findReachableWips(WIP_COMMIT_MARKER);
+  if (reachableWips.length === 0) {
+    events.push({
+      type: "info",
+      message: "No checkpoint commits found at HEAD.",
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised: false };
+  }
+
+  // ── No target session: reorganise ALL wip commits (consecutive only) ──
+  if (targetSessionId === undefined) {
+    const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER);
+    if (wipCount === 0) {
+      events.push({
+        type: "stage-changed",
+        hasChanges: await store.checkUncommittedChanges(),
+      });
+      return { events, organised: false };
+    }
+    await store.resetSoft(wipCount);
+    return assembleAndCommit(ctx, config, store, wipCount, events, "", complete);
+  }
+
+  // ── Target session: check contiguity ────────────────────────────────
+  const targetWips = reachableWips.filter((w) => w.session === targetSessionId);
+  if (targetWips.length === 0) {
+    events.push({
+      type: "info",
+      message: `No checkpoint commits found for session ${targetSessionId}.`,
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised: false };
+  }
+
+  const contiguity = checkContiguity(reachableWips, targetSessionId);
+
+  if (contiguity.contiguous) {
+    // Contiguous from HEAD: happy path.
+    await store.resetSoft(contiguity.matchCount);
+    return assembleAndCommit(
+      ctx,
+      config,
+      store,
+      contiguity.matchCount,
+      events,
+      "",
+      complete,
+    );
+  }
+
+  // ── Scattered case: reassemble via git apply --cached ────────────────
+  // Order oldest-first so diffs apply sequentially without conflict.
+  const oldestFirst = [...targetWips].reverse();
+  for (const wip of oldestFirst) {
+    const result = await store.applyCommitDiffToIndex(wip.sha);
+    if (!result.success) {
+      events.push({
+        type: "error",
+        message: `散在チェックポイントの適用に失敗しました — ${result.error || "不明なエラー"}。手動で解決してください。`,
+      });
+      return { events, organised: false };
+    }
+  }
+
+  return assembleAndCommit(
+    ctx,
+    config,
+    store,
+    targetWips.length,
+    events,
+    "",
+    complete,
+  );
+}
+
+/**
+ * Shared post-stage-assembly pipeline: propose commit groups, commit them,
+ * and return an {@link OrganizerResult}.
+ *
+ * Expects the caller to have already assembled the desired staged state
+ * (via `resetSoft` or `applyCommitDiffToIndex`).
+ *
+ * @param reasoning Assistant reasoning text (empty string for manual
+ *   commands).
+ * @param complete Optional LLM adapter for tests.
+ */
+async function assembleAndCommit(
+  ctx: ExtensionContext,
+  config: PiAutocommitConfig,
+  store: CommitStore,
+  checkpointCount: number,
+  events: PipelineEvent[],
+  reasoning: string,
+  complete?: CompleteFn,
+): Promise<OrganizerResult> {
+  let organised = false;
+
+  try {
+    const groups = await proposeCommitGroupsFromReasoning(
+      ctx,
+      config,
+      store,
+      reasoning,
+      complete,
+    );
+
+    if (groups.length === 0) {
+      await fallbackSingleCommit(ctx, config, store, events);
+      organised = true;
+      events.push({
+        type: "stage-changed",
+        hasChanges: await store.checkUncommittedChanges(),
+      });
+      return { events, organised };
+    }
+
+    for (const group of groups) {
+      await store.unstageAll();
+      await store.stageFiles(group.files);
+      const result = await store.commit(group.message);
+      if (result.code !== 0) {
+        throw new Error(
+          `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+        );
+      }
+    }
+
+    events.push({
+      type: "organised",
+      checkpointCount,
+      commitCount: groups.length,
+    });
+    organised = true;
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised };
+  } catch (error) {
+    try {
+      await store.stageAll();
+      await fallbackSingleCommit(ctx, config, store, events);
+      organised = true;
+    } catch {
+      const message =
+        error instanceof Error ? error.message : String(error);
+      events.push({
+        type: "error",
+        message: `pi-autocommit: reorganisation failed — ${message}`,
+      });
+    }
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised };
+  }
+}
+
+/**
+ * Check whether all commits matching `targetSessionId` are contiguous at
+ * the very top of the `reachableWips` list (i.e. HEAD is one of them and
+ * every commit before the first non-matching one also matches).
+ */
+function checkContiguity(
+  reachableWips: Array<{
+    sha: string;
+    subject: string;
+    session: string | null;
+  }>,
+  targetSessionId: string,
+): ContiguityCheck {
+  let matchCount = 0;
+  for (const wip of reachableWips) {
+    if (wip.session === targetSessionId) {
+      matchCount++;
+    } else {
+      break;
+    }
+  }
+  return {
+    contiguous: matchCount > 0,
+    matchCount,
+  };
+}
+
+/**
  * Ask the commit prompt module to split the staged diff into logical
  * commit groups, using the agent's own reasoning as context.
  */
@@ -125,6 +361,24 @@ async function proposeCommitGroups(
   }
 
   const reasoning = extractAssistantContext(event.messages);
+  return completeCommitGroups(ctx, config, { diff, reasoning }, complete);
+}
+
+/**
+ * Overload of {@link proposeCommitGroups} that accepts a raw reasoning
+ * string instead of an `AgentEndEvent` (used by the manual command).
+ */
+async function proposeCommitGroupsFromReasoning(
+  ctx: ExtensionContext,
+  config: PiAutocommitConfig,
+  store: CommitStore,
+  reasoning: string,
+  complete?: CompleteFn,
+): Promise<CommitGroup[]> {
+  const { diff } = await store.getStagedMaterials();
+  if (!diff) {
+    return [];
+  }
   return completeCommitGroups(ctx, config, { diff, reasoning }, complete);
 }
 
