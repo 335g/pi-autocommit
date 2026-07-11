@@ -26,6 +26,14 @@ _Avoid_: commit mode, commit timing
 
 ## Commit message generation
 
+**Commit prompt module**
+The deep module that owns prompt assembly, the LLM-call adapter, response cleanup,
+and deterministic scope injection for commit messages. Has two interface methods
+(one for single-commit generation falling back to the heuristic, one for commit-group
+proposition that throws on inference failure). Replaces the duplicated prompt logic
+that previously lived inline in the single-commit and reorganiser paths.
+_Avoid_: prompt builder, LLM wrapper
+
 **Commit message model**
 The LLM model used to generate commit messages. Specified in `config.model` in `"provider/modelId"` format. When omitted, the session's current model (the one driving the conversation) is used as a fallback.
 _Avoid_: commit model, LLM model
