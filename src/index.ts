@@ -1,13 +1,9 @@
 import {
-  DynamicBorder,
   type ExtensionAPI,
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import {
   type AutocompleteItem,
-  Container,
-  SelectList,
-  Text,
 } from "@earendil-works/pi-tui";
 import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
@@ -15,12 +11,7 @@ import { organizeWipCommits } from "./commit-organizer.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
-import {
-  buildModelSelectItems,
-  CLEAR_LABEL,
-  CLEAR_VALUE,
-  MAX_VISIBLE_MODELS,
-} from "./model-popup.js";
+import { CLEAR_VALUE, showModelPopup } from "./model-popup.js";
 import { runCheckpointCommit } from "./pipeline.js";
 import { StatusIndicator } from "./status-indicator.js";
 
@@ -112,35 +103,6 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   /**
-   * Build the popup option list as plain strings.
-   *
-   * Used only by the non-TUI fallback (`ctx.ui.select`), which takes string
-   * options. The TUI path uses `buildModelSelectItems` (SelectItem[]) with a
-   * bounded, scrollable `SelectList` in the editor region.
-   */
-  function buildModelOptions(
-    ctx: ExtensionContext,
-    currentModel: string | undefined,
-  ): string[] {
-    const markCurrent = (label: string, value: string | undefined): string =>
-      value === currentModel ? `${label} (current)` : label;
-
-    const options: string[] = [markCurrent(CLEAR_LABEL, undefined)];
-
-    for (const model of ctx.modelRegistry.getAvailable()) {
-      const value = `${model.provider}/${model.id}`;
-      options.push(markCurrent(value, value));
-    }
-
-    // Mention the current value in case it's not in the available list.
-    if (currentModel && !options.some((o) => o.startsWith(currentModel))) {
-      options.push(`${currentModel} (current, unavailable)`);
-    }
-
-    return options;
-  }
-
-  /**
    * Persist the model chosen from the popup, sharing the notify logic
    * between the TUI overlay and the non-TUI fallback.
    */
@@ -160,91 +122,6 @@ export default function (pi: ExtensionAPI) {
 
     saveModel(ctx.cwd, choice);
     ctx.ui.notify(`pi-autocommit: model = ${choice}`, "info");
-  }
-
-  /**
-   * Show the model selector popup and persist the user's choice.
-   *
-   * In the TUI, renders a `SelectList` in the editor region via
-   * `ctx.ui.custom()` (non-overlay), matching pi's built-in `/model` selector
-   * UX: the chat history stays visible above and the popup does not overlap
-   * it (previously the overlay rendered on top of the history, mixing the
-   * backgrounds' text with the list). The viewport is capped at
-   * `MAX_VISIBLE_MODELS` rows and scrolls, so the list never overflows the
-   * terminal. In non-TUI modes (e.g. RPC), falls back to `ctx.ui.select`.
-   */
-  async function showModelPopup(
-    ctx: ExtensionContext,
-    currentModel: string | undefined,
-  ): Promise<void> {
-    const current = currentModel ?? "session model";
-    const title = `pi-autocommit: select model (current: ${current})`;
-
-    if (ctx.mode === "tui") {
-      const items = buildModelSelectItems(ctx, currentModel);
-      const maxVisible = Math.min(items.length, MAX_VISIBLE_MODELS);
-
-      const choice = await ctx.ui.custom<string | null>(
-        (tui, theme, _kb, done) => {
-          const container = new Container();
-          container.addChild(
-            new DynamicBorder((s: string) => theme.fg("accent", s)),
-          );
-          container.addChild(
-            new Text(theme.fg("accent", theme.bold(title)), 1, 0),
-          );
-          container.addChild(
-            new Text(
-              theme.fg("dim", "↑↓ navigate · enter select · esc cancel"),
-              1,
-              0,
-            ),
-          );
-
-          const selectList = new SelectList(items, maxVisible, {
-            selectedPrefix: (t: string) => theme.fg("accent", t),
-            selectedText: (t: string) => theme.fg("accent", t),
-            description: (t: string) => theme.fg("muted", t),
-            scrollInfo: (t: string) => theme.fg("dim", t),
-            noMatch: (t: string) => theme.fg("warning", t),
-          });
-          selectList.onSelect = (item) => done(item.value);
-          selectList.onCancel = () => done(null);
-          container.addChild(selectList);
-
-          container.addChild(
-            new DynamicBorder((s: string) => theme.fg("accent", s)),
-          );
-
-          return {
-            render: (w: number) => container.render(w),
-            invalidate: () => container.invalidate(),
-            handleInput: (data: string) => {
-              selectList.handleInput(data);
-              tui.requestRender();
-            },
-          };
-        },
-      );
-
-      applyModelChoice(ctx, choice);
-      return;
-    }
-
-    // Non-TUI (e.g. RPC): fall back to the built-in string select dialog.
-    const options = buildModelOptions(ctx, currentModel);
-    const choice = await ctx.ui.select(title, options);
-    if (choice === undefined) {
-      return; // cancelled
-    }
-
-    if (choice === CLEAR_LABEL || choice.startsWith(`${CLEAR_LABEL} `)) {
-      applyModelChoice(ctx, CLEAR_VALUE);
-      return;
-    }
-
-    // Strip the trailing `(current)` marker if present.
-    applyModelChoice(ctx, choice.replace(/ \(current\)$/, ""));
   }
 
   pi.registerCommand("autocommit-model", {
@@ -296,7 +173,8 @@ export default function (pi: ExtensionAPI) {
           );
           return;
         }
-        await showModelPopup(ctx, config.model);
+        const choice = await showModelPopup(ctx, config.model);
+        applyModelChoice(ctx, choice);
         return;
       }
 
@@ -318,7 +196,8 @@ export default function (pi: ExtensionAPI) {
       // Validation failed — notify and fall back to the popup.
       ctx.ui.notify(`pi-autocommit: ${result.reason}`, "error");
       if (ctx.hasUI) {
-        await showModelPopup(ctx, config.model);
+        const choice = await showModelPopup(ctx, config.model);
+        applyModelChoice(ctx, choice);
       }
     },
   });
