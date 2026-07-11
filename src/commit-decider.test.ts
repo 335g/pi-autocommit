@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { shouldCreateWipCommit } from "./commit-decider.js";
+import { shouldCreateCheckpointCommit } from "./commit-decider.js";
 
 function makeToolResult(toolName: string) {
   return {
@@ -13,14 +13,14 @@ function makeToolResult(toolName: string) {
   };
 }
 
-void describe("shouldCreateWipCommit", () => {
+void describe("shouldCreateCheckpointCommit", () => {
   void it("returns false for empty tool results", () => {
-    assert.strictEqual(shouldCreateWipCommit([]), false);
+    assert.strictEqual(shouldCreateCheckpointCommit([]), false);
   });
 
   void it("returns false for read-only tools", () => {
     assert.strictEqual(
-      shouldCreateWipCommit([
+      shouldCreateCheckpointCommit([
         makeToolResult("read"),
         makeToolResult("grep"),
         makeToolResult("find"),
@@ -31,20 +31,20 @@ void describe("shouldCreateWipCommit", () => {
   });
 
   void it("returns true for write tool", () => {
-    assert.strictEqual(shouldCreateWipCommit([makeToolResult("write")]), true);
+    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("write")]), true);
   });
 
   void it("returns true for edit tool", () => {
-    assert.strictEqual(shouldCreateWipCommit([makeToolResult("edit")]), true);
+    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("edit")]), true);
   });
 
   void it("returns true for bash tool", () => {
-    assert.strictEqual(shouldCreateWipCommit([makeToolResult("bash")]), true);
+    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("bash")]), true);
   });
 
   void it("returns true when any tool is potentially mutating", () => {
     assert.strictEqual(
-      shouldCreateWipCommit([
+      shouldCreateCheckpointCommit([
         makeToolResult("read"),
         makeToolResult("edit"),
         makeToolResult("grep"),

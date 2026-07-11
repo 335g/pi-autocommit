@@ -5,12 +5,12 @@ import {
 import {
   type AutocompleteItem,
 } from "@earendil-works/pi-tui";
-import { shouldCreateWipCommit } from "./commit-decider.js";
+import { shouldCreateCheckpointCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
 import {
-  organizeWipCommits,
-  reorganiseWipsManual,
-  WIP_COMMIT_MARKER,
+  organizeCheckpointCommits,
+  reorganiseCheckpointsManual,
+  CHECKPOINT_COMMIT_MARKER,
 } from "./commit-organizer.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitCommitStore } from "./commit-store.js";
@@ -213,7 +213,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("autocommit-organise", {
     description:
-      "Reorganise checkpoint commits. No arg: all wips. " +
+      "Reorganise checkpoint commits. No arg: all checkpoints. " +
       "With a session filter, reorganise only that session's checkpoints " +
       "(including scattered ones).",
     handler: async (args, ctx) => {
@@ -224,10 +224,10 @@ export default function (pi: ExtensionAPI) {
       const config = loadConfig(ctx.cwd);
       const trimmed = args?.trim();
 
-      // No argument: reorganise all reachable wip commits (session-agnostic).
+      // No argument: reorganise all reachable checkpoint commits (session-agnostic).
       if (trimmed === "") {
         const store = new GitCommitStore(new GitOperations(pi));
-        const result = await reorganiseWipsManual(ctx, config, store);
+        const result = await reorganiseCheckpointsManual(ctx, config, store);
         await handlePipelineEvents(ctx, statusIndicator, result.events);
         await statusIndicator.updateFooter();
         return;
@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
 
       // Session ID provided directly as argument.
       const store = new GitCommitStore(new GitOperations(pi));
-      const result = await reorganiseWipsManual(
+      const result = await reorganiseCheckpointsManual(
         ctx,
         config,
         store,
@@ -249,9 +249,9 @@ export default function (pi: ExtensionAPI) {
     ): Promise<AutocompleteItem[] | null> => {
       try {
         const git = new GitOperations(pi);
-        const wips = await git.findReachableWips(WIP_COMMIT_MARKER);
+        const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
         const sessions = [
-          ...new Set(wips.map((w) => w.session).filter((s): s is string => s !== null)),
+          ...new Set(commits.map((w) => w.session).filter((s): s is string => s !== null)),
         ];
         return sessions.map((s) => ({
           value: s,
@@ -276,8 +276,8 @@ export default function (pi: ExtensionAPI) {
     // Notify the user if unreorganised checkpoints remain (crash recovery).
     try {
       const git = new GitOperations(pi);
-      const wips = await git.findReachableWips(WIP_COMMIT_MARKER);
-      if (wips.length > 0) {
+      const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
+      if (commits.length > 0) {
         ctx.ui.notify(
           `pi-autocommit: 未整理のチェックポイントが残っています。/autocommit-organise で整理できます`,
           "warning",
@@ -300,7 +300,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    if (!shouldCreateWipCommit(event.toolResults)) {
+    if (!shouldCreateCheckpointCommit(event.toolResults)) {
       return;
     }
 
@@ -345,7 +345,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const commitStore = new GitCommitStore(new GitOperations(pi));
       const sessionId = ctx.sessionManager.getSessionId();
-      const result = await organizeWipCommits(
+      const result = await organizeCheckpointCommits(
         ctx,
         config,
         event,
