@@ -7,6 +7,7 @@ import {
   CLEAR_VALUE,
   MAX_VISIBLE_MODELS,
   modelPopupMaxVisible,
+  showModelPopup,
 } from "./model-popup.js";
 
 /**
@@ -135,5 +136,85 @@ void describe("model popup viewport (red-capable for top-clipping bug)", () => {
       lines.length <= maxVisible,
       `expected <= ${maxVisible} rendered lines, got ${lines.length}`,
     );
+  });
+});
+
+/**
+ * Minimal context with a mock UI for testing showModelPopup.
+ */
+function makeCtxWithUI(
+  models: Array<{ provider: string; id: string; name: string }>,
+  mode: "tui" | "rpc",
+  ui: unknown,
+): unknown {
+  return {
+    mode,
+    hasUI: true,
+    modelRegistry: {
+      getAvailable: () => models,
+    },
+    ui,
+  };
+}
+
+void describe("showModelPopup", () => {
+  void it("returns the selected model in TUI mode", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "tui", {
+      custom: async () => "p/m1",
+    });
+
+    const result = await showModelPopup(ctx as never, undefined);
+
+    assert.strictEqual(result, "p/m1");
+  });
+
+  void it("returns null when TUI popup is cancelled", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "tui", {
+      custom: async () => null,
+    });
+
+    const result = await showModelPopup(ctx as never, undefined);
+
+    assert.strictEqual(result, null);
+  });
+
+  void it("returns the selected model in non-TUI mode", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "rpc", {
+      select: async () => "p/m0",
+    });
+
+    const result = await showModelPopup(ctx as never, undefined);
+
+    assert.strictEqual(result, "p/m0");
+  });
+
+  void it("returns null when non-TUI select is cancelled", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "rpc", {
+      select: async () => undefined,
+    });
+
+    const result = await showModelPopup(ctx as never, undefined);
+
+    assert.strictEqual(result, null);
+  });
+
+  void it("returns CLEAR_VALUE when clear label is selected in non-TUI mode", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "rpc", {
+      select: async () => CLEAR_LABEL,
+    });
+
+    const result = await showModelPopup(ctx as never, undefined);
+
+    assert.strictEqual(result, CLEAR_VALUE);
+  });
+
+  void it("strips the (current) suffix from non-TUI selection", async () => {
+    const ctx = makeCtxWithUI(fakeModels(2), "rpc", {
+      select: async () => "p/m0 (current)",
+    });
+
+    const result = await showModelPopup(ctx as never, "p/m0");
+
+    assert.strictEqual(result, "p/m0");
   });
 });
