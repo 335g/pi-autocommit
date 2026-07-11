@@ -14,23 +14,23 @@ import {
 import type { CommitStore } from "./commit-store.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
-export const WIP_COMMIT_MARKER = "wip(checkpoint):";
+export const CHECKPOINT_COMMIT_MARKER = "wip(checkpoint):";
 
 /**
  * Result of checking whether matching checkpoints are contiguous at HEAD.
  */
 interface ContiguityCheck {
-  /** True when every matching wip is contiguous at the top of HEAD. */
+  /** True when every matching checkpoint is contiguous at the top of HEAD. */
   contiguous: boolean;
   /**
-   * Number of consecutive matching wips from HEAD (only meaningful when
+   * Number of consecutive matching checkpoints from HEAD (only meaningful when
    * `contiguous` is true).
    */
   matchCount: number;
 }
 
 /**
- * At `agent_end`, detect any WIP checkpoint commits created during the agent
+ * At `agent_end`, detect any checkpoint commits created during the agent
  * loop and reorganise them into logical Conventional Commits.
  *
  * The function uses the current model to analyse the combined diff and the
@@ -41,9 +41,9 @@ interface ContiguityCheck {
  * @param targetSessionId When provided, only reorganise checkpoint commits
  *   whose `Checkpoint-Session` trailer matches. Scattered (non-consecutive)
  *   matching commits from older sessions are NOT handled here — use
- *   {@link reorganiseWipsManual} for that.
+ *   {@link reorganiseCheckpointsManual} for that.
  */
-export async function organizeWipCommits(
+export async function organizeCheckpointCommits(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
@@ -58,8 +58,8 @@ export async function organizeWipCommits(
     return { events, organised: false };
   }
 
-  const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER, targetSessionId);
-  if (wipCount === 0) {
+  const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER, targetSessionId);
+  if (checkpointCount === 0) {
     events.push({
       type: "stage-changed",
       hasChanges: await store.checkUncommittedChanges(),
@@ -67,8 +67,8 @@ export async function organizeWipCommits(
     return { events, organised: false };
   }
 
-  // Undo the WIP commits but keep all their changes staged.
-  await store.resetSoft(wipCount);
+  // Undo the checkpoint commits but keep all their changes staged.
+  await store.resetSoft(checkpointCount);
 
   try {
     const groups = await proposeCommitGroups(ctx, config, event, store, complete);
@@ -97,7 +97,7 @@ export async function organizeWipCommits(
 
     events.push({
       type: "organised",
-      checkpointCount: wipCount,
+      checkpointCount: checkpointCount,
       commitCount: groups.length,
     });
     organised = true;
@@ -107,7 +107,7 @@ export async function organizeWipCommits(
     });
     return { events, organised };
   } catch (error) {
-    // Fall back to a single commit so WIP commits are not left half-organised.
+    // Fall back to a single commit so checkpoint commits are not left half-organised.
     try {
       await store.stageAll();
       await fallbackSingleCommit(ctx, config, store, events, complete);
@@ -130,14 +130,14 @@ export async function organizeWipCommits(
 /**
  * Entry point for the manual `/autocommit-organise` command.
  *
- * When `targetSessionId` is omitted, reorganises ALL reachable WIP commits at
+ * When `targetSessionId` is omitted, reorganises ALL reachable checkpoint commits at
  * HEAD (same as the no-argument manual command). When provided, reorganises
  * only the commits that carry that session's `Checkpoint-Session` trailer,
  * handling both contiguous and scattered (interleaved) cases.
  *
  * @param complete Optional LLM adapter (injected in tests).
  */
-export async function reorganiseWipsManual(
+export async function reorganiseCheckpointsManual(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   store: CommitStore,
@@ -151,8 +151,8 @@ export async function reorganiseWipsManual(
     return { events, organised: false };
   }
 
-  const reachableWips = await store.findReachableWips(WIP_COMMIT_MARKER);
-  if (reachableWips.length === 0) {
+  const reachableCheckpoints = await store.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
+  if (reachableCheckpoints.length === 0) {
     events.push({
       type: "info",
       message: "No checkpoint commits found at HEAD.",
@@ -164,23 +164,23 @@ export async function reorganiseWipsManual(
     return { events, organised: false };
   }
 
-  // ── No target session: reorganise ALL wip commits (consecutive only) ──
+  // ── No target session: reorganise ALL checkpoint commits (consecutive only) ──
   if (targetSessionId === undefined) {
-    const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER);
-    if (wipCount === 0) {
+    const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
+    if (checkpointCount === 0) {
       events.push({
         type: "stage-changed",
         hasChanges: await store.checkUncommittedChanges(),
       });
       return { events, organised: false };
     }
-    await store.resetSoft(wipCount);
-    return assembleAndCommit(ctx, config, store, wipCount, events, "", complete);
+    await store.resetSoft(checkpointCount);
+    return assembleAndCommit(ctx, config, store, checkpointCount, events, "", complete);
   }
 
   // ── Target session: check contiguity ────────────────────────────────
-  const targetWips = reachableWips.filter((w) => w.session === targetSessionId);
-  if (targetWips.length === 0) {
+  const targetCheckpoints = reachableCheckpoints.filter((w) => w.session === targetSessionId);
+  if (targetCheckpoints.length === 0) {
     events.push({
       type: "info",
       message: `No checkpoint commits found for session ${targetSessionId}.`,
@@ -192,7 +192,7 @@ export async function reorganiseWipsManual(
     return { events, organised: false };
   }
 
-  const contiguity = checkContiguity(reachableWips, targetSessionId);
+  const contiguity = checkContiguity(reachableCheckpoints, targetSessionId);
 
   if (contiguity.contiguous) {
     // Contiguous from HEAD: happy path.
@@ -210,9 +210,9 @@ export async function reorganiseWipsManual(
 
   // ── Scattered case: reassemble via git apply --cached ────────────────
   // Order oldest-first so diffs apply sequentially without conflict.
-  const oldestFirst = [...targetWips].reverse();
-  for (const wip of oldestFirst) {
-    const result = await store.applyCommitDiffToIndex(wip.sha);
+  const oldestFirst = [...targetCheckpoints].reverse();
+  for (const commit of oldestFirst) {
+    const result = await store.applyCommitDiffToIndex(commit.sha);
     if (!result.success) {
       events.push({
         type: "error",
@@ -226,7 +226,7 @@ export async function reorganiseWipsManual(
     ctx,
     config,
     store,
-    targetWips.length,
+    targetCheckpoints.length,
     events,
     "",
     complete,
@@ -319,11 +319,11 @@ async function assembleAndCommit(
 
 /**
  * Check whether all commits matching `targetSessionId` are contiguous at
- * the very top of the `reachableWips` list (i.e. HEAD is one of them and
+ * the very top of the `reachableCheckpoints` list (i.e. HEAD is one of them and
  * every commit before the first non-matching one also matches).
  */
 function checkContiguity(
-  reachableWips: Array<{
+  reachableCheckpoints: Array<{
     sha: string;
     subject: string;
     session: string | null;
@@ -331,8 +331,8 @@ function checkContiguity(
   targetSessionId: string,
 ): ContiguityCheck {
   let matchCount = 0;
-  for (const wip of reachableWips) {
-    if (wip.session === targetSessionId) {
+  for (const checkpoint of reachableCheckpoints) {
+    if (checkpoint.session === targetSessionId) {
       matchCount++;
     } else {
       break;

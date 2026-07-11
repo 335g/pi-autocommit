@@ -4,9 +4,9 @@ import type { AgentEndEvent } from "@earendil-works/pi-coding-agent";
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import type { PiAutocommitConfig } from "./config.js";
 import {
-  organizeWipCommits,
-  reorganiseWipsManual,
-  WIP_COMMIT_MARKER,
+  organizeCheckpointCommits,
+  reorganiseCheckpointsManual,
+  CHECKPOINT_COMMIT_MARKER,
 } from "./commit-organizer.js";
 import {
   completeCommitGroups,
@@ -179,11 +179,11 @@ package-lock.json
 // ── In-memory CommitStore for tests ────────────────────────
 
 /**
- * Description of one WIP commit in the in-memory store.
+ * Description of one checkpoint commit in the in-memory store.
  *
  * `session` may be set to simulate the `Checkpoint-Session` trailer.
  */
-interface WipCommit {
+interface CheckpointCommit {
   message: string;
   files: string[];
   session?: string | null;
@@ -203,11 +203,11 @@ class InMemoryCommitStore implements CommitStore {
     private readonly options: {
       insideRepo?: boolean;
       /** Ordered from HEAD (index 0) backward. */
-      wipCommits?: WipCommit[];
+      checkpointCommits?: CheckpointCommit[];
     } = {},
   ) {
     // Normalise session to null when absent.
-    for (const w of this.options.wipCommits ?? []) {
+    for (const w of this.options.checkpointCommits ?? []) {
       if (w.session === undefined) w.session = null;
     }
   }
@@ -217,13 +217,13 @@ class InMemoryCommitStore implements CommitStore {
     return this.options.insideRepo ?? true;
   }
 
-  async countWipCommits(marker: string, sessionId?: string): Promise<number> {
+  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
     this.operations.push(
-      `countWipCommits:${marker}${sessionId !== undefined ? `:${sessionId}` : ""}`,
+      `countCheckpointCommits:${marker}${sessionId !== undefined ? `:${sessionId}` : ""}`,
     );
-    const wip = this.options.wipCommits ?? [];
+    const commits = this.options.checkpointCommits ?? [];
     let count = 0;
-    for (const commit of wip) {
+    for (const commit of commits) {
       if (!commit.message.startsWith(marker)) break;
       if (sessionId !== undefined) {
         if (commit.session === sessionId) {
@@ -245,8 +245,8 @@ class InMemoryCommitStore implements CommitStore {
 
   async resetSoft(commitCount: number): Promise<void> {
     this.operations.push(`resetSoft:${commitCount}`);
-    const wip = this.options.wipCommits ?? [];
-    const removed = wip.splice(0, commitCount);
+    const commits = this.options.checkpointCommits ?? [];
+    const removed = commits.splice(0, commitCount);
     for (const commit of removed) {
       for (const file of commit.files) {
         if (!this.stagedFiles.includes(file)) {
@@ -295,14 +295,14 @@ class InMemoryCommitStore implements CommitStore {
     return { code: 0, stdout: "", stderr: "", killed: false };
   }
 
-  async findReachableWips(
+  async findReachableCheckpoints(
     marker: string,
   ): Promise<
     Array<{ sha: string; subject: string; session: string | null }>
   > {
-    this.operations.push(`findReachableWips:${marker}`);
-    const wip = this.options.wipCommits ?? [];
-    return wip.map((c, i) => ({
+    this.operations.push(`findReachableCheckpoints:${marker}`);
+    const commits = this.options.checkpointCommits ?? [];
+    return commits.map((c, i) => ({
       sha: `sha-${i}`,
       subject: c.message,
       session: c.session ?? null,
@@ -315,9 +315,9 @@ class InMemoryCommitStore implements CommitStore {
     this.operations.push(`applyCommitDiffToIndex:${sha}`);
     const [, indexStr] = sha.split("-");
     const index = parseInt(indexStr, 10);
-    const wip = this.options.wipCommits?.[index];
-    if (wip) {
-      for (const file of wip.files) {
+    const commit = this.options.checkpointCommits?.[index];
+    if (commit) {
+      for (const file of commit.files) {
         if (!this.stagedFiles.includes(file)) {
           this.stagedFiles.push(file);
         }
@@ -331,13 +331,13 @@ function makeEvent(): AgentEndEvent {
   return { messages: [] } as unknown as AgentEndEvent;
 }
 
-// ── organizeWipCommits (agent_end) ─────────────────────────
+// ── organizeCheckpointCommits (agent_end) ─────────────────────────
 
-void describe("organizeWipCommits", () => {
+void describe("organizeCheckpointCommits", () => {
   void it("returns no-op when not inside a git repo", async () => {
     const store = new InMemoryCommitStore({ insideRepo: false });
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -349,10 +349,10 @@ void describe("organizeWipCommits", () => {
     assert.deepStrictEqual(store.operations, ["isInsideGitRepo"]);
   });
 
-  void it("returns no-op when there are no WIP commits", async () => {
-    const store = new InMemoryCommitStore({ wipCommits: [] });
+  void it("returns no-op when there are no checkpoint commits", async () => {
+    const store = new InMemoryCommitStore({ checkpointCommits: [] });
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -367,16 +367,16 @@ void describe("organizeWipCommits", () => {
     );
     assert.deepStrictEqual(store.operations, [
       "isInsideGitRepo",
-      `countWipCommits:${WIP_COMMIT_MARKER}`,
+      `countCheckpointCommits:${CHECKPOINT_COMMIT_MARKER}`,
       "checkUncommittedChanges",
     ]);
   });
 
-  void it("reorganises a single WIP commit into one logical group", async () => {
+  void it("reorganises a single checkpoint commit into one logical group", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/auth/login.ts", "src/auth/types.ts"],
         },
       ],
@@ -393,7 +393,7 @@ src/auth/types.ts
 === END ===
 `.trim();
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -416,11 +416,11 @@ src/auth/types.ts
     assert.deepStrictEqual(store.stagedFiles, []);
   });
 
-  void it("reorganises multiple WIP commits into multiple logical groups", async () => {
+  void it("reorganises multiple checkpoint commits into multiple logical groups", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
-        { message: `${WIP_COMMIT_MARKER} turn 2`, files: ["src/db/query.ts"] },
-        { message: `${WIP_COMMIT_MARKER} turn 1`, files: ["src/auth/login.ts"] },
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["src/db/query.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["src/auth/login.ts"] },
       ],
     });
 
@@ -437,7 +437,7 @@ src/db/query.ts
 === END ===
 `.trim();
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -462,9 +462,9 @@ src/db/query.ts
 
   void it("falls back to a single commit when group proposition fails", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/auth/login.ts"],
         },
       ],
@@ -476,7 +476,7 @@ src/db/query.ts
         content: [{ type: "text", text: "" }],
       }) as never;
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -495,9 +495,9 @@ src/db/query.ts
 
   void it("stages each group independently and leaves the index clean", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/a.ts", "src/b.ts"],
         },
       ],
@@ -516,7 +516,7 @@ src/b.ts
 === END ===
 `.trim();
 
-    await organizeWipCommits(
+    await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -534,17 +534,17 @@ src/b.ts
 
   // ── Session-aware agent_end tests ────────────────────────
 
-  void it("with targetSessionId: reorganises only matching consecutive wips", async () => {
+  void it("with targetSessionId: reorganises only matching consecutive checkpoints", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         // HEAD: turns are added in order, newest first.
         {
-          message: `${WIP_COMMIT_MARKER} turn 2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
           files: ["src/db/query.ts"],
           session: "session-a",
         },
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/auth/login.ts"],
           session: "session-a",
         },
@@ -564,7 +564,7 @@ src/db/query.ts
 === END ===
 `.trim();
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -586,23 +586,23 @@ src/db/query.ts
     assert.strictEqual(store.commits.length, 2);
   });
 
-  void it("with targetSessionId: stops at foreign session wip", async () => {
+  void it("with targetSessionId: stops at foreign session checkpoint", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
-        // HEAD: this session's wip on top.
+      checkpointCommits: [
+        // HEAD: this session's checkpoint on top.
         {
-          message: `${WIP_COMMIT_MARKER} turn 3`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 3`,
           files: ["src/own.ts"],
           session: "session-a",
         },
         // But the next one belongs to another session → stop.
         {
-          message: `${WIP_COMMIT_MARKER} turn 2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
           files: ["src/foreign.ts"],
           session: "session-b",
         },
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/own-old.ts"],
           session: "session-a",
         },
@@ -617,7 +617,7 @@ src/own.ts
 === END ===
 `.trim();
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -640,18 +640,18 @@ src/own.ts
     assert.strictEqual(store.commits.length, 1);
   });
 
-  void it("with targetSessionId: returns no-op when no matching wips at HEAD", async () => {
+  void it("with targetSessionId: returns no-op when no matching checkpoints at HEAD", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} foreign`,
+          message: `${CHECKPOINT_COMMIT_MARKER} foreign`,
           files: ["src/x.ts"],
           session: "session-b",
         },
       ],
     });
 
-    const result = await organizeWipCommits(
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -663,20 +663,20 @@ src/own.ts
     assert.strictEqual(result.organised, false);
     // marker ends with `:`, sep is `:`, so double-colon is expected.
     assert.ok(
-      store.operations.includes("countWipCommits:wip(checkpoint)::session-a"),
+      store.operations.includes("countCheckpointCommits:wip(checkpoint)::session-a"),
     );
   });
 
-  void it("backward-compat: no targetSessionId counts all consecutive wips", async () => {
+  void it("backward-compat: no targetSessionId counts all consecutive checkpoints", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
           files: ["src/b.ts"],
           session: "session-a",
         },
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/a.ts"],
           session: "session-b",
         },
@@ -692,8 +692,8 @@ src/b.ts
 === END ===
 `.trim();
 
-    // Only 1 commit groups proposed for 2 consecutive wips.
-    const result = await organizeWipCommits(
+    // Only 1 commit groups proposed for 2 consecutive checkpoints.
+    const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
       config(),
       makeEvent(),
@@ -714,13 +714,13 @@ src/b.ts
   });
 });
 
-// ── reorganiseWipsManual ───────────────────────────────────
+// ── reorganiseCheckpointsManual ───────────────────────────────────
 
-void describe("reorganiseWipsManual", () => {
+void describe("reorganiseCheckpointsManual", () => {
   void it("returns no-op when not inside a git repo", async () => {
     const store = new InMemoryCommitStore({ insideRepo: false });
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
@@ -730,10 +730,10 @@ void describe("reorganiseWipsManual", () => {
     assert.deepStrictEqual(store.operations, ["isInsideGitRepo"]);
   });
 
-  void it("returns no-op when there are no WIP commits", async () => {
-    const store = new InMemoryCommitStore({ wipCommits: [] });
+  void it("returns no-op when there are no checkpoint commits", async () => {
+    const store = new InMemoryCommitStore({ checkpointCommits: [] });
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
@@ -741,20 +741,20 @@ void describe("reorganiseWipsManual", () => {
 
     assert.strictEqual(result.organised, false);
     assert.ok(
-      store.operations.includes("findReachableWips:wip(checkpoint):"),
+      store.operations.includes("findReachableCheckpoints:wip(checkpoint):"),
     );
   });
 
-  void it("no targetSessionId: reorganises all consecutive wips", async () => {
+  void it("no targetSessionId: reorganises all consecutive checkpoints", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
           files: ["src/b.ts"],
           session: "session-a",
         },
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/a.ts"],
           session: "session-a",
         },
@@ -770,7 +770,7 @@ src/b.ts
 === END ===
 `.trim();
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
@@ -780,8 +780,8 @@ src/b.ts
 
     assert.strictEqual(result.organised, true);
     assert.strictEqual(store.commits.length, 1);
-    // Uses findReachableWips, then countWipCommits (no sessionId) for reset.
-    assert.ok(store.operations.includes("countWipCommits:wip(checkpoint):"));
+    // Uses findReachableCheckpoints, then countCheckpointCommits (no sessionId) for reset.
+    assert.ok(store.operations.includes("countCheckpointCommits:wip(checkpoint):"));
     assert.ok(
       result.events.some(
         (e) =>
@@ -794,14 +794,14 @@ src/b.ts
 
   void it("with targetSessionId contiguous: reset-soft path", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
           files: ["src/b.ts"],
           session: "session-a",
         },
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/a.ts"],
           session: "session-a",
         },
@@ -817,7 +817,7 @@ src/b.ts
 === END ===
 `.trim();
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
@@ -832,22 +832,22 @@ src/b.ts
   });
 
   void it("with targetSessionId scattered: apply-commit-diff path", async () => {
-    // Scattered: HEAD belongs to session-b, session-a wips are below.
+    // Scattered: HEAD belongs to session-b, session-a checkpoints are below.
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         // HEAD (index 0) belongs to the OTHER session.
         {
-          message: `${WIP_COMMIT_MARKER} other`,
+          message: `${CHECKPOINT_COMMIT_MARKER} other`,
           files: ["src/other.ts"],
           session: "session-b",
         },
         {
-          message: `${WIP_COMMIT_MARKER} own2`,
+          message: `${CHECKPOINT_COMMIT_MARKER} own2`,
           files: ["src/own2.ts"],
           session: "session-a",
         },
         {
-          message: `${WIP_COMMIT_MARKER} own1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} own1`,
           files: ["src/own1.ts"],
           session: "session-a",
         },
@@ -863,7 +863,7 @@ src/own2.ts
 === END ===
 `.trim();
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
@@ -873,7 +873,7 @@ src/own2.ts
 
     assert.strictEqual(result.organised, true);
     assert.strictEqual(store.commits.length, 1);
-    // Scattered path: applyCommitDiffToIndex for each matching wip (oldest first).
+    // Scattered path: applyCommitDiffToIndex for each matching checkpoint (oldest first).
     // sha-1 = own1 (oldest), sha-2 = own2.
     assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-2"));
     assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-1"));
@@ -881,18 +881,18 @@ src/own2.ts
     assert.ok(!store.operations.some((op) => op.startsWith("resetSoft")));
   });
 
-  void it("with targetSessionId: returns no-op when no matching wips exist", async () => {
+  void it("with targetSessionId: returns no-op when no matching checkpoints exist", async () => {
     const store = new InMemoryCommitStore({
-      wipCommits: [
+      checkpointCommits: [
         {
-          message: `${WIP_COMMIT_MARKER} turn 1`,
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
           files: ["src/x.ts"],
           session: "session-b",
         },
       ],
     });
 
-    const result = await reorganiseWipsManual(
+    const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
       config(),
       store,
