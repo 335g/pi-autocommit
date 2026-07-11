@@ -190,7 +190,7 @@ export class GitOperations {
   }
 
   /**
-   * Count how many consecutive WIP checkpoint commits exist at HEAD.
+   * Count how many consecutive checkpoint commits exist at HEAD.
    *
    * Walks backwards from HEAD and stops at the first commit whose subject
    * does not start with the given marker (or, when `sessionId` is provided,
@@ -202,7 +202,7 @@ export class GitOperations {
    *   every consecutive subject-matching commit (backward-compatible
    *   behaviour).
    */
-  async countWipCommits(marker: string, sessionId?: string): Promise<number> {
+  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
     if (sessionId === undefined) {
       // Original behaviour: subject-prefix match only.
       const { stdout, code } = await this.pi.exec("git", [
@@ -248,7 +248,7 @@ export class GitOperations {
           break; // Non-matching session stops the scan.
         }
       } else {
-        break; // Non-wip subject stops the scan.
+        break; // Non-checkpoint subject stops the scan.
       }
     }
     return count;
@@ -298,7 +298,7 @@ export class GitOperations {
    * string (not `"NONE"`) when the key is missing — which becomes `null`
    * after `.trim() || null`.
    */
-  async findReachableWips(
+  async findReachableCheckpoints(
     marker: string,
   ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
     const { stdout, code } = await this.pi.exec("git", [

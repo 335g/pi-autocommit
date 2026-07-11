@@ -6,7 +6,7 @@ import { GitOperations } from "./git-operations.js";
  * git state.
  *
  * The interface exposes only the operations the reorganiser policy actually
- * needs: repository checks, WIP commit inspection, soft reset, staged-material
+ * needs: repository checks, checkpoint commit inspection, soft reset, staged-material
  * reads, staging manipulation, and commit execution. This keeps the
  * reorganiser module deep (the policy is hidden) while making the seam real
  * with two adapters: a production wrapper around {@link GitOperations} and an
@@ -25,7 +25,7 @@ export interface CommitStore {
    *   `Checkpoint-Session` trailer matches (stops at the first non-matching
    *   subject or trailer).
    */
-  countWipCommits(marker: string, sessionId?: string): Promise<number>;
+  countCheckpointCommits(marker: string, sessionId?: string): Promise<number>;
 
   /** Check whether there are any uncommitted changes in the working tree. */
   checkUncommittedChanges(): Promise<boolean>;
@@ -63,7 +63,7 @@ export interface CommitStore {
    * subject starts with `marker`, along with its SHA and
    * `Checkpoint-Session` trailer value (or `null` when absent).
    */
-  findReachableWips(
+  findReachableCheckpoints(
     marker: string,
   ): Promise<
     Array<{ sha: string; subject: string; session: string | null }>
@@ -82,10 +82,10 @@ export interface CommitStore {
 }
 
 /**
- * Information about a single reachable WIP commit, returned by
- * {@link CommitStore.findReachableWips}.
+ * Information about a single reachable checkpoint commit, returned by
+ * {@link CommitStore.findReachableCheckpoints}.
  */
-export interface ReachableWip {
+export interface ReachableCheckpoint {
   sha: string;
   subject: string;
   session: string | null;
@@ -102,8 +102,8 @@ export class GitCommitStore implements CommitStore {
     return this.git.isInsideGitRepo();
   }
 
-  async countWipCommits(marker: string, sessionId?: string): Promise<number> {
-    return this.git.countWipCommits(marker, sessionId);
+  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
+    return this.git.countCheckpointCommits(marker, sessionId);
   }
 
   async checkUncommittedChanges(): Promise<boolean> {
@@ -143,12 +143,12 @@ export class GitCommitStore implements CommitStore {
     return this.git.commit(message);
   }
 
-  async findReachableWips(
+  async findReachableCheckpoints(
     marker: string,
   ): Promise<
     Array<{ sha: string; subject: string; session: string | null }>
   > {
-    return this.git.findReachableWips(marker);
+    return this.git.findReachableCheckpoints(marker);
   }
 
   async applyCommitDiffToIndex(
