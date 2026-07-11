@@ -15,8 +15,12 @@ import { GitOperations } from "./git-operations.js";
  *   5. Execute `git commit -m <message>`
  *
  * The checkpoint message (e.g. `wip(checkpoint): auto-commit at turn N`)
- * is supplied by the caller. Checkpoint commits are later reorganised
- * into logical Conventional Commits at `agent_end` by the organiser.
+ * is supplied by the caller. When `sessionId` is provided, a
+ * `Checkpoint-Session: <sessionId>` Git trailer is appended to the commit
+ * body so the reorganiser can scope its reset to the owning session.
+ *
+ * Checkpoint commits are later reorganised into logical Conventional
+ * Commits at `agent_end` by the organiser.
  *
  * Error boundary: on any error, `unstageAll` runs before re-throwing.
  * Footer-status updates are the caller's responsibility.
@@ -24,6 +28,7 @@ import { GitOperations } from "./git-operations.js";
 export async function runCheckpointCommit(
   pi: ExtensionAPI,
   message: string,
+  sessionId?: string,
 ): Promise<PipelineResult> {
   const git = new GitOperations(pi);
   const events: PipelineEvent[] = [];
@@ -57,7 +62,11 @@ export async function runCheckpointCommit(
     await git.stageAll();
 
     // ── 5. Execute commit ───────────────────────────────
-    const result = await git.commit(message);
+    // Append Checkpoint-Session trailer when a session id is available.
+    const commitMessage = sessionId
+      ? `${message}\n\nCheckpoint-Session: ${sessionId}`
+      : message;
+    const result = await git.commit(commitMessage);
     if (result.code !== 0) {
       throw new Error(
         `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
