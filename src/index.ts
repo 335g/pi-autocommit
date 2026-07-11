@@ -1,14 +1,26 @@
-import type {
-  ExtensionAPI,
-  ExtensionContext,
+import {
+  DynamicBorder,
+  type ExtensionAPI,
+  type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import {
+  type AutocompleteItem,
+  Container,
+  SelectList,
+  Text,
+} from "@earendil-works/pi-tui";
 import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
 import { organizeWipCommits } from "./commit-organizer.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
+import {
+  buildModelSelectItems,
+  CLEAR_LABEL,
+  CLEAR_VALUE,
+  MAX_VISIBLE_MODELS,
+} from "./model-popup.js";
 import { runCheckpointCommit } from "./pipeline.js";
 import { StatusIndicator } from "./status-indicator.js";
 
@@ -73,24 +85,19 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.registerCommand("autocommit-enable", {
-    description: "Toggle auto-commit enable (true|false). No arg shows current state.",
+    description:
+      "Toggle auto-commit enable (true|false). No arg shows current state.",
     handler: async (args, ctx) => {
       const config = loadConfig(ctx.cwd);
       const trimmed = args?.trim().toLowerCase();
 
       if (trimmed === "") {
-        ctx.ui.notify(
-          `pi-autocommit: enable = ${config.enable}`,
-          "info",
-        );
+        ctx.ui.notify(`pi-autocommit: enable = ${config.enable}`, "info");
         return;
       }
 
       if (trimmed !== "true" && trimmed !== "false") {
-        ctx.ui.notify(
-          "Usage: /autocommit-enable <true|false>",
-          "error",
-        );
+        ctx.ui.notify("Usage: /autocommit-enable <true|false>", "error");
         return;
       }
 
@@ -104,12 +111,12 @@ export default function (pi: ExtensionAPI) {
   // /autocommit-model [provider/modelId | clear]
   // ───────────────────────────────────────────────────────
 
-  /** Sentinel label for the "use session model" (clear) popup entry. */
-  const CLEAR_LABEL = "Use session model (clear)";
-
   /**
-   * Build the popup option list: clear entry first, then available models.
-   * The current value is marked with `(current)`.
+   * Build the popup option list as plain strings.
+   *
+   * Used only by the non-TUI fallback (`ctx.ui.select`), which takes string
+   * options. The TUI path uses `buildModelSelectItems` (SelectItem[]) with a
+   * bounded, scrollable `SelectList` overlay.
    */
   function buildModelOptions(
     ctx: ExtensionContext,
@@ -134,8 +141,35 @@ export default function (pi: ExtensionAPI) {
   }
 
   /**
+   * Persist the model chosen from the popup, sharing the notify logic
+   * between the TUI overlay and the non-TUI fallback.
+   */
+  function applyModelChoice(
+    ctx: ExtensionContext,
+    choice: string | null,
+  ): void {
+    if (choice === null) {
+      return; // cancelled
+    }
+
+    if (choice === CLEAR_VALUE) {
+      saveModel(ctx.cwd, undefined);
+      ctx.ui.notify("pi-autocommit: model = session model", "info");
+      return;
+    }
+
+    saveModel(ctx.cwd, choice);
+    ctx.ui.notify(`pi-autocommit: model = ${choice}`, "info");
+  }
+
+  /**
    * Show the model selector popup and persist the user's choice.
-   * No-op when the user cancels (select returns undefined).
+   *
+   * In the TUI, uses a centered overlay with a `SelectList` whose viewport is
+   * capped at `MAX_VISIBLE_MODELS` rows and scrolls, so the list never
+   * overflows the terminal (which previously clipped the top of a long model
+   * list). `overlayOptions.margin` reserves a row of space above and below the
+   * popup. In non-TUI modes (e.g. RPC), falls back to `ctx.ui.select`.
    */
   async function showModelPopup(
     ctx: ExtensionContext,
@@ -143,29 +177,88 @@ export default function (pi: ExtensionAPI) {
   ): Promise<void> {
     const current = currentModel ?? "session model";
     const title = `pi-autocommit: select model (current: ${current})`;
-    const options = buildModelOptions(ctx, currentModel);
 
+    if (ctx.mode === "tui") {
+      const items = buildModelSelectItems(ctx, currentModel);
+      const maxVisible = Math.min(items.length, MAX_VISIBLE_MODELS);
+
+      const choice = await ctx.ui.custom<string | null>(
+        (tui, theme, _kb, done) => {
+          const container = new Container();
+          container.addChild(
+            new DynamicBorder((s: string) => theme.fg("accent", s)),
+          );
+          container.addChild(
+            new Text(theme.fg("accent", theme.bold(title)), 1, 0),
+          );
+          container.addChild(
+            new Text(
+              theme.fg("dim", "↑↓ navigate · enter select · esc cancel"),
+              1,
+              0,
+            ),
+          );
+
+          const selectList = new SelectList(items, maxVisible, {
+            selectedPrefix: (t: string) => theme.fg("accent", t),
+            selectedText: (t: string) => theme.fg("accent", t),
+            description: (t: string) => theme.fg("muted", t),
+            scrollInfo: (t: string) => theme.fg("dim", t),
+            noMatch: (t: string) => theme.fg("warning", t),
+          });
+          selectList.onSelect = (item) => done(item.value);
+          selectList.onCancel = () => done(null);
+          container.addChild(selectList);
+
+          container.addChild(
+            new DynamicBorder((s: string) => theme.fg("accent", s)),
+          );
+
+          return {
+            render: (w: number) => container.render(w),
+            invalidate: () => container.invalidate(),
+            handleInput: (data: string) => {
+              selectList.handleInput(data);
+              tui.requestRender();
+            },
+          };
+        },
+        {
+          overlay: true,
+          overlayOptions: {
+            anchor: "center",
+            maxHeight: "80%",
+            margin: 1,
+          },
+        },
+      );
+
+      applyModelChoice(ctx, choice);
+      return;
+    }
+
+    // Non-TUI (e.g. RPC): fall back to the built-in string select dialog.
+    const options = buildModelOptions(ctx, currentModel);
     const choice = await ctx.ui.select(title, options);
     if (choice === undefined) {
       return; // cancelled
     }
 
     if (choice === CLEAR_LABEL || choice.startsWith(`${CLEAR_LABEL} `)) {
-      saveModel(ctx.cwd, undefined);
-      ctx.ui.notify(`pi-autocommit: model = session model`, "info");
+      applyModelChoice(ctx, CLEAR_VALUE);
       return;
     }
 
     // Strip the trailing `(current)` marker if present.
-    const modelStr = choice.replace(/ \(current\)$/, "");
-    saveModel(ctx.cwd, modelStr);
-    ctx.ui.notify(`pi-autocommit: model = ${modelStr}`, "info");
+    applyModelChoice(ctx, choice.replace(/ \(current\)$/, ""));
   }
 
   pi.registerCommand("autocommit-model", {
     description:
-      "Set the LLM model for commit message generation (provider/modelId). No arg shows a selector popup. Pass \"clear\" to fall back to the session model.",
-    getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
+      'Set the LLM model for commit message generation (provider/modelId). No arg shows a selector popup. Pass "clear" to fall back to the session model.',
+    getArgumentCompletions: (
+      argumentPrefix: string,
+    ): AutocompleteItem[] | null => {
       if (!cachedModelRegistry) {
         return null;
       }
@@ -174,7 +267,8 @@ export default function (pi: ExtensionAPI) {
         {
           value: "clear",
           label: "clear (use session model)",
-          description: "Clear the model setting, fall back to the session model.",
+          description:
+            "Clear the model setting, fall back to the session model.",
         },
       ];
 
