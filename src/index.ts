@@ -9,6 +9,7 @@ import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
 import { organizeWipCommits } from "./commit-organizer.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
+import { GitCommitStore } from "./commit-store.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
 import { CLEAR_VALUE, showModelPopup } from "./model-popup.js";
@@ -265,7 +266,8 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      const result = await organizeWipCommits(pi, ctx, config, event);
+      const commitStore = new GitCommitStore(new GitOperations(pi));
+      const result = await organizeWipCommits(ctx, config, event, commitStore);
 
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();

@@ -1,6 +1,5 @@
 import type {
   AgentEndEvent,
-  ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { OrganizerResult, PipelineEvent } from "./commit-events.js";
@@ -10,8 +9,9 @@ import {
   completeSingleMessage,
   extractAssistantContext,
   type CommitGroup,
+  type CompleteFn,
 } from "./commit-prompt.js";
-import { GitOperations } from "./git-operations.js";
+import type { CommitStore } from "./commit-store.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const WIP_COMMIT_MARKER = "wip(checkpoint):";
@@ -26,49 +26,49 @@ export const WIP_COMMIT_MARKER = "wip(checkpoint):";
  * falls back to a single Conventional Commit containing all changes.
  */
 export async function organizeWipCommits(
-  pi: ExtensionAPI,
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
+  store: CommitStore,
+  complete?: CompleteFn,
 ): Promise<OrganizerResult> {
-  const git = new GitOperations(pi);
   const events: PipelineEvent[] = [];
   let organised = false;
 
-  if (!(await git.isInsideGitRepo())) {
+  if (!(await store.isInsideGitRepo())) {
     return { events, organised: false };
   }
 
-  const wipCount = await git.countWipCommits(WIP_COMMIT_MARKER);
+  const wipCount = await store.countWipCommits(WIP_COMMIT_MARKER);
   if (wipCount === 0) {
     events.push({
       type: "stage-changed",
-      hasChanges: await git.checkUncommittedChanges(),
+      hasChanges: await store.checkUncommittedChanges(),
     });
     return { events, organised: false };
   }
 
   // Undo the WIP commits but keep all their changes staged.
-  await git.resetSoft(wipCount);
+  await store.resetSoft(wipCount);
 
   try {
-    const groups = await proposeCommitGroups(ctx, config, event, git);
+    const groups = await proposeCommitGroups(ctx, config, event, store, complete);
     if (groups.length === 0) {
       // No logical groups: fall back to one commit.
-      await fallbackSingleCommit(ctx, config, git, events);
+      await fallbackSingleCommit(ctx, config, store, events, complete);
       organised = true;
       events.push({
         type: "stage-changed",
-        hasChanges: await git.checkUncommittedChanges(),
+        hasChanges: await store.checkUncommittedChanges(),
       });
       return { events, organised };
     }
 
     // Stage and commit each logical group in order.
     for (const group of groups) {
-      await git.unstageAll();
-      await git.stageFiles(group.files);
-      const result = await git.commit(group.message);
+      await store.unstageAll();
+      await store.stageFiles(group.files);
+      const result = await store.commit(group.message);
       if (result.code !== 0) {
         throw new Error(
           `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
@@ -84,14 +84,14 @@ export async function organizeWipCommits(
     organised = true;
     events.push({
       type: "stage-changed",
-      hasChanges: await git.checkUncommittedChanges(),
+      hasChanges: await store.checkUncommittedChanges(),
     });
     return { events, organised };
   } catch (error) {
     // Fall back to a single commit so WIP commits are not left half-organised.
     try {
-      await git.stageAll();
-      await fallbackSingleCommit(ctx, config, git, events);
+      await store.stageAll();
+      await fallbackSingleCommit(ctx, config, store, events, complete);
       organised = true;
     } catch {
       const message = error instanceof Error ? error.message : String(error);
@@ -102,7 +102,7 @@ export async function organizeWipCommits(
     }
     events.push({
       type: "stage-changed",
-      hasChanges: await git.checkUncommittedChanges(),
+      hasChanges: await store.checkUncommittedChanges(),
     });
     return { events, organised };
   }
@@ -116,15 +116,16 @@ async function proposeCommitGroups(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
-  git: GitOperations,
+  store: CommitStore,
+  complete?: CompleteFn,
 ): Promise<CommitGroup[]> {
-  const diff = await git.getStagedDiff();
+  const { diff } = await store.getStagedMaterials();
   if (!diff) {
     return [];
   }
 
   const reasoning = extractAssistantContext(event.messages);
-  return completeCommitGroups(ctx, config, { diff, reasoning });
+  return completeCommitGroups(ctx, config, { diff, reasoning }, complete);
 }
 
 /**
@@ -137,16 +138,20 @@ async function proposeCommitGroups(
 async function fallbackSingleCommit(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
-  git: GitOperations,
+  store: CommitStore,
   events: PipelineEvent[],
+  complete?: CompleteFn,
 ): Promise<void> {
-  const diff = await git.getStagedDiff();
-  const nameStatus = await git.getStagedNameStatus();
-  const stat = await git.getStagedStat();
+  const { diff, nameStatus, stat } = await store.getStagedMaterials();
 
-  const message = await completeSingleMessage(ctx, config, { diff, nameStatus, stat });
+  const message = await completeSingleMessage(
+    ctx,
+    config,
+    { diff, nameStatus, stat },
+    complete,
+  );
 
-  const result = await git.commit(message);
+  const result = await store.commit(message);
   if (result.code !== 0) {
     throw new Error(
       `Fallback commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
