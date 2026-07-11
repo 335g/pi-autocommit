@@ -5,6 +5,7 @@ import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import type { PiAutocommitConfig } from "./config.js";
 import {
   organizeWipCommits,
+  reorganiseWipsManual,
   WIP_COMMIT_MARKER,
 } from "./commit-organizer.js";
 import {
@@ -175,6 +176,19 @@ package-lock.json
   });
 });
 
+// ── In-memory CommitStore for tests ────────────────────────
+
+/**
+ * Description of one WIP commit in the in-memory store.
+ *
+ * `session` may be set to simulate the `Checkpoint-Session` trailer.
+ */
+interface WipCommit {
+  message: string;
+  files: string[];
+  session?: string | null;
+}
+
 /**
  * In-memory CommitStore for testing the reorganiser policy without a real git
  * repository. Tracks staged files and committed messages so tests can assert
@@ -188,24 +202,37 @@ class InMemoryCommitStore implements CommitStore {
   constructor(
     private readonly options: {
       insideRepo?: boolean;
-      wipCommits?: Array<{ message: string; files: string[] }>;
+      /** Ordered from HEAD (index 0) backward. */
+      wipCommits?: WipCommit[];
     } = {},
-  ) {}
+  ) {
+    // Normalise session to null when absent.
+    for (const w of this.options.wipCommits ?? []) {
+      if (w.session === undefined) w.session = null;
+    }
+  }
 
   async isInsideGitRepo(): Promise<boolean> {
     this.operations.push("isInsideGitRepo");
     return this.options.insideRepo ?? true;
   }
 
-  async countWipCommits(marker: string): Promise<number> {
-    this.operations.push(`countWipCommits:${marker}`);
+  async countWipCommits(marker: string, sessionId?: string): Promise<number> {
+    this.operations.push(
+      `countWipCommits:${marker}${sessionId !== undefined ? `:${sessionId}` : ""}`,
+    );
     const wip = this.options.wipCommits ?? [];
     let count = 0;
     for (const commit of wip) {
-      if (commit.message.startsWith(marker)) {
-        count++;
+      if (!commit.message.startsWith(marker)) break;
+      if (sessionId !== undefined) {
+        if (commit.session === sessionId) {
+          count++;
+        } else {
+          break; // Non-matching session stops the scan.
+        }
       } else {
-        break;
+        count++;
       }
     }
     return count;
@@ -239,7 +266,9 @@ class InMemoryCommitStore implements CommitStore {
       .map((file) => `M\t${file}`)
       .join("\n");
     return {
-      diff: this.stagedFiles.map((file) => `diff --git a/${file} b/${file}`).join("\n"),
+      diff: this.stagedFiles
+        .map((file) => `diff --git a/${file} b/${file}`)
+        .join("\n"),
       nameStatus,
       stat: this.stagedFiles.map((file) => `${file} | 1 +`).join("\n"),
     };
@@ -265,11 +294,44 @@ class InMemoryCommitStore implements CommitStore {
     this.stagedFiles = [];
     return { code: 0, stdout: "", stderr: "", killed: false };
   }
+
+  async findReachableWips(
+    marker: string,
+  ): Promise<
+    Array<{ sha: string; subject: string; session: string | null }>
+  > {
+    this.operations.push(`findReachableWips:${marker}`);
+    const wip = this.options.wipCommits ?? [];
+    return wip.map((c, i) => ({
+      sha: `sha-${i}`,
+      subject: c.message,
+      session: c.session ?? null,
+    }));
+  }
+
+  async applyCommitDiffToIndex(
+    sha: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    this.operations.push(`applyCommitDiffToIndex:${sha}`);
+    const [, indexStr] = sha.split("-");
+    const index = parseInt(indexStr, 10);
+    const wip = this.options.wipCommits?.[index];
+    if (wip) {
+      for (const file of wip.files) {
+        if (!this.stagedFiles.includes(file)) {
+          this.stagedFiles.push(file);
+        }
+      }
+    }
+    return { success: true };
+  }
 }
 
 function makeEvent(): AgentEndEvent {
   return { messages: [] } as unknown as AgentEndEvent;
 }
+
+// ── organizeWipCommits (agent_end) ─────────────────────────
 
 void describe("organizeWipCommits", () => {
   void it("returns no-op when not inside a git repo", async () => {
@@ -408,8 +470,6 @@ src/db/query.ts
       ],
     });
 
-    // Empty LLM response makes completeCommitGroups throw, triggering the
-    // catch-block fallback path.
     const emptyComplete: CompleteFn = async () =>
       ({
         role: "assistant",
@@ -470,5 +530,383 @@ src/b.ts
       "stageFiles:src/b.ts",
     ]);
     assert.deepStrictEqual(store.stagedFiles, []);
+  });
+
+  // ── Session-aware agent_end tests ────────────────────────
+
+  void it("with targetSessionId: reorganises only matching consecutive wips", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        // HEAD: turns are added in order, newest first.
+        {
+          message: `${WIP_COMMIT_MARKER} turn 2`,
+          files: ["src/db/query.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/auth/login.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+src/auth/login.ts
+=== END ===
+=== COMMIT 2 ===
+refactor(db): extract query builder
+=== FILES ===
+src/db/query.ts
+=== END ===
+`.trim();
+
+    const result = await organizeWipCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+      "session-a",
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(
+      result.events.some(
+        (e) =>
+          e.type === "organised" &&
+          e.checkpointCount === 2 &&
+          e.commitCount === 2,
+      ),
+      true,
+    );
+    assert.strictEqual(store.commits.length, 2);
+  });
+
+  void it("with targetSessionId: stops at foreign session wip", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        // HEAD: this session's wip on top.
+        {
+          message: `${WIP_COMMIT_MARKER} turn 3`,
+          files: ["src/own.ts"],
+          session: "session-a",
+        },
+        // But the next one belongs to another session → stop.
+        {
+          message: `${WIP_COMMIT_MARKER} turn 2`,
+          files: ["src/foreign.ts"],
+          session: "session-b",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/own-old.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(own): own change
+=== FILES ===
+src/own.ts
+=== END ===
+`.trim();
+
+    const result = await organizeWipCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+      "session-a",
+    );
+
+    // Only 1 commit reorganised (the top session-a commit).
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(
+      result.events.some(
+        (e) =>
+          e.type === "organised" &&
+          e.checkpointCount === 1 &&
+          e.commitCount === 1,
+      ),
+      true,
+    );
+    assert.strictEqual(store.commits.length, 1);
+  });
+
+  void it("with targetSessionId: returns no-op when no matching wips at HEAD", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        {
+          message: `${WIP_COMMIT_MARKER} foreign`,
+          files: ["src/x.ts"],
+          session: "session-b",
+        },
+      ],
+    });
+
+    const result = await organizeWipCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(""),
+      "session-a",
+    );
+
+    assert.strictEqual(result.organised, false);
+    // marker ends with `:`, sep is `:`, so double-colon is expected.
+    assert.ok(
+      store.operations.includes("countWipCommits:wip(checkpoint)::session-a"),
+    );
+  });
+
+  void it("backward-compat: no targetSessionId counts all consecutive wips", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        {
+          message: `${WIP_COMMIT_MARKER} turn 2`,
+          files: ["src/b.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+          session: "session-b",
+        },
+      ],
+    });
+
+    // Without targetSessionId, both are counted regardless of trailer.
+    const input = `
+=== COMMIT 1 ===
+feat(b): b
+=== FILES ===
+src/b.ts
+=== END ===
+`.trim();
+
+    // Only 1 commit groups proposed for 2 consecutive wips.
+    const result = await organizeWipCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(
+      result.events.some(
+        (e) =>
+          e.type === "organised" &&
+          e.checkpointCount === 2 &&
+          e.commitCount === 1,
+      ),
+      true,
+    );
+  });
+});
+
+// ── reorganiseWipsManual ───────────────────────────────────
+
+void describe("reorganiseWipsManual", () => {
+  void it("returns no-op when not inside a git repo", async () => {
+    const store = new InMemoryCommitStore({ insideRepo: false });
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.deepStrictEqual(store.operations, ["isInsideGitRepo"]);
+  });
+
+  void it("returns no-op when there are no WIP commits", async () => {
+    const store = new InMemoryCommitStore({ wipCommits: [] });
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      store.operations.includes("findReachableWips:wip(checkpoint):"),
+    );
+  });
+
+  void it("no targetSessionId: reorganises all consecutive wips", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        {
+          message: `${WIP_COMMIT_MARKER} turn 2`,
+          files: ["src/b.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(a+b): combined
+=== FILES ===
+src/a.ts
+src/b.ts
+=== END ===
+`.trim();
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      undefined,
+      fakeCompleteReturning(input),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(store.commits.length, 1);
+    // Uses findReachableWips, then countWipCommits (no sessionId) for reset.
+    assert.ok(store.operations.includes("countWipCommits:wip(checkpoint):"));
+    assert.ok(
+      result.events.some(
+        (e) =>
+          e.type === "organised" &&
+          e.checkpointCount === 2 &&
+          e.commitCount === 1,
+      ),
+    );
+  });
+
+  void it("with targetSessionId contiguous: reset-soft path", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        {
+          message: `${WIP_COMMIT_MARKER} turn 2`,
+          files: ["src/b.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const inputContiguous = `
+=== COMMIT 1 ===
+feat: combined
+=== FILES ===
+src/a.ts
+src/b.ts
+=== END ===
+`.trim();
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      "session-a",
+      fakeCompleteReturning(inputContiguous),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(store.commits.length, 1);
+    // Should use resetSoft (contiguous path).
+    assert.ok(store.operations.includes("resetSoft:2"));
+  });
+
+  void it("with targetSessionId scattered: apply-commit-diff path", async () => {
+    // Scattered: HEAD belongs to session-b, session-a wips are below.
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        // HEAD (index 0) belongs to the OTHER session.
+        {
+          message: `${WIP_COMMIT_MARKER} other`,
+          files: ["src/other.ts"],
+          session: "session-b",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} own2`,
+          files: ["src/own2.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${WIP_COMMIT_MARKER} own1`,
+          files: ["src/own1.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat: scattered
+=== FILES ===
+src/own1.ts
+src/own2.ts
+=== END ===
+`.trim();
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      "session-a",
+      fakeCompleteReturning(input),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(store.commits.length, 1);
+    // Scattered path: applyCommitDiffToIndex for each matching wip (oldest first).
+    // sha-1 = own1 (oldest), sha-2 = own2.
+    assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-2"));
+    assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-1"));
+    // Should NOT use resetSoft (not contiguous).
+    assert.ok(!store.operations.some((op) => op.startsWith("resetSoft")));
+  });
+
+  void it("with targetSessionId: returns no-op when no matching wips exist", async () => {
+    const store = new InMemoryCommitStore({
+      wipCommits: [
+        {
+          message: `${WIP_COMMIT_MARKER} turn 1`,
+          files: ["src/x.ts"],
+          session: "session-b",
+        },
+      ],
+    });
+
+    const result = await reorganiseWipsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      "session-a",
+      fakeCompleteReturning(""),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      result.events.some(
+        (e) =>
+          e.type === "info" &&
+          e.message.includes("No checkpoint commits found for session session-a"),
+      ),
+    );
   });
 });
