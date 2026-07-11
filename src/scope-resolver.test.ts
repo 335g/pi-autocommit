@@ -42,18 +42,25 @@ void describe("resolveScope", () => {
     );
   });
 
-  void it("uses two-level dir when shared (no mapping)", () => {
+  void it("uses the top-level dir even for nested shared paths (no mapping)", () => {
+    // The original heuristic's first check (unique top-level dir) wins over
+    // the two-level refinement, so this returns "packages", not "packages/foo".
     assert.strictEqual(
       resolveScope(["packages/foo/a.ts", "packages/foo/b.ts"], config()),
-      "packages/foo",
+      "packages",
     );
   });
 
-  void it("uses single-file stem (no mapping)", () => {
-    assert.strictEqual(resolveScope(["README.md"], config()), "README");
+  void it("uses the full path as scope for a single top-level file (no mapping)", () => {
+    // No slash → the top-level-dir check returns the path itself.
+    assert.strictEqual(resolveScope(["README.md"], config()), "README.md");
   });
 
-  void it("returns null when paths diverge at top level (no mapping)", () => {
+  void it("uses the top-level dir for a single nested file (no mapping)", () => {
+    assert.strictEqual(resolveScope(["src/a.ts"], config()), "src");
+  });
+
+  void it("returns null when top-level dirs diverge (no mapping)", () => {
     assert.strictEqual(
       resolveScope(["src/a.ts", "docs/b.md"], config()),
       null,
@@ -128,12 +135,12 @@ void describe("resolveScope", () => {
     );
   });
 
-  void it("cascaded heuristic returns two-level scope when group agrees", () => {
+  void it("cascaded heuristic returns null when heuristic diverges", () => {
     const cfg = config({ "docs/**": "docs-scope" });
-    // Both under src/api but no mapping matches → heuristic two-level.
+    // Both under different top-level dirs → heuristic returns null.
     assert.strictEqual(
-      resolveScope(["src/api/a.ts", "src/api/b.ts"], cfg),
-      "src/api",
+      resolveScope(["src/api/a.ts", "docs/b.md"], cfg),
+      null,
     );
   });
 });
@@ -161,8 +168,11 @@ void describe("injectScopeIntoMessage", () => {
   });
 
   void it("leaves subject scope-less when resolveScope returns null", () => {
-    const cfg = config({ "packages/frontend/**": "frontend" });
-    // Mixed mapping coverage → heuristic returns null.
+    // Both files match the mapping but to different scopes → null.
+    const cfg = config({
+      "packages/frontend/**": "frontend",
+      "packages/backend/**": "backend",
+    });
     const paths = ["packages/frontend/a.ts", "packages/backend/b.ts"];
     const msg = "feat: add login";
     assert.strictEqual(
