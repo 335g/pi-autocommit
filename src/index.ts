@@ -7,7 +7,11 @@ import {
 } from "@earendil-works/pi-tui";
 import { shouldCreateWipCommit } from "./commit-decider.js";
 import type { PipelineEvent } from "./commit-events.js";
-import { organizeWipCommits } from "./commit-organizer.js";
+import {
+  organizeWipCommits,
+  reorganiseWipsManual,
+  WIP_COMMIT_MARKER,
+} from "./commit-organizer.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitCommitStore } from "./commit-store.js";
 import { GitOperations } from "./git-operations.js";
@@ -204,6 +208,63 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ───────────────────────────────────────────────────────
+  // /autocommit-organise [sessionId?]
+  // ───────────────────────────────────────────────────────
+
+  pi.registerCommand("autocommit-organise", {
+    description:
+      "Reorganise checkpoint commits. No arg: all wips. " +
+      "With a session filter, reorganise only that session's checkpoints " +
+      "(including scattered ones).",
+    handler: async (args, ctx) => {
+      const statusIndicator = new StatusIndicator(
+        new GitOperations(pi),
+        ctx,
+      );
+      const config = loadConfig(ctx.cwd);
+      const trimmed = args?.trim();
+
+      // No argument: reorganise all reachable wip commits (session-agnostic).
+      if (trimmed === "") {
+        const store = new GitCommitStore(new GitOperations(pi));
+        const result = await reorganiseWipsManual(ctx, config, store);
+        await handlePipelineEvents(ctx, statusIndicator, result.events);
+        await statusIndicator.updateFooter();
+        return;
+      }
+
+      // Session ID provided directly as argument.
+      const store = new GitCommitStore(new GitOperations(pi));
+      const result = await reorganiseWipsManual(
+        ctx,
+        config,
+        store,
+        trimmed,
+      );
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
+      await statusIndicator.updateFooter();
+    },
+    getArgumentCompletions: async (
+      _argumentPrefix: string,
+    ): Promise<AutocompleteItem[] | null> => {
+      try {
+        const git = new GitOperations(pi);
+        const wips = await git.findReachableWips(WIP_COMMIT_MARKER);
+        const sessions = [
+          ...new Set(wips.map((w) => w.session).filter((s): s is string => s !== null)),
+        ];
+        return sessions.map((s) => ({
+          value: s,
+          label: s,
+          description: "Reorganise only this session's checkpoint commits",
+        }));
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  // ───────────────────────────────────────────────────────
   // Show uncommitted changes indicator in footer
   // ───────────────────────────────────────────────────────
 
@@ -211,6 +272,20 @@ export default function (pi: ExtensionAPI) {
     cachedModelRegistry = ctx.modelRegistry;
     const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
     await statusIndicator.updateFooter();
+
+    // Notify the user if unreorganised checkpoints remain (crash recovery).
+    try {
+      const git = new GitOperations(pi);
+      const wips = await git.findReachableWips(WIP_COMMIT_MARKER);
+      if (wips.length > 0) {
+        ctx.ui.notify(
+          `pi-autocommit: 未整理のチェックポイントが残っています。/autocommit-organise で整理できます`,
+          "warning",
+        );
+      }
+    } catch {
+      // Best-effort: ignore errors during startup check.
+    }
   });
 
   // ───────────────────────────────────────────────────────
@@ -239,9 +314,11 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
+      const sessionId = ctx.sessionManager.getSessionId();
       const result = await runCheckpointCommit(
         pi,
         `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
+        sessionId,
       );
 
       await handlePipelineEvents(ctx, statusIndicator, result.events);
@@ -267,7 +344,15 @@ export default function (pi: ExtensionAPI) {
 
     try {
       const commitStore = new GitCommitStore(new GitOperations(pi));
-      const result = await organizeWipCommits(ctx, config, event, commitStore);
+      const sessionId = ctx.sessionManager.getSessionId();
+      const result = await organizeWipCommits(
+        ctx,
+        config,
+        event,
+        commitStore,
+        undefined,
+        sessionId,
+      );
 
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
