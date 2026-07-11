@@ -246,6 +246,64 @@ void describe("completeCommitGroups", () => {
       /No model available/,
     );
   });
+
+  void it("strips markdown fences from the LLM response before parsing groups", async () => {
+    const cfg = config();
+    const llmText = [
+      "```",
+      "=== COMMIT 1 ===",
+      "feat: add login",
+      "",
+      "Implement login.",
+      "=== FILES ===",
+      "src/auth.ts",
+      "=== END ===",
+      "```",
+    ].join("\n");
+    const complete = fakeCompleteReturning(llmText);
+
+    const groups = await completeCommitGroups(
+      makeCtx(stubModel),
+      cfg,
+      { diff: "diff", reasoning: "reasoning" },
+      complete,
+    );
+
+    assert.deepStrictEqual(groups, [
+      {
+        message: "feat: add login\n\nImplement login.",
+        files: ["src/auth.ts"],
+      },
+    ]);
+  });
+
+  void it("works with Japanese config and Japanese LLM responses", async () => {
+    const cfg = config({ lang: "ja" });
+    const llmText = [
+      "=== COMMIT 1 ===",
+      "feat: ログインを追加",
+      "",
+      "ログイン機能を実装。",
+      "=== FILES ===",
+      "src/auth.ts",
+      "=== END ===",
+    ].join("\n");
+    const complete = fakeCompleteReturning(llmText);
+
+    const groups = await completeCommitGroups(
+      makeCtx(stubModel),
+      cfg,
+      { diff: "diff", reasoning: "reasoning" },
+      complete,
+    );
+
+    assert.deepStrictEqual(groups, [
+      {
+        message: "feat: ログインを追加\n\nログイン機能を実装。",
+        files: ["src/auth.ts"],
+      },
+    ]);
+  });
 });
 
 void describe("ADR-0003 scope injection", () => {
