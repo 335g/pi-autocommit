@@ -103,13 +103,30 @@ function typeReferenceBlock(): string[] {
   ];
 }
 
+/**
+ * Extract non-empty text blocks from a content array.
+ *
+ * Shared by adapter-response cleanup and assistant-context extraction.
+ * Uses a structural type so it works for both the adapter's content shape
+ * and the agent-loop message content shape without importing either.
+ */
+function extractTextBlocks(
+  blocks: ReadonlyArray<unknown>,
+): Array<{ type: "text"; text: string }> {
+  return blocks.filter(
+    (c): c is { type: "text"; text: string } =>
+      typeof c === "object" &&
+      c !== null &&
+      (c as { type?: string }).type === "text" &&
+      !!(c as { text?: string }).text,
+  );
+}
+
 /** Extract text from an adapter response (filter·map·join·trim). */
-function extractText(result: { content: Array<{ type: string; text?: string }> }): string {
-  return result.content
-    .filter(
-      (c): c is { type: "text"; text: string } =>
-        c.type === "text" && !!c.text,
-    )
+function extractText(result: {
+  content: Array<{ type: string; text?: string }>;
+}): string {
+  return extractTextBlocks(result.content)
     .map((c) => c.text)
     .join("\n")
     .trim();
@@ -163,14 +180,7 @@ export function extractAssistantContext(
     }
 
     const blocks = Array.isArray(message.content) ? message.content : [];
-    const text = blocks
-      .filter(
-        (c): c is { type: "text"; text: string } =>
-          typeof c === "object" &&
-          c !== null &&
-          (c as { type?: string }).type === "text" &&
-          !!(c as { text?: string }).text,
-      )
+    const text = extractTextBlocks(blocks)
       .map((c) => c.text)
       .join("\n")
       .trim();
@@ -229,18 +239,7 @@ function parseCommitGroups(text: string): CommitGroup[] {
 
 /** Build the commit-group-proposition system prompt. */
 function buildGroupsSystemPrompt(config: PiAutocommitConfig): string {
-  const lang = isJapanese(config) ? "ja" : "en";
   const scopeManaged = hasScopeMapping(config);
-
-  const subjectLangInstruction =
-    lang === "ja"
-      ? "Write the subject in Japanese (日本語). No period, 50 chars or fewer."
-      : "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
-
-  const bodyLangInstruction =
-    lang === "ja"
-      ? "Write the body in Japanese (日本語)."
-      : "Write the body in English.";
 
   const subjectFormat = scopeManaged
     ? "Subject format: `type: brief summary` — do NOT add a scope; the scope is applied automatically from the changed paths."
@@ -256,8 +255,8 @@ function buildGroupsSystemPrompt(config: PiAutocommitConfig): string {
     "- If the diff is too small to split meaningfully, output a single group.",
     "",
     subjectFormat,
-    `Subject: ${subjectLangInstruction}`,
-    `Body: describe what changed and why. ${bodyLangInstruction}`,
+    `Subject: ${subjectLangInstruction(config)}`,
+    `Body: describe what changed and why. ${bodyLangInstruction(config)}`,
     "Footer: add `BREAKING CHANGE: ...` when there is a breaking change.",
   ];
 
@@ -343,7 +342,8 @@ export async function completeCommitGroups(
     throw new Error("Empty reorganiser response");
   }
 
-  const groups = parseCommitGroups(text);
+  const cleaned = cleanupResponse(text);
+  const groups = parseCommitGroups(cleaned);
 
   if (scopeManaged) {
     for (const group of groups) {
