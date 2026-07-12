@@ -155,18 +155,47 @@ export async function reorganiseCheckpointsManual(
     return { events, organised: false };
   }
 
-  // ── No target session: reorganise ALL checkpoint commits (consecutive only) ──
+  // ── No target session: reorganise ALL reachable checkpoint commits ──
   if (targetSessionId === undefined) {
     const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
-    if (checkpointCount === 0) {
+    if (checkpointCount > 0) {
+      // Consecutive at HEAD: fast path with resetSoft.
+      await store.resetSoft(checkpointCount);
+      return assembleAndCommit(ctx, config, store, checkpointCount, events, "", complete);
+    }
+
+    // Non-consecutive (scattered): reorganise only checkpoint commits that
+    // carry a session trailer. Historical checkpoints without a trailer
+    // are skipped — they are buried under regular commits so their changes
+    // are already part of the normal history and cannot be reapplied safely.
+    const trailered = reachableCheckpoints.filter((w) => w.session !== null);
+    if (trailered.length === 0) {
+      events.push({
+        type: "info",
+        message: "No reorganisable checkpoint commits found. Scattered historical " +
+          "checkpoints without a session trailer are already part of the regular history.",
+      });
       events.push({
         type: "stage-changed",
         hasChanges: await store.checkUncommittedChanges(),
       });
       return { events, organised: false };
     }
-    await store.resetSoft(checkpointCount);
-    return assembleAndCommit(ctx, config, store, checkpointCount, events, "", complete);
+
+    // Apply each trailered checkpoint's diff to the index in oldest-first
+    // order so they apply sequentially without conflict.
+    const oldestFirst = [...trailered].reverse();
+    for (const commit of oldestFirst) {
+      const result = await store.applyCommitDiffToIndex(commit.sha);
+      if (!result.success) {
+        events.push({
+          type: "error",
+          message: `散在チェックポイントの適用に失敗しました — ${result.error || "不明なエラー"}。手動で解決してください。`,
+        });
+        return { events, organised: false };
+      }
+    }
+    return assembleAndCommit(ctx, config, store, trailered.length, events, "", complete);
   }
 
   // ── Target session: check contiguity ────────────────────────────────
