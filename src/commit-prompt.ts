@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai/compat";
+import { completeSimple, type Api, type Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatFullMessage, generateCommitMessage } from "./commit-message.js";
 import { COMMIT_TYPES } from "./commit-types.js";
@@ -19,7 +19,7 @@ import { hasScopeMapping, injectScopeIntoMessage, resolveScope } from "./scope-r
  *   inference failure.
  *
  * Behind the seam: language switching rules, the COMMIT_TYPES reference, the
- * scope-mapping subject-format rule, the LLM adapter (lazily imported by
+ * scope-mapping subject-format rule, the LLM adapter (statically imported by
  * default, injectable for tests), response cleanup, group parsing, scope
  * injection, and the heuristic fallback.
  */
@@ -29,7 +29,7 @@ import { hasScopeMapping, injectScopeIntoMessage, resolveScope } from "./scope-r
 /**
  * Adapter for the LLM completion call.
  *
- * Production: lazily imported `completeSimple` from `@earendil-works/pi-ai/compat`.
+ * Production: statically imported `completeSimple` from `@earendil-works/pi-ai/compat`.
  * Tests: an in-memory fake implementing the same shape. Accepting this as an
  * optional injected dependency keeps the seam real (two adapters) while
  * letting production callers omit it for zero ceremony.
@@ -42,11 +42,8 @@ export type CompleteFn = (
   },
 ) => Promise<{ content: Array<{ type: "string"; text?: string }> }>;
 
-/** Lazily load the production `completeSimple` adapter. */
-async function loadDefaultComplete(): Promise<CompleteFn> {
-  const { completeSimple } = await import("@earendil-works/pi-ai/compat");
-  return completeSimple as unknown as CompleteFn;
-}
+/** Statically imported production adapter. */
+const defaultComplete: CompleteFn = completeSimple as unknown as CompleteFn;
 
 // ── Input types ───────────────────────────────────────────
 
@@ -325,7 +322,7 @@ export async function completeCommitGroups(
   const systemPrompt = buildGroupsSystemPrompt(config);
   const userContent = buildGroupsUserContent(input.diff, input.reasoning);
 
-  const adapter = complete ?? (await loadDefaultComplete());
+  const adapter = complete ?? defaultComplete;
 
   const model = await resolveModelForConfig(ctx, config);
   if (!model) {
@@ -441,7 +438,7 @@ export async function completeSingleMessage(
   const systemPrompt = buildSingleSystemPrompt(config);
   const userContent = buildSingleUserContent(input.diff);
 
-  const adapter = complete ?? (await loadDefaultComplete());
+  const adapter = complete ?? defaultComplete;
 
   try {
     const model = await resolveModelForConfig(ctx, config);
