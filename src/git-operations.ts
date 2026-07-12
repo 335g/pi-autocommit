@@ -135,51 +135,6 @@ export class GitOperations {
   }
 
   /**
-   * Get the staged diff for a single file (`git diff --cached -- <file>`).
-   */
-  async getFileStagedDiff(filePath: string): Promise<string> {
-    const { stdout } = await this.pi.exec("git", [
-      "diff",
-      "--cached",
-      "--",
-      filePath,
-    ]);
-    return stdout;
-  }
-
-  /**
-   * Get the staged numstat for a single file (`git diff --cached --numstat -- <file>`).
-   * Returns the number of added and deleted lines.
-   */
-  async getFileStagedNumstat(
-    filePath: string,
-  ): Promise<{ additions: number; deletions: number }> {
-    const { stdout } = await this.pi.exec("git", [
-      "diff",
-      "--cached",
-      "--numstat",
-      "--",
-      filePath,
-    ]);
-    const match = stdout.trim().match(/^(\d+)\s+(\d+)/);
-    if (match) {
-      return {
-        additions: Number.parseInt(match[1], 10),
-        deletions: Number.parseInt(match[2], 10),
-      };
-    }
-    return { additions: 0, deletions: 0 };
-  }
-
-  /**
-   * Run `git status` (full output, human-readable) and return the result.
-   */
-  async getFullStatus(): Promise<string> {
-    const { stdout } = await this.pi.exec("git", ["status"]);
-    return stdout;
-  }
-
-  /**
    * Check whether there are any uncommitted changes (staged, unstaged, or untracked).
    * Uses `git status --porcelain` for machine-parseable output.
    * Returns true if there are any changes relative to HEAD.
