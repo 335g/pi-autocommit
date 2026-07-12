@@ -84,33 +84,11 @@ export async function organizeCheckpointCommits(
     }
 
     // Stage and commit each logical group in order.
-    let commitCount = 0;
-    for (const group of groups) {
-      await store.unstageAll();
-      await store.stageFiles(group.files);
-
-      // Skip groups with no staged changes (e.g. duplicate files already committed).
-      if (!(await store.hasStagedChanges())) {
-        events.push({
-          type: "info",
-          message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
-        });
-        continue;
-      }
-
-      commitCount++;
-      const result = await store.commit(group.message);
-      if (result.code !== 0) {
-        const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
-        throw new Error(
-          `Commit failed (code ${result.code}): ${detail}`,
-        );
-      }
-    }
+    const commitCount = await commitGroups(store, groups, events);
 
     events.push({
       type: "organised",
-      checkpointCount: checkpointCount,
+      checkpointCount,
       commitCount,
     });
     organised = true;
@@ -287,29 +265,7 @@ async function assembleAndCommit(
       return { events, organised };
     }
 
-    let commitCount = 0;
-    for (const group of groups) {
-      await store.unstageAll();
-      await store.stageFiles(group.files);
-
-      // Skip groups with no staged changes (e.g. duplicate files already committed).
-      if (!(await store.hasStagedChanges())) {
-        events.push({
-          type: "info",
-          message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
-        });
-        continue;
-      }
-
-      commitCount++;
-      const result = await store.commit(group.message);
-      if (result.code !== 0) {
-        const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
-        throw new Error(
-          `Commit failed (code ${result.code}): ${detail}`,
-        );
-      }
-    }
+    const commitCount = await commitGroups(store, groups, events);
 
     events.push({
       type: "organised",
@@ -406,6 +362,45 @@ async function proposeCommitGroupsFromReasoning(
     return [];
   }
   return completeCommitGroups(ctx, config, { diff, reasoning }, complete);
+}
+
+/**
+ * Stage and commit each logical group in order.
+ *
+ * Skips groups with no staged changes. Throws when a commit fails so the
+ * caller can catch and run the fallback path.
+ *
+ * @returns The number of commits actually executed.
+ */
+async function commitGroups(
+  store: CommitStore,
+  groups: CommitGroup[],
+  events: PipelineEvent[],
+): Promise<number> {
+  let commitCount = 0;
+  for (const group of groups) {
+    await store.unstageAll();
+    await store.stageFiles(group.files);
+
+    // Skip groups with no staged changes (e.g. duplicate files already committed).
+    if (!(await store.hasStagedChanges())) {
+      events.push({
+        type: "info",
+        message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
+      });
+      continue;
+    }
+
+    commitCount++;
+    const result = await store.commit(group.message);
+    if (result.code !== 0) {
+      const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
+      throw new Error(
+        `Commit failed (code ${result.code}): ${detail}`,
+      );
+    }
+  }
+  return commitCount;
 }
 
 /**
