@@ -894,7 +894,6 @@ src/b.ts
 
     assert.strictEqual(result.organised, true);
     assert.strictEqual(store.commits.length, 1);
-    // Uses findReachableCheckpoints, then countCheckpointCommits (no sessionId) for reset.
     assert.ok(store.operations.includes("countCheckpointCommits:wip(checkpoint):"));
     assert.ok(
       result.events.some(
@@ -904,6 +903,55 @@ src/b.ts
           e.commitCount === 1,
       ),
     );
+  });
+
+  void it("no targetSessionId: reorganises scattered checkpoints behind regular commits", async () => {
+    // HEAD is a regular commit; checkpoints are deeper in history.
+    const store = new InMemoryCommitStore({
+      checkpointCommits: [
+        {
+          message: "feat: regular commit on top",
+          files: ["src/top.ts"],
+          session: null,
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
+          files: ["src/b.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    const input = `
+=== COMMIT 1 ===
+feat(a+b): combined
+=== FILES ===
+src/a.ts
+src/b.ts
+=== END ===
+`.trim();
+
+    const result = await reorganiseCheckpointsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      undefined,
+      fakeCompleteReturning(input),
+    );
+
+    // BUG: currently returns organised=false because countCheckpointCommits returns 0
+    // when HEAD is not a checkpoint. Should handle scattered checkpoints.
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(store.commits.length, 1);
+    // Should use applyCommitDiffToIndex (scattered path), not resetSoft.
+    assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-2"));
+    assert.ok(store.operations.includes("applyCommitDiffToIndex:sha-1"));
+    assert.ok(!store.operations.some((op) => op.startsWith("resetSoft")));
   });
 
   void it("with targetSessionId contiguous: reset-soft path", async () => {
