@@ -274,10 +274,14 @@ export default function (pi: ExtensionAPI) {
     const statusIndicator = new StatusIndicator(git, ctx);
     await statusIndicator.updateFooter();
 
-    // Notify the user if unreorganised checkpoints remain (crash recovery).
+    // Notify the user if unreorganised checkpoint commits remain at HEAD
+    // (crash recovery). Uses countCheckpointCommits so only consecutive
+    // checkpoints at HEAD are reported — scattered historical checkpoints
+    // buried under regular commits are silently ignored because they cannot
+    // be reorganised by the no-arg command.
     try {
-      const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
-      if (commits.length > 0) {
+      const checkpointCount = await git.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
+      if (checkpointCount > 0) {
         ctx.ui.notify(
           `pi-autocommit: 未整理のチェックポイントが残っています。/autocommit-organise で整理できます`,
           "warning",
