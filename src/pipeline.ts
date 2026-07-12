@@ -1,4 +1,3 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { PipelineEvent, PipelineResult } from "./commit-events.js";
 import { GitOperations } from "./git-operations.js";
 
@@ -26,11 +25,10 @@ import { GitOperations } from "./git-operations.js";
  * Footer-status updates are the caller's responsibility.
  */
 export async function runCheckpointCommit(
-  pi: ExtensionAPI,
+  git: GitOperations,
   message: string,
   sessionId?: string,
 ): Promise<PipelineResult> {
-  const git = new GitOperations(pi);
   const events: PipelineEvent[] = [];
   let committed = false;
 
