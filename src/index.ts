@@ -75,6 +75,7 @@ export default function (pi: ExtensionAPI) {
   // Captured from session_start so getArgumentCompletions (which has no
   // ctx) can access the model registry.
   let cachedModelRegistry: ExtensionContext["modelRegistry"] | undefined;
+  const git = new GitOperations(pi);
 
   // ───────────────────────────────────────────────────────
   // /autocommit-enable [true|false]
@@ -218,7 +219,7 @@ export default function (pi: ExtensionAPI) {
       "(including scattered ones).",
     handler: async (args, ctx) => {
       const statusIndicator = new StatusIndicator(
-        new GitOperations(pi),
+        git,
         ctx,
       );
       const config = loadConfig(ctx.cwd);
@@ -226,7 +227,7 @@ export default function (pi: ExtensionAPI) {
 
       // No argument: reorganise all reachable checkpoint commits (session-agnostic).
       if (trimmed === "") {
-        const store = new GitCommitStore(new GitOperations(pi));
+        const store = new GitCommitStore(git);
         const result = await reorganiseCheckpointsManual(ctx, config, store);
         await handlePipelineEvents(ctx, statusIndicator, result.events);
         await statusIndicator.updateFooter();
@@ -234,7 +235,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Session ID provided directly as argument.
-      const store = new GitCommitStore(new GitOperations(pi));
+      const store = new GitCommitStore(git);
       const result = await reorganiseCheckpointsManual(
         ctx,
         config,
@@ -248,7 +249,7 @@ export default function (pi: ExtensionAPI) {
       _argumentPrefix: string,
     ): Promise<AutocompleteItem[] | null> => {
       try {
-        const git = new GitOperations(pi);
+        git
         const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
         const sessions = [
           ...new Set(commits.map((w) => w.session).filter((s): s is string => s !== null)),
@@ -270,12 +271,11 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     cachedModelRegistry = ctx.modelRegistry;
-    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
+    const statusIndicator = new StatusIndicator(git, ctx);
     await statusIndicator.updateFooter();
 
     // Notify the user if unreorganised checkpoints remain (crash recovery).
     try {
-      const git = new GitOperations(pi);
       const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
       if (commits.length > 0) {
         ctx.ui.notify(
@@ -293,7 +293,7 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("turn_end", async (event, ctx) => {
-    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
+    const statusIndicator = new StatusIndicator(git, ctx);
     const config = loadConfig(ctx.cwd);
 
     if (!config.enable) {
@@ -304,7 +304,6 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const git = new GitOperations(pi);
     if (!(await git.isInsideGitRepo())) {
       return;
     }
@@ -316,7 +315,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const sessionId = ctx.sessionManager.getSessionId();
       const result = await runCheckpointCommit(
-        pi,
+        git,
         `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
         sessionId,
       );
@@ -334,7 +333,7 @@ export default function (pi: ExtensionAPI) {
   // ───────────────────────────────────────────────────────
 
   pi.on("agent_end", async (event, ctx) => {
-    const statusIndicator = new StatusIndicator(new GitOperations(pi), ctx);
+    const statusIndicator = new StatusIndicator(git, ctx);
     const config = loadConfig(ctx.cwd);
 
     if (!config.enable) {
@@ -343,7 +342,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      const commitStore = new GitCommitStore(new GitOperations(pi));
+      const commitStore = new GitCommitStore(git);
       const sessionId = ctx.sessionManager.getSessionId();
       const result = await organizeCheckpointCommits(
         ctx,
