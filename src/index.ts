@@ -1,11 +1,13 @@
 import {
   type ExtensionAPI,
   type ExtensionContext,
+  isToolCallEventType,
 } from "@earendil-works/pi-coding-agent";
 import {
   type AutocompleteItem,
 } from "@earendil-works/pi-tui";
 import { shouldCreateCheckpointCommit } from "./commit-decider.js";
+import { isGitCommitCommand } from "./commit-guard.js";
 import type { PipelineEvent } from "./commit-events.js";
 import {
   organizeCheckpointCommits,
@@ -290,6 +292,32 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // Best-effort: ignore errors during startup check.
     }
+  });
+
+  // ───────────────────────────────────────────────────────
+  // Commit guard: block agent-initiated `git commit` during the agent loop
+  // ───────────────────────────────────────────────────────
+
+  pi.on("tool_call", async (event, ctx) => {
+    if (!isToolCallEventType("bash", event)) {
+      return;
+    }
+
+    const config = loadConfig(ctx.cwd);
+    if (!config.enable) {
+      return;
+    }
+
+    if (!isGitCommitCommand(event.input.command)) {
+      return;
+    }
+
+    return {
+      block: true,
+      reason:
+        "pi-autocommit がコミットを管理しているため、エージェントループ中の `git commit` はブロックされました。" +
+        "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されるため、手動でコミットする必要はありません。",
+    };
   });
 
   // ───────────────────────────────────────────────────────
