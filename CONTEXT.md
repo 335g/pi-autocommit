@@ -4,6 +4,10 @@ Vocabulary for the pi-autocommit extension, which automatically commits changes 
 
 ## Committing
 
+**Commit guard**
+A safety measure that blocks agent-initiated `git commit` commands during the agent loop when `enable` is true. It intercepts the `bash` tool via the `tool_call` event so that commits stay under pi-autocommit's checkpoint-then-reorganise control and are not interleaved into the checkpoint run.
+_Avoid_: commit blocker, commit firewall
+
 **Auto-commit**
 Committing changes automatically without interactive confirmation, driven by the `enable` configuration.
 _Avoid_: background commit, silent commit
