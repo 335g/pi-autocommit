@@ -10,5 +10,6 @@ apm_modules/
 
 .agents
 .claude
+.pi-subagents
 
 .npmrc

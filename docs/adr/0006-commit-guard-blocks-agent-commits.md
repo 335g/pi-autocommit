@@ -37,7 +37,10 @@ reassemble cleanly.
 
 The `bash` tool's `command` string is split on `&&`, `||`, `;`, `|`, and
 newlines into segments. Each segment (including any quoted substring) is
-tested against `/\bgit\b(?:\s+\S+)*\s+commit\b/`. This catches:
+tested against `/\bgit\b(?:\s+\S+)*\s+commit(?=\s|$)/`. The
+lookahead `(?=\s|$)` requires `commit` to be followed by whitespace or
+end-of-segment, so `git commit-tree` or a file named `commit-message.txt`
+is not mistaken for a commit. This catches:
 
 - `git commit -m "..."`
 - `git -C /path commit` (global options between `git` and `commit`)
