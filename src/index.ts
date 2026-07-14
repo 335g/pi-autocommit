@@ -12,8 +12,13 @@ import type { PipelineEvent } from "./commit-events.js";
 import {
   organizeCheckpointCommits,
   reorganiseCheckpointsManual,
+  reorganiseSelectedRange,
   CHECKPOINT_COMMIT_MARKER,
 } from "./commit-organizer.js";
+import {
+  buildCommitItems,
+  showCommitPicker,
+} from "./commit-picker.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitCommitStore } from "./commit-store.js";
 import { GitOperations } from "./git-operations.js";
@@ -375,17 +380,57 @@ export default function (pi: ExtensionAPI) {
 
     try {
       const commitStore = new GitCommitStore(git);
-      const sessionId = ctx.sessionManager.getSessionId();
-      const result = await organizeCheckpointCommits(
-        ctx,
-        config,
-        event,
-        commitStore,
-        undefined,
-        sessionId,
-      );
 
-      await handlePipelineEvents(ctx, statusIndicator, result.events);
+      // No checkpoints → nothing to reorganise.
+      const checkpointCount = await commitStore.countCheckpointCommits(
+        CHECKPOINT_COMMIT_MARKER,
+      );
+      if (checkpointCount === 0) {
+        await statusIndicator.updateFooter();
+        return;
+      }
+
+      // TUI mode: show interactive commit picker popup.
+      if (ctx.mode === "tui") {
+        const raw = await commitStore.getRecentCommits(100);
+        const items = buildCommitItems(raw);
+
+        // No items means the git log was empty (unlikely but guard).
+        if (items.length === 0) {
+          await statusIndicator.updateFooter();
+          return;
+        }
+
+        const range = await showCommitPicker(ctx, items);
+        if (range !== null) {
+          const result = await reorganiseSelectedRange(
+            ctx,
+            config,
+            event,
+            commitStore,
+            range,
+          );
+          await handlePipelineEvents(ctx, statusIndicator, result.events);
+        } else {
+          ctx.ui.notify(
+            "pi-autocommit: 整理をキャンセルしました。「/autocommit-organise」で後から整理できます",
+            "info",
+          );
+        }
+      } else {
+        // Non-TUI (e.g. RPC): keep the existing auto-reorganise path.
+        const sessionId = ctx.sessionManager.getSessionId();
+        const result = await organizeCheckpointCommits(
+          ctx,
+          config,
+          event,
+          commitStore,
+          undefined,
+          sessionId,
+        );
+        await handlePipelineEvents(ctx, statusIndicator, result.events);
+      }
+
       await statusIndicator.updateFooter();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
