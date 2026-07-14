@@ -205,63 +205,57 @@ export class CommitPicker {
 
   render(width: number): string[] {
     const t = this.theme;
+
+    // ── Helper: pad a string to exactly `width` columns ──
+    const pad = (s: string) => s.padEnd(width);
+
+    // ── Separator line ─────────────────────────────────
+    const sep = () => pad(t.fg("border", `  ${`─`.repeat(Math.max(2, width - 4))}`));
+
+    // ── Content line prefixed with 2 spaces ───────────
+    const line = (content: string): string =>
+      pad(`  ${content}`);
+
     const lines: string[] = [];
 
-    // ── Full-width background fill line ─────────────────
-    const bg = t.bg("toolPendingBg", " ".repeat(width));
-    const popupPad = (s: string) => t.bg("toolPendingBg", s.padEnd(width));
+    // ── Top separator ─────────────────────────────────
+    lines.push(sep());
 
-    const inner = Math.max(10, width - 4);
+    // ── Title ─────────────────────────────────────────
+    lines.push(line(t.fg("accent", "pi-autocommit: 整理するコミットの範囲を選択")));
 
-    // ── Vertical padding at top ─────────────────────────
-    for (let i = 0; i < 6; i++) {
-      lines.push(bg);
-    }
+    // ── Separator ─────────────────────────────────────
+    lines.push(sep());
 
-    // ── Top border ──────────────────────────────────────
-    const topBorder = `  ╔${"═".repeat(inner)}╗`;
-    lines.push(popupPad(t.fg("border", topBorder)));
-
-    // ── Title ──────────────────────────────────────────
-    const title = `  ║ ${truncateToWidth(
-      " pi-autocommit: 整理するコミットの範囲を選択 ",
-      inner,
-    ).padEnd(inner)} ║`;
-    lines.push(popupPad(t.fg("accent", title)));
-
-    // ── Separator ──────────────────────────────────────
-    const sep = `  ╟${"─".repeat(inner)}╢`;
-    lines.push(popupPad(t.fg("border", sep)));
-
-    // ── Commit list (scrolled window) ──────────────────
+    // ── Commit list (scrolled window) ─────────────────
     const visible = this.visibleSlice;
     for (let i = 0; i < this.maxVisible; i++) {
-      let line: string;
+      let label: string;
       if (i < visible.length) {
         const absIndex = this.scrollOffset + i;
         const item = visible[i];
         const inRange = absIndex >= this.lo && absIndex <= this.hi;
         const isCursor = absIndex === this.cursorIndex;
 
-        let label = this.formatLine(absIndex);
-        label = truncateToWidth(label, inner);
+        let text = this.formatLine(absIndex);
+        text = truncateToWidth(text, width - 2);
 
         // Apply colours.
         if (inRange && isCursor) {
-          label = t.bg("selectedBg", t.fg("accent", label));
+          label = t.bg("selectedBg", t.fg("accent", text));
         } else if (inRange) {
-          label = t.fg("accent", label);
+          label = t.fg("accent", text);
         } else if (isCursor) {
-          label = t.bg("selectedBg", label);
+          label = t.bg("selectedBg", text);
         } else if (item.isCheckpoint) {
-          label = t.fg("dim", label);
+          label = t.fg("dim", text);
+        } else {
+          label = text;
         }
-
-        line = `  ║ ${label.padEnd(inner)} ║`;
       } else {
-        line = `  ║ ${" ".repeat(inner)} ║`;
+        label = "";
       }
-      lines.push(popupPad(line));
+      lines.push(line(label));
     }
 
     // ── Scroll info ────────────────────────────────────
@@ -269,35 +263,24 @@ export class CommitPicker {
       const total = this.items.length;
       const from = this.scrollOffset + 1;
       const to = Math.min(this.scrollOffset + this.maxVisible, total);
-      const info = `(${from}-${to}/${total})`.padEnd(inner);
-      lines.push(popupPad(`  ║ ${t.fg("dim", info)} ║`));
-    } else {
-      lines.push(popupPad(`  ║ ${" ".repeat(inner)} ║`));
+      lines.push(line(t.fg("dim", `(${from}-${to}/${total})`)));
     }
 
     // ── Error row ──────────────────────────────────────
     if (this.errorMessage) {
-      const err = truncateToWidth(this.errorMessage, inner).padEnd(inner);
-      lines.push(popupPad(`  ║ ${t.fg("error", err)} ║`));
-    } else {
-      lines.push(popupPad(`  ║ ${" ".repeat(inner)} ║`));
+      lines.push(line(t.fg("error", this.errorMessage)));
     }
 
-    // ── Help text ──────────────────────────────────────
-    const help = truncateToWidth(
-      "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル",
-      inner,
-    ).padEnd(inner);
-    lines.push(popupPad(`  ║ ${t.fg("dim", help)} ║`));
+    // ── Separator ─────────────────────────────────────
+    lines.push(sep());
 
-    // ── Bottom border ──────────────────────────────────
-    const bottomBorder = `  ╚${"═".repeat(inner)}╝`;
-    lines.push(popupPad(t.fg("border", bottomBorder)));
+    // ── Help text ─────────────────────────────────────
+    lines.push(
+      line(t.fg("dim", "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル")),
+    );
 
-    // ── Vertical padding at bottom ─────────────────────
-    for (let i = 0; i < 6; i++) {
-      lines.push(bg);
-    }
+    // ── Bottom separator ──────────────────────────────
+    lines.push(sep());
 
     return lines;
   }
@@ -349,8 +332,10 @@ export async function showCommitPicker(
       overlay: true,
       overlayOptions: {
         anchor: "center",
-        width: "100%",
-        maxHeight: "90%",
+        width: "80%",
+        minWidth: 48,
+        margin: 2,
+        maxHeight: "75%",
       },
     },
   );
