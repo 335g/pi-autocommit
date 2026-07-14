@@ -206,26 +206,17 @@ export class CommitPicker {
   render(width: number): string[] {
     const t = this.theme;
 
-    // ── Helper: pad a string to exactly `width` columns ──
+    // ── Helpers ─────────────────────────────────────────
     const pad = (s: string) => s.padEnd(width);
+    const line = (content: string) => pad(`  ${content}`);
 
-    // ── Separator line ─────────────────────────────────
-    const sep = () => pad(t.fg("border", `  ${`─`.repeat(Math.max(2, width - 4))}`));
+    // ── Banner (full-width, styled like /btw) ─────────
+    const bannerPrefix = " pi-autocommit: ";
+    const bannerSuffix = " 整理するコミットの範囲を選択 ";
+    const bannerInner = bannerPrefix + bannerSuffix;
+    const banner = pad(t.bg("customMessageBg", t.fg("customMessageText", bannerInner)));
 
-    // ── Content line prefixed with 2 spaces ───────────
-    const line = (content: string): string =>
-      pad(`  ${content}`);
-
-    const lines: string[] = [];
-
-    // ── Top separator ─────────────────────────────────
-    lines.push(sep());
-
-    // ── Title ─────────────────────────────────────────
-    lines.push(line(t.fg("accent", "pi-autocommit: 整理するコミットの範囲を選択")));
-
-    // ── Separator ─────────────────────────────────────
-    lines.push(sep());
+    const lines: string[] = [banner, ""];
 
     // ── Commit list (scrolled window) ─────────────────
     const visible = this.visibleSlice;
@@ -238,7 +229,9 @@ export class CommitPicker {
         const isCursor = absIndex === this.cursorIndex;
 
         let text = this.formatLine(absIndex);
-        text = truncateToWidth(text, width - 2);
+        // Reserve 2-char gutter like /btw
+        const avail = width - 2;
+        text = truncateToWidth(text, avail);
 
         // Apply colours.
         if (inRange && isCursor) {
@@ -271,16 +264,11 @@ export class CommitPicker {
       lines.push(line(t.fg("error", this.errorMessage)));
     }
 
-    // ── Separator ─────────────────────────────────────
-    lines.push(sep());
-
-    // ── Help text ─────────────────────────────────────
+    // ── Footer (like /btw footer) ─────────────────────
+    lines.push("");
     lines.push(
       line(t.fg("dim", "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル")),
     );
-
-    // ── Bottom separator ──────────────────────────────
-    lines.push(sep());
 
     return lines;
   }
@@ -332,10 +320,8 @@ export async function showCommitPicker(
       overlay: true,
       overlayOptions: {
         anchor: "center",
-        width: "80%",
-        minWidth: 48,
-        margin: 2,
-        maxHeight: "75%",
+        width: "100%",
+        maxHeight: "85%",
       },
     },
   );
