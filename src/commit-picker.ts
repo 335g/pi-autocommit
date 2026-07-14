@@ -1,5 +1,14 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Key, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+  DynamicBorder,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
+import {
+  Container,
+  Text,
+  matchesKey,
+  Key,
+  truncateToWidth,
+} from "@earendil-works/pi-tui";
 
 // ── Public types ─────────────────────────────────────────
 
@@ -205,18 +214,7 @@ export class CommitPicker {
 
   render(width: number): string[] {
     const t = this.theme;
-
-    // ── Helpers ─────────────────────────────────────────
-    const pad = (s: string) => s.padEnd(width);
-    const line = (content: string) => pad(`  ${content}`);
-
-    // ── Banner (full-width, styled like /btw) ─────────
-    const bannerPrefix = " pi-autocommit: ";
-    const bannerSuffix = " 整理するコミットの範囲を選択 ";
-    const bannerInner = bannerPrefix + bannerSuffix;
-    const banner = pad(t.bg("customMessageBg", t.fg("customMessageText", bannerInner)));
-
-    const lines: string[] = [banner, ""];
+    const lines: string[] = [];
 
     // ── Commit list (scrolled window) ─────────────────
     const visible = this.visibleSlice;
@@ -229,7 +227,6 @@ export class CommitPicker {
         const isCursor = absIndex === this.cursorIndex;
 
         let text = this.formatLine(absIndex);
-        // Reserve 2-char gutter like /btw
         const avail = width - 2;
         text = truncateToWidth(text, avail);
 
@@ -248,7 +245,7 @@ export class CommitPicker {
       } else {
         label = "";
       }
-      lines.push(line(label));
+      lines.push(`  ${label}`);
     }
 
     // ── Scroll info ────────────────────────────────────
@@ -256,19 +253,16 @@ export class CommitPicker {
       const total = this.items.length;
       const from = this.scrollOffset + 1;
       const to = Math.min(this.scrollOffset + this.maxVisible, total);
-      lines.push(line(t.fg("dim", `(${from}-${to}/${total})`)));
+      lines.push(`  ${t.fg("dim", `(${from}-${to}/${total})`)}`);
     }
 
     // ── Error row ──────────────────────────────────────
     if (this.errorMessage) {
-      lines.push(line(t.fg("error", this.errorMessage)));
+      lines.push(`  ${t.fg("error", this.errorMessage)}`);
     }
 
-    // ── Footer (like /btw footer) ─────────────────────
+    // ── Blank spacer ──────────────────────────────────
     lines.push("");
-    lines.push(
-      line(t.fg("dim", "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル")),
-    );
 
     return lines;
   }
@@ -300,31 +294,51 @@ export async function showCommitPicker(
 
   const { startIndex, endIndex } = defaultRange(items);
 
-  return ctx.ui.custom<PickerResult | null>(
-    (tui, theme, _kb, done) => {
-      const picker = new CommitPicker(items, startIndex, endIndex, theme);
+  return ctx.ui.custom<PickerResult | null>((tui, theme, _kb, done) => {
+    const container = new Container();
 
-      picker.onConfirm = (result) => done(result);
-      picker.onCancel = () => done(null);
+    // Top border
+    container.addChild(
+      new DynamicBorder((s: string) => theme.fg("accent", s)),
+    );
 
-      return {
-        render: (w: number) => picker.render(w),
-        invalidate: () => picker.invalidate(),
-        handleInput: (data: string) => {
-          picker.handleInput(data);
-          tui.requestRender();
-        },
-      };
-    },
-    {
-      overlay: true,
-      overlayOptions: {
-        anchor: "center",
-        width: "100%",
-        maxHeight: "85%",
+    // Title
+    container.addChild(
+      new Text(
+        theme.fg("accent", theme.bold("pi-autocommit: 整理するコミットの範囲を選択")),
+        1,
+        0,
+      ),
+    );
+
+    // Help text
+    container.addChild(
+      new Text(
+        theme.fg("dim", "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル"),
+        1,
+        0,
+      ),
+    );
+
+    const picker = new CommitPicker(items, startIndex, endIndex, theme);
+    picker.onConfirm = (result) => done(result);
+    picker.onCancel = () => done(null);
+    container.addChild(picker);
+
+    // Bottom border
+    container.addChild(
+      new DynamicBorder((s: string) => theme.fg("accent", s)),
+    );
+
+    return {
+      render: (w: number) => container.render(w),
+      invalidate: () => container.invalidate(),
+      handleInput: (data: string) => {
+        picker.handleInput(data);
+        tui.requestRender();
       },
-    },
-  );
+    };
+  });
 }
 
 /**
