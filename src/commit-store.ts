@@ -65,6 +65,11 @@ export interface CommitStore {
   commit(message: string): Promise<ExecResult>;
 
   /**
+   * Return the last N commits in `%H%x00%s` format, newest first.
+   */
+  getRecentCommits(maxCount: number): Promise<string>;
+
+  /**
    * Walk backwards from HEAD and return every reachable commit whose
    * subject starts with `marker`, along with its SHA and
    * `Checkpoint-Session` trailer value (or `null` when absent).
@@ -151,6 +156,10 @@ export class GitCommitStore implements CommitStore {
 
   async commit(message: string): Promise<ExecResult> {
     return this.git.commit(message);
+  }
+
+  async getRecentCommits(maxCount: number): Promise<string> {
+    return this.git.getRecentCommits(maxCount);
   }
 
   async findReachableCheckpoints(

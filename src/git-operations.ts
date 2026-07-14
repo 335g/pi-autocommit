@@ -255,6 +255,19 @@ export class GitOperations {
   }
 
   /**
+   * Return the last N commits in `%H%x00%s` format, newest first.
+   */
+  async getRecentCommits(maxCount: number): Promise<string> {
+    const { stdout } = await this.pi.exec("git", [
+      "log",
+      `--max-count=${maxCount}`,
+      "--pretty=format:%H%x00%s",
+      "--no-decorate",
+    ]);
+    return stdout;
+  }
+
+  /**
    * Walk backwards from HEAD and return every reachable commit whose subject
    * starts with `marker`, along with its SHA and `Checkpoint-Session` trailer
    * value (or `null` when absent).
