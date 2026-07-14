@@ -311,6 +311,15 @@ class InMemoryCommitStore implements CommitStore {
     return this.options.commitResult ?? { code: 0, stdout: "", stderr: "", killed: false };
   }
 
+  async getRecentCommits(maxCount: number): Promise<string> {
+    this.operations.push(`getRecentCommits:${maxCount}`);
+    const commits = this.options.checkpointCommits ?? [];
+    return commits
+      .slice(0, maxCount)
+      .map((c, i) => `sha-${i}\0${c.message}`)
+      .join("\n");
+  }
+
   async findReachableCheckpoints(
     marker: string,
   ): Promise<

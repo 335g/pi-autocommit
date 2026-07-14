@@ -468,3 +468,68 @@ async function fallbackSingleCommit(
     message: `Reorganisation fell back to a single commit:\n${message.split("\n")[0]}`,
   });
 }
+
+/**
+ * Reorganise a user-selected range of commits into logical Conventional Commits.
+ *
+ * Called from the interactive commit picker popup at `agent_end`. Resets past
+ * the oldest selected commit and reuses the same LLM-based group-splitting
+ * pipeline as {@link organizeCheckpointCommits}.
+ *
+ * @param range 0-based indexes from HEAD (inclusive). `startIndex` ≤ `endIndex`.
+ */
+export async function reorganiseSelectedRange(
+  ctx: ExtensionContext,
+  config: PiAutocommitConfig,
+  event: AgentEndEvent,
+  store: CommitStore,
+  range: { startIndex: number; endIndex: number },
+  complete?: CompleteFn,
+): Promise<OrganizerResult> {
+  const events: PipelineEvent[] = [];
+
+  const resetCount = range.endIndex + 1;
+  await store.resetSoft(resetCount);
+
+  try {
+    const groups = await proposeCommitGroups(ctx, config, event, store, complete);
+    if (groups.length === 0) {
+      await fallbackSingleCommit(ctx, config, store, events, complete);
+      events.push({
+        type: "organised",
+        checkpointCount: resetCount,
+        commitCount: 1,
+      });
+    } else {
+      const commitCount = await commitGroups(store, groups, events);
+      events.push({
+        type: "organised",
+        checkpointCount: resetCount,
+        commitCount,
+      });
+    }
+  } catch (error) {
+    try {
+      await store.stageAll();
+      await fallbackSingleCommit(ctx, config, store, events, complete);
+      events.push({
+        type: "organised",
+        checkpointCount: resetCount,
+        commitCount: 1,
+      });
+    } catch {
+      const message = error instanceof Error ? error.message : String(error);
+      events.push({
+        type: "error",
+        message: `pi-autocommit: 範囲の再編成に失敗しました — ${message}`,
+      });
+    }
+  }
+
+  events.push({
+    type: "stage-changed",
+    hasChanges: await store.checkUncommittedChanges(),
+  });
+
+  return { events, organised: true };
+}
