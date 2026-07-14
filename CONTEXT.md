@@ -59,6 +59,15 @@ _Avoid_: scope config, scope rules
 A slash command (`/autocommit-organise`) that reorganises checkpoint commits on demand. With no argument it reorganises all checkpoint commits at HEAD; when a checkpoint session is chosen from a popup, it reorganises only that session's checkpoints, including scattered stray checkpoints.
 _Avoid_: organize command, manual commit, /organize
 
+## Interactive reorganisation
+
+**Commit picker**
+A popup shown at `agent_end` that lists recent commits and lets the user select a range to squash and reorganise. `wip(checkpoint):` commits are auto-selected (`[1]` at HEAD, `[2]` at the last checkpoint). The user can extend the range to include non-checkpoint commits by moving the cursor and pressing `1` / `2`.
+
+**Range-based reset**
+`git reset --soft HEAD~{N}` where N is the depth of the oldest selected commit from HEAD. All changes in the selected range become staged and are fed to the reorganiser's LLM pipeline for splitting into logical Conventional Commits.
+_Avoid_: interactive squash, range squash
+
 ## Status
 
 **Uncommitted-changes indicator**
