@@ -273,6 +273,39 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ───────────────────────────────────────────────────────
+  // /autocommit-test-picker — show commit picker popup with sample data
+  // ───────────────────────────────────────────────────────
+
+  pi.registerCommand("autocommit-test-picker", {
+    description: "Show the commit picker popup with sample data (for testing).",
+    handler: async (_args, ctx) => {
+      const items = [
+        { sha: "aaa", subject: "wip(checkpoint): turn 5", isCheckpoint: true },
+        { sha: "bbb", subject: "wip(checkpoint): turn 4", isCheckpoint: true },
+        { sha: "ccc", subject: "wip(checkpoint): turn 3", isCheckpoint: true },
+        { sha: "ddd", subject: "feat: implement X", isCheckpoint: false },
+        { sha: "eee", subject: "fix: correct Y", isCheckpoint: false },
+        { sha: "fff", subject: "chore: update deps", isCheckpoint: false },
+        { sha: "ggg", subject: "docs: add readme", isCheckpoint: false },
+        { sha: "hhh", subject: "refactor: extract module", isCheckpoint: false },
+        { sha: "iii", subject: "wip(checkpoint): turn 2", isCheckpoint: true },
+        { sha: "jjj", subject: "wip(checkpoint): turn 1", isCheckpoint: true },
+        { sha: "kkk", subject: "test: add integration tests", isCheckpoint: false },
+      ];
+
+      const range = await showCommitPicker(ctx, items);
+      if (range !== null) {
+        ctx.ui.notify(
+          `選択範囲: ${range.startIndex} (HEAD) 〜 ${range.endIndex} (HEAD~${range.endIndex})`,
+          "info",
+        );
+      } else {
+        ctx.ui.notify("キャンセルしました", "info");
+      }
+    },
+  });
+
+  // ───────────────────────────────────────────────────────
   // Show uncommitted changes indicator in footer
   // ───────────────────────────────────────────────────────
 
