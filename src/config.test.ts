@@ -227,7 +227,7 @@ void describe("saveModel", () => {
       const parsed = JSON.parse(raw);
       assert.strictEqual(parsed.model, "anthropic/claude-sonnet-4");
       assert.strictEqual(parsed.lang, "en");
-      assert.strictEqual(parsed.enable, true);
+      assert.strictEqual(parsed.enable, false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
