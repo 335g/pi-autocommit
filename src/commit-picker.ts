@@ -108,6 +108,12 @@ export class CommitPicker {
 
   public onConfirm?: (result: PickerResult) => void;
   public onCancel?: () => void;
+  public onLoadMore?: (count: number) => Promise<CommitItem[]>;
+  private loadingMore = false;
+  private requestRender?: () => void;
+  public setRequestRender(fn: () => void): void {
+    this.requestRender = fn;
+  }
 
   constructor(
     items: CommitItem[],
@@ -190,6 +196,17 @@ export class CommitPicker {
       if (this.cursorIndex < this.items.length - 1) {
         this.cursorIndex++;
         this.ensureCursorVisible();
+      } else if (this.onLoadMore && !this.loadingMore) {
+        this.loadingMore = true;
+        this.onLoadMore(this.items.length).then((newItems) => {
+          if (newItems && newItems.length > 0) {
+            this.items.push(...newItems);
+            this.cursorIndex++;
+            this.ensureCursorVisible();
+          }
+          this.loadingMore = false;
+          this.requestRender?.();
+        });
       }
     } else if (data === "1") {
       this.startIndex = this.cursorIndex;
@@ -251,7 +268,8 @@ export class CommitPicker {
       const total = this.items.length;
       const from = this.scrollOffset + 1;
       const to = Math.min(this.scrollOffset + this.maxVisible, total);
-      lines.push(`  ${t.fg("dim", `(${from}-${to}/${total})`)}`);
+      const loadingSuffix = this.loadingMore ? ` ${t.fg("dim", "(読み込み中…)")}` : "";
+      lines.push(`  ${t.fg("dim", `(${from}-${to}/${total})`)}${loadingSuffix}`);
     }
 
     // ── Error row ──────────────────────────────────────
@@ -283,6 +301,7 @@ export class CommitPicker {
 export async function showCommitPicker(
   ctx: ExtensionContext,
   items: CommitItem[],
+  loadMore?: (count: number) => Promise<CommitItem[]>,
 ): Promise<PickerResult | null> {
   if (items.length === 0) return null;
 
@@ -312,7 +331,7 @@ export async function showCommitPicker(
     // Help text
     container.addChild(
       new Text(
-        theme.fg("dim", "↑↓ 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル"),
+        theme.fg("dim", "↑↓/jk 移動 · 1 始点 · 2 終点 · Enter 確認 · Esc キャンセル"),
         1,
         0,
       ),
@@ -321,6 +340,8 @@ export async function showCommitPicker(
     const picker = new CommitPicker(items, startIndex, endIndex, theme);
     picker.onConfirm = (result) => done(result);
     picker.onCancel = () => done(null);
+    picker.onLoadMore = loadMore;
+    picker.setRequestRender(() => tui.requestRender());
     container.addChild(picker);
 
     // Bottom border
