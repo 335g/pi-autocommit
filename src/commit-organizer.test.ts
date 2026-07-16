@@ -311,7 +311,7 @@ class InMemoryCommitStore implements CommitStore {
     return this.options.commitResult ?? { code: 0, stdout: "", stderr: "", killed: false };
   }
 
-  async getRecentCommits(maxCount: number): Promise<string> {
+  async getRecentCommits(maxCount: number, _skip?: number): Promise<string> {
     this.operations.push(`getRecentCommits:${maxCount}`);
     const commits = this.options.checkpointCommits ?? [];
     return commits
