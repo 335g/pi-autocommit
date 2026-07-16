@@ -18,6 +18,7 @@ import {
 import {
   buildCommitItems,
   showCommitPicker,
+  type CommitItem,
 } from "./commit-picker.js";
 import { loadConfig, saveEnable, saveModel } from "./config.js";
 import { GitCommitStore } from "./commit-store.js";
