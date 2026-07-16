@@ -257,13 +257,11 @@ export class GitOperations {
   /**
    * Return the last N commits in `%H%x00%s` format, newest first.
    */
-  async getRecentCommits(maxCount: number): Promise<string> {
-    const { stdout } = await this.pi.exec("git", [
-      "log",
-      `--max-count=${maxCount}`,
-      "--pretty=format:%H%x00%s",
-      "--no-decorate",
-    ]);
+  async getRecentCommits(maxCount: number, skip = 0): Promise<string> {
+    const args = ["log"];
+    if (skip > 0) args.push(`--skip=${skip}`);
+    args.push(`--max-count=${maxCount}`, "--pretty=format:%H%x00%s", "--no-decorate");
+    const { stdout } = await this.pi.exec("git", args);
     return stdout;
   }
 
