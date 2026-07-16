@@ -425,7 +425,7 @@ export default function (pi: ExtensionAPI) {
 
       // TUI mode: show interactive commit picker popup.
       if (ctx.mode === "tui") {
-        const raw = await commitStore.getRecentCommits(100);
+        const raw = await commitStore.getRecentCommits(config.commitPickerMaxCommits);
         const items = buildCommitItems(raw);
 
         // No items means the git log was empty (unlikely but guard).
