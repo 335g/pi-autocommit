@@ -1,4 +1,5 @@
 import {
+  type AgentEndEvent,
   type ExtensionAPI,
   type ExtensionContext,
   isToolCallEventType,
@@ -233,11 +234,44 @@ export default function (pi: ExtensionAPI) {
       const config = loadConfig(ctx.cwd);
       const trimmed = args?.trim();
 
-      // No argument: reorganise all reachable checkpoint commits (session-agnostic).
+      // No argument: show interactive commit picker popup.
       if (trimmed === "") {
         const store = new GitCommitStore(git);
-        const result = await reorganiseCheckpointsManual(ctx, config, store);
-        await handlePipelineEvents(ctx, statusIndicator, result.events);
+
+        if (ctx.mode === "tui") {
+          const raw = await store.getRecentCommits(config.commitPickerMaxCommits);
+          const items = buildCommitItems(raw);
+
+          if (items.length === 0) {
+            ctx.ui.notify("pi-autocommit: コミットが見つかりません", "info");
+            await statusIndicator.updateFooter();
+            return;
+          }
+
+          const loadMore = async (count: number): Promise<CommitItem[]> => {
+            const raw = await git.getRecentCommits(10, count);
+            return buildCommitItems(raw);
+          };
+
+          const range = await showCommitPicker(ctx, items, loadMore);
+          if (range !== null) {
+            const result = await reorganiseSelectedRange(
+              ctx,
+              config,
+              { type: "agent_end", messages: [] } as AgentEndEvent,
+              store,
+              range,
+            );
+            await handlePipelineEvents(ctx, statusIndicator, result.events);
+          } else {
+            ctx.ui.notify("pi-autocommit: 整理をキャンセルしました", "info");
+          }
+        } else {
+          // Non-TUI: keep the existing auto-reorganise path.
+          const result = await reorganiseCheckpointsManual(ctx, config, store);
+          await handlePipelineEvents(ctx, statusIndicator, result.events);
+        }
+
         await statusIndicator.updateFooter();
         return;
       }
