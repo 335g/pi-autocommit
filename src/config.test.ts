@@ -259,6 +259,46 @@ void describe("saveModel", () => {
     }
   });
 
+  void it("loads commitPickerMaxCommits from config", () => {
+    const dir = withConfigFile({ commitPickerMaxCommits: 50 });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.commitPickerMaxCommits, 50);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("defaults commitPickerMaxCommits to 30 when not set", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.commitPickerMaxCommits, 30);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("ignores non-positive commitPickerMaxCommits and falls back to default", () => {
+    const dir = withConfigFile({ commitPickerMaxCommits: -1 });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.commitPickerMaxCommits, 30);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("ignores non-integer commitPickerMaxCommits and falls back to default", () => {
+    const dir = withConfigFile({ commitPickerMaxCommits: 3.5 });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.commitPickerMaxCommits, 30);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   void it("deletes the model key when passed undefined", () => {
     const dir = withConfigFile({ lang: "ja", enable: true, model: "anthropic/claude-sonnet-4" });
     try {

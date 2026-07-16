@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 // Known config keys (camelCase as they appear in JSON)
-const KNOWN_KEYS = new Set(["lang", "enable", "model", "scope"]);
+const KNOWN_KEYS = new Set(["lang", "enable", "model", "scope", "commitPickerMaxCommits"]);
 
 /** Config file name, relative to `.pi/`. */
 const CONFIG_FILENAME = "pi-autocommit.json";
@@ -29,11 +29,18 @@ export interface PiAutocommitConfig {
    * When unset (or empty), the LLM infers the scope as before.
    */
   scope?: Record<string, string>;
+
+  /**
+   * Maximum number of recent commits to fetch from HEAD for the commit picker
+   * popup shown at `agent_end`. Defaults to `30`.
+   */
+  commitPickerMaxCommits: number;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
   lang: "en",
   enable: true,
+  commitPickerMaxCommits: 30,
 };
 
 /**
@@ -79,7 +86,14 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? normaliseScope(parsed.scope as Record<string, unknown>)
         : undefined;
 
-    return { lang, enable, model, scope };
+    const commitPickerMaxCommits =
+      typeof parsed.commitPickerMaxCommits === "number" &&
+      Number.isInteger(parsed.commitPickerMaxCommits) &&
+      parsed.commitPickerMaxCommits > 0
+        ? parsed.commitPickerMaxCommits
+        : DEFAULT_CONFIG.commitPickerMaxCommits;
+
+    return { lang, enable, model, scope, commitPickerMaxCommits };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
