@@ -66,8 +66,11 @@ export interface CommitStore {
 
   /**
    * Return the last N commits in `%H%x00%s` format, newest first.
+   *
+   * @param maxCount maximum number of commits to return
+   * @param skip number of commits to skip from HEAD (for pagination)
    */
-  getRecentCommits(maxCount: number): Promise<string>;
+  getRecentCommits(maxCount: number, skip?: number): Promise<string>;
 
   /**
    * Walk backwards from HEAD and return every reachable commit whose
@@ -158,8 +161,8 @@ export class GitCommitStore implements CommitStore {
     return this.git.commit(message);
   }
 
-  async getRecentCommits(maxCount: number): Promise<string> {
-    return this.git.getRecentCommits(maxCount);
+  async getRecentCommits(maxCount: number, skip?: number): Promise<string> {
+    return this.git.getRecentCommits(maxCount, skip);
   }
 
   async findReachableCheckpoints(
