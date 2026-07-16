@@ -231,10 +231,8 @@ export class CommitPicker {
         text = truncateToWidth(text, avail);
 
         // Apply colours.
-        if (inRange && isCursor) {
+        if (inRange) {
           label = t.bg("selectedBg", t.fg("accent", text));
-        } else if (inRange) {
-          label = t.fg("accent", text);
         } else if (isCursor) {
           label = t.bg("selectedBg", text);
         } else if (item.isCheckpoint) {
