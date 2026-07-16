@@ -434,7 +434,12 @@ export default function (pi: ExtensionAPI) {
           return;
         }
 
-        const range = await showCommitPicker(ctx, items);
+        const loadMore = async (count: number): Promise<CommitItem[]> => {
+          const raw = await git.getRecentCommits(10, count);
+          return buildCommitItems(raw);
+        };
+
+        const range = await showCommitPicker(ctx, items, loadMore);
         if (range !== null) {
           const result = await reorganiseSelectedRange(
             ctx,
