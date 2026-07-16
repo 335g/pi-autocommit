@@ -19,11 +19,11 @@ function withConfigFile(data: Record<string, unknown>): string {
 }
 
 void describe("loadConfig", () => {
-  void it("defaults to enabled when no config file exists", () => {
+  void it("defaults to disabled when no config file exists", () => {
     const dir = mkdtempSync("/tmp/pi-autocommit-test-");
     try {
       const config = loadConfig(dir);
-      assert.strictEqual(config.enable, true);
+      assert.strictEqual(config.enable, false);
       assert.strictEqual(config.lang, "en");
     } finally {
       rmSync(dir, { recursive: true, force: true });
