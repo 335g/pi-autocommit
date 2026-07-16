@@ -13,7 +13,7 @@ const CONFIG_FILENAME = "pi-autocommit.json";
 export interface PiAutocommitConfig {
   /** Language for the commit message (subject and body). `"ja"` → Japanese, anything else → English */
   lang: string;
-  /** Whether auto-commit is enabled. Defaults to `true`. */
+  /** Whether auto-commit is enabled. Defaults to `false`. */
   enable: boolean;
   /**
    * LLM model for commit message generation, in `"provider/modelId"` format
@@ -39,14 +39,14 @@ export interface PiAutocommitConfig {
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
   lang: "en",
-  enable: true,
+  enable: false,
   commitPickerMaxCommits: 30,
 };
 
 /**
  * Load `.pi/pi-autocommit.json` from the project root.
  *
- * Returns default config (English, auto-commit enabled) when the file is
+ * Returns default config (English, auto-commit disabled) when the file is
  * missing or unreadable.
  */
 export function loadConfig(cwd: string): PiAutocommitConfig {
