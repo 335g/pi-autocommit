@@ -8,7 +8,7 @@ import {
 } from "./scope-resolver.js";
 
 function config(scope?: Record<string, string>): PiAutocommitConfig {
-  return { lang: "en", enable: true, scope };
+  return { lang: "en", enable: true, commitPickerMaxCommits: 30, scope };
 }
 
 void describe("hasScopeMapping", () => {

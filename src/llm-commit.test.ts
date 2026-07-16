@@ -3,6 +3,13 @@ import { describe, it } from "node:test";
 import type { PiAutocommitConfig } from "./config.js";
 import { resolveModel, validateModelString } from "./llm-commit.js";
 
+/** Base config preset for tests so each it() only overrides what it needs. */
+const BASE_CONFIG: PiAutocommitConfig = {
+  lang: "en",
+  enable: true,
+  commitPickerMaxCommits: 30,
+};
+
 /**
  * Minimal stub for the `ModelRegistry` surface used by `resolveModel`.
  */
@@ -29,7 +36,7 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiAutocommitConfig = { lang: "en", enable: true };
+    const config: PiAutocommitConfig = { ...BASE_CONFIG };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -45,7 +52,7 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiAutocommitConfig = { lang: "en", enable: true, model: "" };
+    const config: PiAutocommitConfig = { ...BASE_CONFIG, model: "" };
 
     const result = resolveModel(
       makeCtx(sessionModel, registry) as never,
@@ -63,8 +70,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "anthropic/claude-sonnet-4",
     };
 
@@ -83,8 +89,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "anthropic/unknown-model",
     };
 
@@ -104,8 +109,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => false,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "anthropic/claude-sonnet-4",
     };
 
@@ -124,8 +128,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "invalid",
     };
 
@@ -144,8 +147,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "/foo",
     };
 
@@ -164,8 +166,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "foo/",
     };
 
@@ -182,7 +183,7 @@ void describe("resolveModel", () => {
       find: () => undefined,
       hasConfiguredAuth: () => true,
     };
-    const config: PiAutocommitConfig = { lang: "en", enable: true };
+    const config: PiAutocommitConfig = { ...BASE_CONFIG };
 
     const result = resolveModel(makeCtx(undefined, registry) as never, config);
 
@@ -195,8 +196,7 @@ void describe("resolveModel", () => {
       hasConfiguredAuth: () => true,
     };
     const config: PiAutocommitConfig = {
-      lang: "en",
-      enable: true,
+      ...BASE_CONFIG,
       model: "anthropic/unknown",
     };
 
