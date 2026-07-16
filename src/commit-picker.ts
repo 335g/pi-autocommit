@@ -181,12 +181,12 @@ export class CommitPicker {
     // Any key clears the error.
     this.errorMessage = null;
 
-    if (matchesKey(data, Key.up)) {
+    if (matchesKey(data, Key.up) || data === "k") {
       if (this.cursorIndex > 0) {
         this.cursorIndex--;
         this.ensureCursorVisible();
       }
-    } else if (matchesKey(data, Key.down)) {
+    } else if (matchesKey(data, Key.down) || data === "j") {
       if (this.cursorIndex < this.items.length - 1) {
         this.cursorIndex++;
         this.ensureCursorVisible();
