@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { shouldCreateCheckpointCommit } from "./commit-decider.js";
 import { isGitCommitCommand } from "./commit-guard.js";
+import { shouldSkipReorganisation } from "./head-guard.js";
 import type { PipelineEvent } from "./commit-events.js";
 import {
   organizeCheckpointCommits,
@@ -84,6 +85,9 @@ export default function (pi: ExtensionAPI) {
   // Captured from session_start so getArgumentCompletions (which has no
   // ctx) can access the model registry.
   let cachedModelRegistry: ExtensionContext["modelRegistry"] | undefined;
+  // HEAD commit SHA captured at agent_start. Used at agent_end to decide
+  // whether the agent run produced any commits.
+  let agentBaselineHead: string | null = null;
   const git = new GitOperations(pi);
 
   // ───────────────────────────────────────────────────────
@@ -368,6 +372,16 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ───────────────────────────────────────────────────────
+  // Capture baseline HEAD at the start of each agent run
+  // ───────────────────────────────────────────────────────
+
+  pi.on("agent_start", async (_event, _ctx) => {
+    // Reset per-run baseline. If HEAD cannot be read, leave it as null so
+    // agent_end falls back to its normal behaviour.
+    agentBaselineHead = await git.getHead();
+  });
+
+  // ───────────────────────────────────────────────────────
   // Commit guard: block agent-initiated `git commit` during the agent loop
   // ───────────────────────────────────────────────────────
 
@@ -448,6 +462,15 @@ export default function (pi: ExtensionAPI) {
 
     try {
       const commitStore = new GitCommitStore(git);
+
+      // Skip reorganisation when HEAD has not moved since agent_start.
+      // This means the agent run produced no commits, so there is nothing
+      // to reorganise.
+      const currentHead = await commitStore.getHead();
+      if (shouldSkipReorganisation(agentBaselineHead, currentHead)) {
+        await statusIndicator.updateFooter();
+        return;
+      }
 
       // TUI mode: show interactive commit picker popup.
       if (ctx.mode === "tui") {
