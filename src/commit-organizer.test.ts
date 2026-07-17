@@ -36,7 +36,13 @@ function makeCtx(model: unknown) {
 }
 
 function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
-  return { lang: "en", enable: true, commitPickerMaxCommits: 30, ...over };
+  return {
+    lang: "en",
+    enable: true,
+    commitPickerMaxCommits: 30,
+    deferReorganise: false,
+    ...over,
+  };
 }
 
 void describe("completeCommitGroups parsing", () => {

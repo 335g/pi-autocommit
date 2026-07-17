@@ -64,6 +64,7 @@ pi install @335g/pi-autocommit
 |-----|------|---------|-------------|
 | `lang` | string | `"en"` | コミットメッセージの言語: `"ja"`（日本語）または `"en"`（英語） |
 | `enable` | boolean | `true` | 自動コミットを有効にするか |
+| `deferReorganise` | boolean | `false` | `true` の場合、`turn_end` では checkpoint コミットを作成するが、`agent_end` での整理をスキップする。切り替えは `/autocommit-defer` |
 | `model` | string | — | コミットメッセージ生成に使用する LLM モデルを `"provider/modelId"` 形式で指定（例: `"anthropic/claude-sonnet-4"`）。省略時はセッションの現在のモデルを使用 |
 | `scope` | object | — | パスから scope へのマッピング。Conventional Commits の scope を決定論的に固定します。設定すると LLM は scope を推論せず、変更ファイルパスから解決されます。下記の [スコープマッピング](#スコープマッピング) を参照 |
 
@@ -76,6 +77,26 @@ pi install @335g/pi-autocommit
 ```
 
 git リポジトリ外では設定に関わらず何もしません。
+
+### 整理の延期（Deferred reorganisation）
+
+質問回答1回ごとにエージェントループが終了する grilling セッションなど、毎回の `agent_end` で整理したくない場合は `deferReorganise` を `true` にします:
+
+```json
+{
+  "deferReorganise": true
+}
+```
+
+このモードでは:
+
+- `turn_end` は checkpoint コミットを作成し続けるため、作業が失われることはありません。
+- `agent_end` は commit picker ポップアップを出さず、checkpoint の整理を**行いません**。
+- スキップした `agent_end` ごとに、未整理 checkpoint の件数を含む通知が表示されます。
+
+整理する準備ができたら `/autocommit-defer false` を実行してください。TUI モードでは即座に commit picker が開き、non-TUI モードでは自動で整理されます。これにより溜まった checkpoint をまとめて論理的な Conventional Commits にまとめられます。
+
+すぐに整理せずにモードだけ切り替えたい場合は `/autocommit-defer true` を使ってください。
 
 ### スコープマッピング
 
