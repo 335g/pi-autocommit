@@ -18,6 +18,19 @@ export class GitOperations {
   constructor(private readonly pi: ExtensionAPI) {}
 
   /**
+   * Get the current HEAD commit SHA.
+   * Returns `null` when git is not available or HEAD cannot be resolved.
+   */
+  async getHead(): Promise<string | null> {
+    const { stdout, code } = await this.pi.exec("git", ["rev-parse", "HEAD"]);
+    if (code !== 0) {
+      return null;
+    }
+    const sha = stdout.trim();
+    return sha.length > 0 ? sha : null;
+  }
+
+  /**
    * Check whether the current directory is inside a git working tree.
    * Returns `true` on success, `false` if not a git repo.
    */
