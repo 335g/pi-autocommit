@@ -202,6 +202,8 @@ class InMemoryCommitStore implements CommitStore {
   constructor(
     private readonly options: {
       insideRepo?: boolean;
+      /** Current HEAD SHA. Defaults to `null`. */
+      headSha?: string | null;
       /** Ordered from HEAD (index 0) backward. */
       checkpointCommits?: CheckpointCommit[];
       /**
@@ -225,6 +227,11 @@ class InMemoryCommitStore implements CommitStore {
   async isInsideGitRepo(): Promise<boolean> {
     this.operations.push("isInsideGitRepo");
     return this.options.insideRepo ?? true;
+  }
+
+  async getHead(): Promise<string | null> {
+    this.operations.push("getHead");
+    return this.options.headSha ?? null;
   }
 
   async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {

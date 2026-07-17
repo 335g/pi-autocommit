@@ -17,6 +17,11 @@ export interface CommitStore {
   isInsideGitRepo(): Promise<boolean>;
 
   /**
+   * Get the current HEAD commit SHA, or `null` when it cannot be resolved.
+   */
+  getHead(): Promise<string | null>;
+
+  /**
    * Count how many consecutive commits at HEAD match the given marker.
    * The reorganiser uses this to discover checkpoint commits created at
    * `turn_end`.
@@ -114,6 +119,10 @@ export class GitCommitStore implements CommitStore {
 
   async isInsideGitRepo(): Promise<boolean> {
     return this.git.isInsideGitRepo();
+  }
+
+  async getHead(): Promise<string | null> {
+    return this.git.getHead();
   }
 
   async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
