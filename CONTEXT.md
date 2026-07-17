@@ -35,6 +35,10 @@ _Avoid_: commit splitter, commit cleaner
 The checkpoint-then-reorganise strategy: lightweight checkpoint commits are created during the agent loop and reorganised into logical Conventional Commits at `agent_end`.
 _Avoid_: commit mode, commit timing
 
+**Agent baseline HEAD**
+The HEAD commit SHA captured at `agent_start`. At `agent_end`, pi-autocommit compares the current HEAD against this baseline; if they are identical, the commit reorganiser (and the TUI commit picker popup) is skipped because the agent run produced no commits.
+_Avoid_: initial HEAD, session HEAD, starting HEAD
+
 ## Commit message generation
 
 **Commit prompt module**
