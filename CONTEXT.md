@@ -35,6 +35,10 @@ _Avoid_: commit splitter, commit cleaner
 The checkpoint-then-reorganise strategy: lightweight checkpoint commits are created during the agent loop and reorganised into logical Conventional Commits at `agent_end`.
 _Avoid_: commit mode, commit timing
 
+**Deferred reorganisation**
+A mode in which checkpoint commits are still created at `turn_end` but the commit reorganiser (and the commit picker popup) is skipped at `agent_end`, deliberately leaving stray checkpoints to be reorganised later by the manual organise command. Enabled via the `deferReorganise` config key and toggled with `/autocommit-defer`; turning the mode off immediately offers the commit picker popup to reorganise the accumulated checkpoints.
+_Avoid_: skip mode, checkpoint-only mode
+
 **Agent baseline HEAD**
 The HEAD commit SHA captured at `agent_start`. At `agent_end`, pi-autocommit compares the current HEAD against this baseline; if they are identical, the commit reorganiser (and the TUI commit picker popup) is skipped because the agent run produced no commits.
 _Avoid_: initial HEAD, session HEAD, starting HEAD
