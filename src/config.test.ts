@@ -2,7 +2,12 @@ import assert from "node:assert";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadConfig, saveEnable, saveModel } from "./config.js";
+import {
+  loadConfig,
+  saveDeferReorganise,
+  saveEnable,
+  saveModel,
+} from "./config.js";
 
 /**
  * Create a temporary directory with a `.pi/pi-autocommit.json` file.
@@ -157,6 +162,98 @@ void describe("loadConfig scope", () => {
     try {
       const config = loadConfig(dir);
       assert.deepStrictEqual(config.scope, { "**": "app" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe("loadConfig deferReorganise", () => {
+  void it("defaults deferReorganise to false when not set", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.deferReorganise, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("parses deferReorganise: true", () => {
+    const dir = withConfigFile({ deferReorganise: true });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.deferReorganise, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("ignores non-boolean deferReorganise and falls back to default", () => {
+    const dir = withConfigFile({ deferReorganise: "true" });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.deferReorganise, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe("saveDeferReorganise", () => {
+  void it("creates a default file when none exists", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      saveDeferReorganise(dir, true);
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.deferReorganise, true);
+      assert.strictEqual(parsed.lang, "en");
+      assert.strictEqual(parsed.enable, false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("overwrites only deferReorganise and preserves other known keys", () => {
+    const dir = withConfigFile({
+      lang: "ja",
+      enable: true,
+      model: "anthropic/claude-sonnet-4",
+    });
+    try {
+      saveDeferReorganise(dir, true);
+      const config = loadConfig(dir);
+      assert.strictEqual(config.deferReorganise, true);
+      assert.strictEqual(config.lang, "ja");
+      assert.strictEqual(config.enable, true);
+      assert.strictEqual(config.model, "anthropic/claude-sonnet-4");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("preserves unknown keys", () => {
+    const dir = withConfigFile({ enable: true, custom_key: "keep-me" });
+    try {
+      saveDeferReorganise(dir, true);
+      const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
+      const parsed = JSON.parse(raw);
+      assert.strictEqual(parsed.deferReorganise, true);
+      assert.strictEqual(parsed.custom_key, "keep-me");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("can toggle deferReorganise on and off", () => {
+    const dir = withConfigFile({ lang: "ja" });
+    try {
+      saveDeferReorganise(dir, true);
+      assert.strictEqual(loadConfig(dir).deferReorganise, true);
+      saveDeferReorganise(dir, false);
+      assert.strictEqual(loadConfig(dir).deferReorganise, false);
+      assert.strictEqual(loadConfig(dir).lang, "ja");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

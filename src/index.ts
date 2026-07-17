@@ -22,7 +22,13 @@ import {
   showCommitPicker,
   type CommitItem,
 } from "./commit-picker.js";
-import { loadConfig, saveEnable, saveModel } from "./config.js";
+import {
+  loadConfig,
+  type PiAutocommitConfig,
+  saveDeferReorganise,
+  saveEnable,
+  saveModel,
+} from "./config.js";
 import { GitCommitStore } from "./commit-store.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
@@ -63,6 +69,79 @@ async function handlePipelineEvents(
       case "stage-changed":
         await statusIndicator.updateFooter();
         break;
+    }
+  }
+}
+
+/**
+ * Show the commit picker popup and reorganise the selected range.
+ *
+ * Used by `/autocommit-organise`, `/autocommit-defer false`, and `agent_end`.
+ * In TUI mode, shows the picker; in non-TUI mode, auto-reorganises using the
+ * appropriate manual or agent_end path.
+ *
+ * @param manual When `true`, use the manual command reorganise path
+ *   (`reorganiseCheckpointsManual`). When `false`, use the agent_end path
+ *   (`organizeCheckpointCommits` scoped to the current session).
+ * @param emptyMessage Optional message shown when no recent commits are found.
+ */
+async function maybeRunInteractiveReorganise(
+  ctx: ExtensionContext,
+  config: PiAutocommitConfig,
+  event: AgentEndEvent,
+  statusIndicator: StatusIndicator,
+  store: GitCommitStore,
+  manual: boolean,
+  emptyMessage?: string,
+): Promise<void> {
+  const raw = await store.getRecentCommits(config.commitPickerMaxCommits);
+  const items = buildCommitItems(raw);
+
+  if (items.length === 0) {
+    if (emptyMessage) {
+      ctx.ui.notify(emptyMessage, "info");
+    }
+    await statusIndicator.updateFooter();
+    return;
+  }
+
+  if (ctx.mode === "tui") {
+    const loadMore = async (count: number): Promise<CommitItem[]> => {
+      const raw = await store.getRecentCommits(10, count);
+      return buildCommitItems(raw);
+    };
+
+    const range = await showCommitPicker(ctx, items, loadMore);
+    if (range !== null) {
+      const result = await reorganiseSelectedRange(
+        ctx,
+        config,
+        event,
+        store,
+        range,
+      );
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
+    } else {
+      ctx.ui.notify(
+        "pi-autocommit: 整理をキャンセルしました。「/autocommit-organise」で後から整理できます",
+        "info",
+      );
+    }
+  } else {
+    if (manual) {
+      const result = await reorganiseCheckpointsManual(ctx, config, store);
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
+    } else {
+      const sessionId = ctx.sessionManager.getSessionId();
+      const result = await organizeCheckpointCommits(
+        ctx,
+        config,
+        event,
+        store,
+        undefined,
+        sessionId,
+      );
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
     }
   }
 }
@@ -114,6 +193,65 @@ export default function (pi: ExtensionAPI) {
       const enable = trimmed === "true";
       saveEnable(ctx.cwd, enable);
       ctx.ui.notify(`pi-autocommit: enable = ${enable}`, "info");
+    },
+  });
+
+  // ───────────────────────────────────────────────────────
+  // /autocommit-defer [true|false]
+  // ───────────────────────────────────────────────────────
+
+  pi.registerCommand("autocommit-defer", {
+    description:
+      "Toggle deferred reorganisation (true|false). When true, checkpoint " +
+      "commits are created at turn_end but the commit reorganiser (and " +
+      "the agent_end popup) is skipped; use false to show the commit picker " +
+      "and reorganise immediately. No arg shows current state.",
+    handler: async (args, ctx) => {
+      const config = loadConfig(ctx.cwd);
+      const trimmed = args?.trim().toLowerCase();
+
+      if (trimmed === "") {
+        ctx.ui.notify(
+          `pi-autocommit: deferReorganise = ${config.deferReorganise}`,
+          "info",
+        );
+        return;
+      }
+
+      if (trimmed !== "true" && trimmed !== "false") {
+        ctx.ui.notify("Usage: /autocommit-defer <true|false>", "error");
+        return;
+      }
+
+      const defer = trimmed === "true";
+      saveDeferReorganise(ctx.cwd, defer);
+      ctx.ui.notify(`pi-autocommit: deferReorganise = ${defer}`, "info");
+
+      if (!defer) {
+        const statusIndicator = new StatusIndicator(git, ctx);
+        const store = new GitCommitStore(git);
+        const checkpointCount = await store.countCheckpointCommits(
+          CHECKPOINT_COMMIT_MARKER,
+        );
+        if (checkpointCount === 0) {
+          ctx.ui.notify(
+            "pi-autocommit: 整理対象の checkpoint がありません",
+            "info",
+          );
+          await statusIndicator.updateFooter();
+          return;
+        }
+        const event = { type: "agent_end", messages: [] } as AgentEndEvent;
+        await maybeRunInteractiveReorganise(
+          ctx,
+          config,
+          event,
+          statusIndicator,
+          store,
+          true,
+        );
+        await statusIndicator.updateFooter();
+      }
     },
   });
 
@@ -241,41 +379,16 @@ export default function (pi: ExtensionAPI) {
       // No argument: show interactive commit picker popup.
       if (trimmed === "") {
         const store = new GitCommitStore(git);
-
-        if (ctx.mode === "tui") {
-          const raw = await store.getRecentCommits(config.commitPickerMaxCommits);
-          const items = buildCommitItems(raw);
-
-          if (items.length === 0) {
-            ctx.ui.notify("pi-autocommit: コミットが見つかりません", "info");
-            await statusIndicator.updateFooter();
-            return;
-          }
-
-          const loadMore = async (count: number): Promise<CommitItem[]> => {
-            const raw = await git.getRecentCommits(10, count);
-            return buildCommitItems(raw);
-          };
-
-          const range = await showCommitPicker(ctx, items, loadMore);
-          if (range !== null) {
-            const result = await reorganiseSelectedRange(
-              ctx,
-              config,
-              { type: "agent_end", messages: [] } as AgentEndEvent,
-              store,
-              range,
-            );
-            await handlePipelineEvents(ctx, statusIndicator, result.events);
-          } else {
-            ctx.ui.notify("pi-autocommit: 整理をキャンセルしました", "info");
-          }
-        } else {
-          // Non-TUI: keep the existing auto-reorganise path.
-          const result = await reorganiseCheckpointsManual(ctx, config, store);
-          await handlePipelineEvents(ctx, statusIndicator, result.events);
-        }
-
+        const event = { type: "agent_end", messages: [] } as AgentEndEvent;
+        await maybeRunInteractiveReorganise(
+          ctx,
+          config,
+          event,
+          statusIndicator,
+          store,
+          true,
+          "pi-autocommit: コミットが見つかりません",
+        );
         await statusIndicator.updateFooter();
         return;
       }
@@ -463,6 +576,22 @@ export default function (pi: ExtensionAPI) {
     try {
       const commitStore = new GitCommitStore(git);
 
+      // Deferred reorganisation: keep creating checkpoints at turn_end,
+      // but skip the commit picker popup / auto-reorganise at agent_end.
+      if (config.deferReorganise) {
+        const checkpointCount = await commitStore.countCheckpointCommits(
+          CHECKPOINT_COMMIT_MARKER,
+        );
+        if (checkpointCount > 0) {
+          ctx.ui.notify(
+            `pi-autocommit: deferReorganise が有効なため整理をスキップしました（未整理 checkpoint: ${checkpointCount}件）。/autocommit-defer false で整理できます`,
+            "info",
+          );
+        }
+        await statusIndicator.updateFooter();
+        return;
+      }
+
       // Skip reorganisation when HEAD has not moved since agent_start.
       // This means the agent run produced no commits, so there is nothing
       // to reorganise.
@@ -472,58 +601,14 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // TUI mode: show interactive commit picker popup.
-      if (ctx.mode === "tui") {
-        const raw = await commitStore.getRecentCommits(config.commitPickerMaxCommits);
-        const items = buildCommitItems(raw);
-
-        if (items.length === 0) {
-          await statusIndicator.updateFooter();
-          return;
-        }
-
-        const loadMore = async (count: number): Promise<CommitItem[]> => {
-          const raw = await git.getRecentCommits(10, count);
-          return buildCommitItems(raw);
-        };
-
-        const range = await showCommitPicker(ctx, items, loadMore);
-        if (range !== null) {
-          const result = await reorganiseSelectedRange(
-            ctx,
-            config,
-            event,
-            commitStore,
-            range,
-          );
-          await handlePipelineEvents(ctx, statusIndicator, result.events);
-        } else {
-          ctx.ui.notify(
-            "pi-autocommit: 整理をキャンセルしました。「/autocommit-organise」で後から整理できます",
-            "info",
-          );
-        }
-      } else {
-        // Non-TUI (e.g. RPC): check for consecutive checkpoints,
-        // then auto-reorganise.
-        const checkpointCount = await commitStore.countCheckpointCommits(
-          CHECKPOINT_COMMIT_MARKER,
-        );
-        if (checkpointCount === 0) {
-          await statusIndicator.updateFooter();
-          return;
-        }
-        const sessionId = ctx.sessionManager.getSessionId();
-        const result = await organizeCheckpointCommits(
-          ctx,
-          config,
-          event,
-          commitStore,
-          undefined,
-          sessionId,
-        );
-        await handlePipelineEvents(ctx, statusIndicator, result.events);
-      }
+      await maybeRunInteractiveReorganise(
+        ctx,
+        config,
+        event,
+        statusIndicator,
+        commitStore,
+        false,
+      );
 
       await statusIndicator.updateFooter();
     } catch (error) {

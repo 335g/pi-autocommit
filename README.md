@@ -62,6 +62,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 |-----|------|---------|-------------|
 | `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
 | `enable` | boolean | `true` | Whether auto-commit is active |
+| `deferReorganise` | boolean | `false` | When `true`, checkpoint commits are still created at `turn_end`, but reorganisation at `agent_end` is skipped. Use `/autocommit-defer` to toggle. |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 
@@ -74,6 +75,26 @@ Create `.pi/pi-autocommit.json` in your project root:
 ```
 
 Outside a git repository, the extension does nothing regardless of config.
+
+### Deferred reorganisation
+
+When you want checkpoints to accumulate without being reorganised at every `agent_end` — for example during a grilling session where each question/answer round is its own agent loop — set `deferReorganise` to `true`:
+
+```json
+{
+  "deferReorganise": true
+}
+```
+
+In this mode:
+
+- `turn_end` still creates checkpoint commits, so your work is never lost.
+- `agent_end` skips the commit picker popup and does **not** reorganise the checkpoints.
+- Each skipped `agent_end` shows a notification with the count of unreorganised checkpoints.
+
+When you are ready to reorganise, run `/autocommit-defer false`. The command immediately shows the commit picker popup (TUI) or auto-reorganises (non-TUI) so you can bundle the accumulated checkpoints into logical Conventional Commits.
+
+You can also toggle the mode without reorganising immediately with `/autocommit-defer true`.
 
 ### Scope mapping
 

@@ -8,6 +8,7 @@ const BASE_CONFIG: PiAutocommitConfig = {
   lang: "en",
   enable: true,
   commitPickerMaxCommits: 30,
+  deferReorganise: false,
 };
 
 /**
