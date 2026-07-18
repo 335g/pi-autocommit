@@ -59,7 +59,7 @@ async function handlePipelineEvents(
         break;
       case "organised":
         ctx.ui.notify(
-          `Organised ${event.checkpointCount} checkpoint(s) into ${event.commitCount} commit(s).`,
+          `Organise complete: ${event.checkpointCount} checkpoint(s) reorganised into ${event.commitCount} commit(s).`,
           "info",
         );
         break;
@@ -69,6 +69,33 @@ async function handlePipelineEvents(
       case "stage-changed":
         await statusIndicator.updateFooter();
         break;
+    }
+  }
+}
+
+/**
+ * Run an async function while showing the organise progress indicator
+ * in the TUI working loader row.
+ *
+ * The indicator is hidden and the working message is restored in the
+ * finally block so success and error paths alike clean up the UI.
+ */
+async function runWithOrganiseProgress<T>(
+  ctx: ExtensionContext,
+  label: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const wasTui = ctx.mode === "tui";
+  if (wasTui) {
+    ctx.ui.setWorkingMessage(label);
+    ctx.ui.setWorkingVisible(true);
+  }
+  try {
+    return await fn();
+  } finally {
+    if (wasTui) {
+      ctx.ui.setWorkingVisible(false);
+      ctx.ui.setWorkingMessage();
     }
   }
 }
@@ -113,12 +140,10 @@ async function maybeRunInteractiveReorganise(
 
     const range = await showCommitPicker(ctx, items, loadMore);
     if (range !== null) {
-      const result = await reorganiseSelectedRange(
+      const result = await runWithOrganiseProgress(
         ctx,
-        config,
-        event,
-        store,
-        range,
+        "Reorganising checkpoint commits...",
+        () => reorganiseSelectedRange(ctx, config, event, store, range),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
@@ -129,17 +154,26 @@ async function maybeRunInteractiveReorganise(
     }
   } else {
     if (manual) {
-      const result = await reorganiseCheckpointsManual(ctx, config, store);
+      const result = await runWithOrganiseProgress(
+        ctx,
+        "Reorganising checkpoint commits...",
+        () => reorganiseCheckpointsManual(ctx, config, store),
+      );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
       const sessionId = ctx.sessionManager.getSessionId();
-      const result = await organizeCheckpointCommits(
+      const result = await runWithOrganiseProgress(
         ctx,
-        config,
-        event,
-        store,
-        undefined,
-        sessionId,
+        "Reorganising checkpoint commits...",
+        () =>
+          organizeCheckpointCommits(
+            ctx,
+            config,
+            event,
+            store,
+            undefined,
+            sessionId,
+          ),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     }
@@ -395,11 +429,10 @@ export default function (pi: ExtensionAPI) {
 
       // Session ID provided directly as argument.
       const store = new GitCommitStore(git);
-      const result = await reorganiseCheckpointsManual(
+      const result = await runWithOrganiseProgress(
         ctx,
-        config,
-        store,
-        trimmed,
+        "Reorganising checkpoint commits...",
+        () => reorganiseCheckpointsManual(ctx, config, store, trimmed),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
