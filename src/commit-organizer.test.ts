@@ -363,6 +363,33 @@ class InMemoryCommitStore implements CommitStore {
     }
     return { success: true };
   }
+
+  async hardReset(_sha: string): Promise<void> {
+    this.operations.push(`hardReset:${_sha}`);
+    this.stagedFiles = [];
+  }
+
+  async applyRangeDiff(
+    _ancestor: string,
+    _descendant: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    this.operations.push(`applyRangeDiff:${_ancestor}..${_descendant}`);
+    if (this.stagedFiles.length === 0 && this.options.checkpointCommits) {
+      for (const commit of this.options.checkpointCommits) {
+        for (const file of commit.files) {
+          if (!this.stagedFiles.includes(file)) {
+            this.stagedFiles.push(file);
+          }
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  async cherryPick(_sha: string): Promise<{ success: boolean; error?: string }> {
+    this.operations.push(`cherryPick:${_sha}`);
+    return { success: true };
+  }
 }
 
 function makeEvent(): AgentEndEvent {
