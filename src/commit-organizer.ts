@@ -472,9 +472,12 @@ async function fallbackSingleCommit(
 /**
  * Reorganise a user-selected range of commits into logical Conventional Commits.
  *
- * Called from the interactive commit picker popup at `agent_end`. Resets past
- * the oldest selected commit and reuses the same LLM-based group-splitting
- * pipeline as {@link organizeCheckpointCommits}.
+ * Called from the interactive commit picker popup at `agent_end`. When the
+ * range starts at HEAD (startIndex=0), uses the fast path
+ * (`resetSoft`). When the range starts after HEAD (startIndex>0), preserves
+ * the above-range commits by extracting the range diff, resetting to before
+ * the range, applying the range diff, reorganising, then cherry-picking the
+ * above-range commits back on top.
  *
  * @param range 0-based indexes from HEAD (inclusive). `startIndex` ≤ `endIndex`.
  */
@@ -487,26 +490,158 @@ export async function reorganiseSelectedRange(
   complete?: CompleteFn,
 ): Promise<OrganizerResult> {
   const events: PipelineEvent[] = [];
+  const { startIndex: lo, endIndex: hi } = range;
+  const commitCount = hi - lo + 1;
 
-  const resetCount = range.endIndex + 1;
-  await store.resetSoft(resetCount);
+  if (lo === 0) {
+    // ════════════════════════════════════════════════════════════
+    // Fast path: range starts at HEAD — use resetSoft directly.
+    // ════════════════════════════════════════════════════════════
+    const resetCount = hi + 1;
+    await store.resetSoft(resetCount);
+
+    try {
+      const groups = await proposeCommitGroups(
+        ctx,
+        config,
+        event,
+        store,
+        complete,
+      );
+      if (groups.length === 0) {
+        await fallbackSingleCommit(ctx, config, store, events, complete);
+        events.push({
+          type: "organised",
+          checkpointCount: commitCount,
+          commitCount: 1,
+        });
+      } else {
+        const actual = await commitGroups(store, groups, events);
+        events.push({
+          type: "organised",
+          checkpointCount: commitCount,
+          commitCount: actual,
+        });
+      }
+    } catch (error) {
+      try {
+        await store.stageAll();
+        await fallbackSingleCommit(ctx, config, store, events, complete);
+        events.push({
+          type: "organised",
+          checkpointCount: commitCount,
+          commitCount: 1,
+        });
+      } catch {
+        const message = error instanceof Error ? error.message : String(error);
+        events.push({
+          type: "error",
+          message: `pi-autocommit: 範囲の再編成に失敗しました — ${message}`,
+        });
+      }
+    }
+
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+
+    return { events, organised: true };
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // Slow path: range starts after HEAD.
+  // 1. Collect SHAs for above-range commits and range boundaries
+  // 2. hardReset to beforeSHA (clean state)
+  // 3. Apply range diff to both working tree and index
+  // 4. Run reorganiser pipeline
+  // 5. Cherry-pick above-range commits back on top
+  // ════════════════════════════════════════════════════════════════
+
+  // Fetch (hi+2) commits so we have SHAs for:
+  //   [0..lo-1] = above-range commits
+  //   [lo]      = rangeStartSHA (first commit in range)
+  //   [hi]      = rangeEndSHA (last commit in range)
+  //   [hi+1]    = beforeSHA (parent of rangeEndSHA)
+  const rawAll = await store.getRecentCommits(hi + 2);
+  const allSHAs: string[] = [];
+  for (const line of rawAll.trim().split("\n")) {
+    if (!line) continue;
+    const sha = line.split("\0")[0];
+    if (sha) allSHAs.push(sha);
+  }
+
+  if (allSHAs.length <= hi + 1) {
+    events.push({
+      type: "error",
+      message:
+        "pi-autocommit: 選択範囲のコミット情報が取得できませんでした",
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised: false };
+  }
+
+  const beforeSHA = allSHAs[hi + 1]; // HEAD~(hi+1)
+  const rangeStartSHA = allSHAs[lo]; // HEAD~lo
+  // above-range SHAs (newest first) at positions 0..lo-1
+  const aboveSHAs = allSHAs.slice(0, lo);
+  // Reverse to oldest-first for cherry-pick
+  const aboveSHAsOldestFirst = [...aboveSHAs].reverse();
 
   try {
-    const groups = await proposeCommitGroups(ctx, config, event, store, complete);
+    // Step 2: reset to before the range (clean working tree + index).
+    await store.hardReset(beforeSHA);
+
+    // Step 3: apply the combined range diff to both working tree and index.
+    const applyResult = await store.applyRangeDiff(beforeSHA, rangeStartSHA);
+    if (!applyResult.success) {
+      events.push({
+        type: "error",
+        message:
+          `pi-autocommit: 範囲の差分適用に失敗しました — ${applyResult.error || "不明なエラー"}`,
+      });
+      return { events, organised: false };
+    }
+
+    // Step 4: run reorganiser — propose groups and commit them.
+    const groups = await proposeCommitGroupsFromReasoning(
+      ctx,
+      config,
+      store,
+      extractAssistantContext(event.messages),
+      complete,
+    );
+
     if (groups.length === 0) {
       await fallbackSingleCommit(ctx, config, store, events, complete);
       events.push({
         type: "organised",
-        checkpointCount: resetCount,
+        checkpointCount: commitCount,
         commitCount: 1,
       });
     } else {
-      const commitCount = await commitGroups(store, groups, events);
+      const actual = await commitGroups(store, groups, events);
       events.push({
         type: "organised",
-        checkpointCount: resetCount,
-        commitCount,
+        checkpointCount: commitCount,
+        commitCount: actual,
       });
+    }
+
+    // Step 5: cherry-pick each above-range commit back in order (oldest first).
+    for (const sha of aboveSHAsOldestFirst) {
+      const cherryResult = await store.cherryPick(sha);
+      if (!cherryResult.success) {
+        events.push({
+          type: "error",
+          message:
+            `pi-autocommit: cherry-pick に失敗しました — ${cherryResult.error || "不明なエラー"}。手動で解決してください。`,
+        });
+        break;
+      }
     }
   } catch (error) {
     try {
@@ -514,7 +649,7 @@ export async function reorganiseSelectedRange(
       await fallbackSingleCommit(ctx, config, store, events, complete);
       events.push({
         type: "organised",
-        checkpointCount: resetCount,
+        checkpointCount: commitCount,
         commitCount: 1,
       });
     } catch {
