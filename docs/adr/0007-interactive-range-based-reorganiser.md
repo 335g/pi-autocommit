@@ -32,11 +32,14 @@ common case (squash all checkpoints) is a single Enter press.
 
 ### Trigger
 
-- Always shown at `agent_end` when at least one checkpoint commit exists
-  at HEAD and the session is in TUI mode.
+- Shown at `agent_end` when there are recent commits and the session is in
+  TUI mode. The popup always lets the user select any range — checkpoint
+  commits are not required.
 - Non-TUI (RPC) mode falls back to the original automatic reorganisation
   path.
-- Show no popup when there are zero checkpoint commits.
+- Show no popup when there are zero recent commits (e.g. a freshly
+  initialised repository with no history) or when `head-guard` detects
+  that HEAD did not move during the agent run.
 
 ### Popup
 
@@ -66,7 +69,7 @@ common case (squash all checkpoints) is a single Enter press.
 | `↑` / `↓` | Move cursor one line. Scrolls the list when at the edge. |
 | `1` | Set range start (`[1]`) at cursor position. |
 | `2` | Set range end (`[2]`) at cursor position. |
-| `Enter` | Confirm — validate that at least one checkpoint is in range, then close the popup and begin reorganisation. If no checkpoint is found, show an inline error and stay open. |
+| `Enter` | Confirm — close the popup and begin reorganisation of the selected range. |
 | `Esc` | Cancel — close popup, leave the working tree as-is. |
 
 ### Range-based reset
@@ -85,8 +88,6 @@ exclude a commit, they narrow the range instead.
 
 ### Error handling
 
-- **No checkpoint in range:** the popup stays open and shows a
-  `"チェックポイントが範囲に含まれていません"` error.
 - **LLM failure:** falls back to a single Conventional Commit via the
   existing `fallbackSingleCommit`.
 - **User cancels (Esc):** no git operations are performed. The user can
