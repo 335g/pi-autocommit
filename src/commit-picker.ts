@@ -213,14 +213,6 @@ export class CommitPicker {
     } else if (data === "2") {
       this.endIndex = this.cursorIndex;
     } else if (matchesKey(data, Key.enter)) {
-      // Validate that at least one checkpoint is in range.
-      const hasCheckpoint = this.items
-        .slice(this.lo, this.hi + 1)
-        .some((item) => item.isCheckpoint);
-      if (!hasCheckpoint) {
-        this.errorMessage = "チェックポイントが範囲に含まれていません";
-        return;
-      }
       this.onConfirm?.({ startIndex: this.lo, endIndex: this.hi });
     } else if (matchesKey(data, Key.escape)) {
       this.onCancel?.();
@@ -400,15 +392,6 @@ async function showCommitPickerNonTUI(
     startIndex: 0,
     endIndex: chosenIndex,
   };
-
-  // Validate checkpoint presence.
-  const hasCheckpoint = items
-    .slice(0, chosenIndex + 1)
-    .some((item) => item.isCheckpoint);
-  if (!hasCheckpoint) {
-    ctx.ui.notify("チェックポイントが範囲に含まれていません", "error");
-    return null;
-  }
 
   return result;
 }
