@@ -76,6 +76,10 @@ A popup shown at `agent_end` that lists recent commits and lets the user select 
 `git reset --soft HEAD~{N}` where N is the depth of the oldest selected commit from HEAD. All changes in the selected range become staged and are fed to the reorganiser's LLM pipeline for splitting into logical Conventional Commits.
 _Avoid_: interactive squash, range squash
 
+**Organise progress indicator**
+A TUI element shown while the commit reorganiser is running, indicating that reorganisation is in progress. It is dismissed when the reorganiser finishes or when an error occurs, at which point a completion or error message replaces it.
+_Avoid_: spinner, loading icon, organise loader
+
 ## Status
 
 **Uncommitted-changes indicator**
