@@ -98,6 +98,25 @@ export interface CommitStore {
   applyCommitDiffToIndex(
     sha: string,
   ): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Hard reset HEAD, index, and working tree to a specific commit.
+   */
+  hardReset(sha: string): Promise<void>;
+
+  /**
+   * Compute the diff between two commits and apply it to both the working
+   * tree and the index via `git apply --3way --index`.
+   */
+  applyRangeDiff(
+    ancestor: string,
+    descendant: string,
+  ): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Cherry-pick a single commit onto the current HEAD.
+   */
+  cherryPick(sha: string): Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -186,5 +205,20 @@ export class GitCommitStore implements CommitStore {
     sha: string,
   ): Promise<{ success: boolean; error?: string }> {
     return this.git.applyCommitDiffToIndex(sha);
+  }
+
+  async hardReset(sha: string): Promise<void> {
+    return this.git.hardReset(sha);
+  }
+
+  async applyRangeDiff(
+    ancestor: string,
+    descendant: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    return this.git.applyRangeDiff(ancestor, descendant);
+  }
+
+  async cherryPick(sha: string): Promise<{ success: boolean; error?: string }> {
+    return this.git.cherryPick(sha);
   }
 }
