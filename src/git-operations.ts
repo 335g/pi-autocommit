@@ -354,4 +354,66 @@ export class GitOperations {
     }
     return { success: true };
   }
+
+  /**
+   * Hard reset HEAD, index, and working tree to a specific commit.
+   * Equivalent to `git reset --hard <sha>`.
+   */
+  async hardReset(sha: string): Promise<void> {
+    const result = await this.pi.exec("git", [
+      "reset",
+      "--hard",
+      sha,
+    ]);
+    if (result.code !== 0) {
+      throw new Error(
+        `git reset --hard ${sha} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+      );
+    }
+  }
+
+  /**
+   * Compute the diff between two commits and apply it to both the working
+   * tree and the index via `git apply --3way --index`.
+   *
+   * Pipe is used so the diff is streamed rather than written to a temp file.
+   */
+  async applyRangeDiff(
+    ancestor: string,
+    descendant: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const { code, stderr } = await this.pi.exec("sh", [
+      "-c",
+      `git diff ${ancestor} ${descendant} | git apply --3way --index`,
+    ]);
+    if (code !== 0) {
+      return {
+        success: false,
+        error:
+          stderr.trim() ||
+          `git apply --3way --index failed for ${ancestor}..${descendant}`,
+      };
+    }
+    return { success: true };
+  }
+
+  /**
+   * Cherry-pick a single commit onto the current HEAD.
+   * Returns `{ success: true }` on success, or `{ success: false, error }`
+   * when the cherry-pick fails (e.g. conflict).
+   */
+  async cherryPick(sha: string): Promise<{ success: boolean; error?: string }> {
+    const result = await this.pi.exec("git", ["cherry-pick", sha]);
+    if (result.code !== 0) {
+      // Abort the cherry-pick so the repo is not left in a conflicted state.
+      await this.pi.exec("git", ["cherry-pick", "--abort"]).catch(() => {});
+      return {
+        success: false,
+        error:
+          result.stderr.trim() ||
+          `git cherry-pick ${sha} failed (code ${result.code})`,
+      };
+    }
+    return { success: true };
+  }
 }
