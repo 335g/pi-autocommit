@@ -90,9 +90,10 @@ async function runWithOrganiseProgress<T>(
     ctx.ui.setWorkingMessage(label);
     ctx.ui.setWorkingVisible(true);
   }
-  // Footer status is a reliable fallback when the working loader row is not
-  // visible (e.g. outside a streaming context or in non-TUI modes).
-  ctx.ui.setStatus("pi-autocommit-organise", `[${label}]`);
+  // Show a persistent start message in the message history so the user can
+  // see that reorganisation is in progress, even when the animated working
+  // loader row is not visible (e.g. outside a streaming context).
+  ctx.ui.notify(label, "info");
   try {
     return await fn();
   } finally {
@@ -100,7 +101,6 @@ async function runWithOrganiseProgress<T>(
       ctx.ui.setWorkingVisible(false);
       ctx.ui.setWorkingMessage();
     }
-    ctx.ui.setStatus("pi-autocommit-organise", undefined);
   }
 }
 
@@ -146,7 +146,7 @@ async function maybeRunInteractiveReorganise(
     if (range !== null) {
       const result = await runWithOrganiseProgress(
         ctx,
-        "Reorganising checkpoint commits...",
+        "⏳ Reorganising checkpoint commits...",
         () => reorganiseSelectedRange(ctx, config, event, store, range),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
@@ -160,7 +160,7 @@ async function maybeRunInteractiveReorganise(
     if (manual) {
       const result = await runWithOrganiseProgress(
         ctx,
-        "Reorganising checkpoint commits...",
+        "⏳ Reorganising checkpoint commits...",
         () => reorganiseCheckpointsManual(ctx, config, store),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
@@ -168,7 +168,7 @@ async function maybeRunInteractiveReorganise(
       const sessionId = ctx.sessionManager.getSessionId();
       const result = await runWithOrganiseProgress(
         ctx,
-        "Reorganising checkpoint commits...",
+        "⏳ Reorganising checkpoint commits...",
         () =>
           organizeCheckpointCommits(
             ctx,
@@ -435,7 +435,7 @@ export default function (pi: ExtensionAPI) {
       const store = new GitCommitStore(git);
       const result = await runWithOrganiseProgress(
         ctx,
-        "Reorganising checkpoint commits...",
+        "⏳ Reorganising checkpoint commits...",
         () => reorganiseCheckpointsManual(ctx, config, store, trimmed),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
