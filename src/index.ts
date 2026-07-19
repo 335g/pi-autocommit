@@ -90,6 +90,9 @@ async function runWithOrganiseProgress<T>(
     ctx.ui.setWorkingMessage(label);
     ctx.ui.setWorkingVisible(true);
   }
+  // Footer status is a reliable fallback when the working loader row is not
+  // visible (e.g. outside a streaming context or in non-TUI modes).
+  ctx.ui.setStatus("pi-autocommit-organise", `[${label}]`);
   try {
     return await fn();
   } finally {
@@ -97,6 +100,7 @@ async function runWithOrganiseProgress<T>(
       ctx.ui.setWorkingVisible(false);
       ctx.ui.setWorkingMessage();
     }
+    ctx.ui.setStatus("pi-autocommit-organise", undefined);
   }
 }
 
