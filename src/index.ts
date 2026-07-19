@@ -85,22 +85,13 @@ async function runWithOrganiseProgress<T>(
   label: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const wasTui = ctx.mode === "tui";
-  if (wasTui) {
-    ctx.ui.setWorkingMessage(label);
-    ctx.ui.setWorkingVisible(true);
-  }
-  // Show a persistent start message in the message history so the user can
-  // see that reorganisation is in progress, even when the animated working
-  // loader row is not visible (e.g. outside a streaming context).
-  ctx.ui.notify(label, "info");
+  ctx.ui.setWorkingMessage(label);
+  ctx.ui.setWorkingVisible(true);
   try {
     return await fn();
   } finally {
-    if (wasTui) {
-      ctx.ui.setWorkingVisible(false);
-      ctx.ui.setWorkingMessage();
-    }
+    ctx.ui.setWorkingVisible(false);
+    ctx.ui.setWorkingMessage();
   }
 }
 
