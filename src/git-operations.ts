@@ -224,20 +224,45 @@ export class GitOperations {
 
   /**
    * Soft reset the last N commits, keeping their changes staged.
-   * Equivalent to `git reset --soft HEAD~N`.
+   *
+   * When `HEAD~N` exists (normal case), equivalent to `git reset --soft HEAD~N`.
+   * When `HEAD~N` does not exist because N >= total commits in the repo
+   * (e.g. every commit is a checkpoint), uses `git update-ref -d HEAD` to
+   * remove all commits while preserving staged changes.
    */
   async resetSoft(commitCount: number): Promise<void> {
     if (commitCount <= 0) {
       return;
     }
-    const result = await this.pi.exec("git", [
-      "reset",
-      "--soft",
+
+    // Check whether HEAD~N can be resolved.  When N >= total commits this
+    // fails ― fall through to the orphan-HEAD path instead of throwing.
+    const { code: verifyCode } = await this.pi.exec("git", [
+      "rev-parse",
+      "--verify",
       `HEAD~${commitCount}`,
     ]);
+    if (verifyCode === 0) {
+      const result = await this.pi.exec("git", [
+        "reset",
+        "--soft",
+        `HEAD~${commitCount}`,
+      ]);
+      if (result.code !== 0) {
+        throw new Error(
+          `git reset --soft HEAD~${commitCount} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+        );
+      }
+      return;
+    }
+
+    // HEAD~N does not exist: remove all commits while keeping staged changes
+    // by making HEAD unborn.  Subsequent operations (git diff --cached,
+    // git commit, etc.) all work correctly against an unborn HEAD.
+    const result = await this.pi.exec("git", ["update-ref", "-d", "HEAD"]);
     if (result.code !== 0) {
       throw new Error(
-        `git reset --soft HEAD~${commitCount} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+        `git update-ref -d HEAD failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
       );
     }
   }
