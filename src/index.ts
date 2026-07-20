@@ -239,8 +239,8 @@ export default function (pi: ExtensionAPI) {
     description:
       "Toggle deferred reorganisation (true|false). When true, checkpoint " +
       "commits are created at turn_end but the commit reorganiser (and " +
-      "the agent_end popup) is skipped; use false to show the commit picker " +
-      "and reorganise immediately. No arg shows current state.",
+      "the auto-reorganise at agent_end) is skipped; use false to show the " +
+      "commit picker and reorganise immediately. No arg shows current state.",
     handler: async (args, ctx) => {
       const config = loadConfig(ctx.cwd);
       const trimmed = args?.trim().toLowerCase();
@@ -635,15 +635,24 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      await maybeRunInteractiveReorganise(
+      // Auto-organise checkpoint commits directly (no interactive popup).
+      // The manual /autocommit-organise command and /autocommit-defer toggle
+      // are available for interactive use when needed.
+      const sessionId = ctx.sessionManager.getSessionId();
+      const result = await runWithOrganiseProgress(
         ctx,
-        config,
-        event,
-        statusIndicator,
-        commitStore,
-        false,
+        "⏳ チェックポイントを整理中...",
+        () =>
+          organizeCheckpointCommits(
+            ctx,
+            config,
+            event,
+            commitStore,
+            undefined,
+            sessionId,
+          ),
       );
-
+      await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
