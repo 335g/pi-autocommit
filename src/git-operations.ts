@@ -325,15 +325,18 @@ export class GitOperations {
 
     const parentSha = parent.trim();
 
-    // Pipe `git diff <parent> <sha>` into `git apply --cached`.
+    // Pipe `git diff <parent> <sha>` into `git apply --3way --cached`.
+    // --3way enables a 3-way merge fallback when the patch context doesn't
+    // match exactly, which is common when applying scattered checkpoints
+    // sequentially where later patches depend on earlier ones.
     const { code, stderr } = await this.pi.exec("sh", [
       "-c",
-      `git diff ${parentSha} ${sha} | git apply --cached`,
+      `git diff ${parentSha} ${sha} | git apply --3way --cached`,
     ]);
     if (code !== 0) {
       return {
         success: false,
-        error: stderr.trim() || `git apply --cached failed for ${sha}`,
+        error: stderr.trim() || `git apply --3way --cached failed for ${sha}`,
       };
     }
     return { success: true };
