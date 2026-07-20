@@ -449,21 +449,11 @@ export default function (pi: ExtensionAPI) {
     try {
       const commitStore = new GitCommitStore(git);
 
-      // No checkpoints → nothing to reorganise.
-      const checkpointCount = await commitStore.countCheckpointCommits(
-        CHECKPOINT_COMMIT_MARKER,
-      );
-      if (checkpointCount === 0) {
-        await statusIndicator.updateFooter();
-        return;
-      }
-
       // TUI mode: show interactive commit picker popup.
       if (ctx.mode === "tui") {
         const raw = await commitStore.getRecentCommits(config.commitPickerMaxCommits);
         const items = buildCommitItems(raw);
 
-        // No items means the git log was empty (unlikely but guard).
         if (items.length === 0) {
           await statusIndicator.updateFooter();
           return;
@@ -491,7 +481,15 @@ export default function (pi: ExtensionAPI) {
           );
         }
       } else {
-        // Non-TUI (e.g. RPC): keep the existing auto-reorganise path.
+        // Non-TUI (e.g. RPC): check for consecutive checkpoints,
+        // then auto-reorganise.
+        const checkpointCount = await commitStore.countCheckpointCommits(
+          CHECKPOINT_COMMIT_MARKER,
+        );
+        if (checkpointCount === 0) {
+          await statusIndicator.updateFooter();
+          return;
+        }
         const sessionId = ctx.sessionManager.getSessionId();
         const result = await organizeCheckpointCommits(
           ctx,
