@@ -1,9 +1,11 @@
 # Interactive range-based reorganiser via commit picker popup
 
-At `agent_end`, instead of automatically reorganising only the consecutive
-checkpoint commits, show a TUI popup that lets the user select an arbitrary
-range of recent commits (checkpoint and non-checkpoint alike) to squash
-into logical Conventional Commits.
+A TUI popup that lets the user select an arbitrary range of recent commits
+(checkpoint and non-checkpoint alike) to squash into logical Conventional
+Commits. The popup is available on demand via `/autocommit-organise`.
+
+At `agent_end`, reorganisation now runs **automatically** on checkpoint
+commits only — no interactive popup.
 
 ## Motivation
 
@@ -32,14 +34,19 @@ common case (squash all checkpoints) is a single Enter press.
 
 ### Trigger
 
-- Shown at `agent_end` when there are recent commits and the session is in
-  TUI mode. The popup always lets the user select any range — checkpoint
-  commits are not required.
-- Non-TUI (RPC) mode falls back to the original automatic reorganisation
-  path.
-- Show no popup when there are zero recent commits (e.g. a freshly
-  initialised repository with no history) or when `head-guard` detects
-  that HEAD did not move during the agent run.
+- **`agent_end` (auto):** runs `organizeCheckpointCommits` directly,
+  which soft-resets consecutive checkpoint commits from the current
+  session and reorganises them into logical Conventional Commits via
+  the LLM. No popup is shown — the operation is fully automatic.
+- **`/autocommit-organise` (manual):** shows the interactive commit
+  picker popup (TUI) or a fallback select menu (non-TUI) that lets the
+  user choose an arbitrary range of commits to reorganise.
+- **`/autocommit-defer false` (manual):** shows the same interactive
+  popup to reorganise pending checkpoints immediately.
+- Auto-organise at `agent_end` is skipped when:
+  - `deferReorganise` is `true` in config.
+  - HEAD did not move during the agent run (`head-guard`).
+  - There are no checkpoint commits at HEAD.
 
 ### Popup
 
@@ -86,23 +93,40 @@ When the user confirms a range `[lo, hi]` (0-based indexes from HEAD):
 The range is always contiguous: no skip-selection. If the user wants to
 exclude a commit, they narrow the range instead.
 
+### Auto-organise at agent_end
+
+Rather than invoking the popup, `agent_end` directly calls
+`organizeCheckpointCommits` with the current session ID. This:
+
+1. Counts consecutive checkpoint commits at HEAD belonging to the
+   current session.
+2. Soft-resets them (`git reset --soft HEAD~N`).
+3. Feeds the combined staged diff to the LLM to propose logical groups.
+4. Commits each group as a Conventional Commit.
+
+If the LLM fails or returns no groups, it falls back to a single
+Conventional Commit for all changes.
+
 ### Error handling
 
 - **LLM failure:** falls back to a single Conventional Commit via the
   existing `fallbackSingleCommit`.
-- **User cancels (Esc):** no git operations are performed. The user can
-  run `/autocommit-organise` later.
+- **User cancels (Esc in popup):** no git operations are performed. The
+  user can run `/autocommit-organise` later.
+- **Auto-organise error:** error events are dispatched via the pipeline
+  event system and shown in the UI.
 
 ## Consequences
 
 - The commit guard (ADR-0006) becomes redundant and should be removed in
   a follow-up change. The guard's original problem (interleaved commits
-  breaking auto-reorganisation) no longer applies because the user
-  explicitly selects the range.
-- The auto-reorganisation path in `organizeCheckpointCommits` is kept for
-  non-TUI sessions.
-- A new `reorganiseSelectedRange` function is added to
+  breaking auto-reorganisation) no longer applies because the user can
+  manually select the range via `/autocommit-organise`.
+- At `agent_end`, reorganisation is fully automatic — no user
+  interaction required. Checkpoints are always cleaned up.
+- The interactive popup remains available via `/autocommit-organise` for
+  users who want to reorganise a broader range (including non-checkpoint
+  commits) or organise scattered checkpoints.
+- A `reorganiseSelectedRange` function is added to
   `commit-organizer.ts`, sharing the `proposeCommitGroups` /
   `commitGroups` / `fallbackSingleCommit` helpers with the auto path.
-- The agent loop no longer silently rewrites history: every
-  reorganisation is user-confirmed.
