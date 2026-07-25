@@ -85,12 +85,8 @@ async function runWithOrganiseProgress<T>(
   label: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  // Persistent message in the history so the user can see that
-  // reorganisation has started. The working loader row is also attempted
-  // for an animated spinner, but it is only shown by pi in streaming
-  // contexts; slash commands are not a streaming context, so it may not
-  // appear.
-  ctx.ui.notify(label, "info");
+  // Show a working indicator in the TUI footer during reorganisation.
+  // Completion feedback comes from handlePipelineEvents (organised event).
   ctx.ui.setWorkingMessage(label);
   ctx.ui.setWorkingVisible(true);
   try {
