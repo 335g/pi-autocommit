@@ -29,7 +29,9 @@ import {
   saveEnable,
   saveModel,
 } from "./config.js";
-import { GitCommitStore } from "./commit-store.js";
+import { GitCheckpointStore } from "./checkpoint-store.js";
+import { GitPickerStore, type PickerStore } from "./picker-store.js";
+import { GitReorganiserStore, type ReorganiserStore } from "./reorganiser-store.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
 import { CLEAR_VALUE, showModelPopup } from "./model-popup.js";
@@ -114,11 +116,12 @@ async function maybeRunInteractiveReorganise(
   config: PiAutocommitConfig,
   event: AgentEndEvent,
   statusIndicator: StatusIndicator,
-  store: GitCommitStore,
+  pickerStore: PickerStore,
+  reorganiserStore: ReorganiserStore,
   manual: boolean,
   emptyMessage?: string,
 ): Promise<void> {
-  const raw = await store.getRecentCommits(config.commitPickerMaxCommits);
+  const raw = await pickerStore.getRecentCommits(config.commitPickerMaxCommits);
   const items = buildCommitItems(raw);
 
   if (items.length === 0) {
@@ -131,7 +134,7 @@ async function maybeRunInteractiveReorganise(
 
   if (ctx.mode === "tui") {
     const loadMore = async (count: number): Promise<CommitItem[]> => {
-      const raw = await store.getRecentCommits(10, count);
+      const raw = await pickerStore.getRecentCommits(10, count);
       return buildCommitItems(raw);
     };
 
@@ -140,7 +143,7 @@ async function maybeRunInteractiveReorganise(
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
-        () => reorganiseSelectedRange(ctx, config, event, store, range),
+        () => reorganiseSelectedRange(ctx, config, event, reorganiserStore, range),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
@@ -154,7 +157,7 @@ async function maybeRunInteractiveReorganise(
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
-        () => reorganiseCheckpointsManual(ctx, config, store),
+        () => reorganiseCheckpointsManual(ctx, config, reorganiserStore),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
@@ -167,7 +170,7 @@ async function maybeRunInteractiveReorganise(
             ctx,
             config,
             event,
-            store,
+            reorganiserStore,
             undefined,
             sessionId,
           ),
@@ -260,8 +263,8 @@ export default function (pi: ExtensionAPI) {
 
       if (!defer) {
         const statusIndicator = new StatusIndicator(git, ctx);
-        const store = new GitCommitStore(git);
-        const checkpointCount = await store.countCheckpointCommits(
+        const reorganiserStore = new GitReorganiserStore(git);
+        const checkpointCount = await reorganiserStore.countCheckpointCommits(
           CHECKPOINT_COMMIT_MARKER,
         );
         if (checkpointCount === 0) {
@@ -272,13 +275,15 @@ export default function (pi: ExtensionAPI) {
           await statusIndicator.updateFooter();
           return;
         }
+        const pickerStore = new GitPickerStore(git);
         const event = { type: "agent_end", messages: [] } as AgentEndEvent;
         await maybeRunInteractiveReorganise(
           ctx,
           config,
           event,
           statusIndicator,
-          store,
+          pickerStore,
+          reorganiserStore,
           true,
         );
         await statusIndicator.updateFooter();
@@ -409,14 +414,16 @@ export default function (pi: ExtensionAPI) {
 
       // No argument: show interactive commit picker popup.
       if (trimmed === "") {
-        const store = new GitCommitStore(git);
+        const pickerStore = new GitPickerStore(git);
+        const reorganiserStore = new GitReorganiserStore(git);
         const event = { type: "agent_end", messages: [] } as AgentEndEvent;
         await maybeRunInteractiveReorganise(
           ctx,
           config,
           event,
           statusIndicator,
-          store,
+          pickerStore,
+          reorganiserStore,
           true,
           "pi-autocommit: コミットが見つかりません",
         );
@@ -425,11 +432,11 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Session ID provided directly as argument.
-      const store = new GitCommitStore(git);
+      const reorganiserStore = new GitReorganiserStore(git);
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
-        () => reorganiseCheckpointsManual(ctx, config, store, trimmed),
+        () => reorganiseCheckpointsManual(ctx, config, reorganiserStore, trimmed),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
@@ -438,7 +445,6 @@ export default function (pi: ExtensionAPI) {
       _argumentPrefix: string,
     ): Promise<AutocompleteItem[] | null> => {
       try {
-        git
         const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
         const sessions = [
           ...new Set(commits.map((w) => w.session).filter((s): s is string => s !== null)),
@@ -566,18 +572,20 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    if (!(await git.isInsideGitRepo())) {
+    const checkpointStore = new GitCheckpointStore(git);
+
+    if (!(await checkpointStore.isInsideGitRepo())) {
       return;
     }
 
-    if (!(await git.checkUncommittedChanges())) {
+    if (!(await checkpointStore.checkStatus()).hasChanges) {
       return;
     }
 
     try {
       const sessionId = ctx.sessionManager.getSessionId();
       const result = await runCheckpointCommit(
-        git,
+        checkpointStore,
         `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
         sessionId,
       );
@@ -604,12 +612,12 @@ export default function (pi: ExtensionAPI) {
     }
 
     try {
-      const commitStore = new GitCommitStore(git);
+      const reorganiserStore = new GitReorganiserStore(git);
 
       // Deferred reorganisation: keep creating checkpoints at turn_end,
       // but skip the commit picker popup / auto-reorganise at agent_end.
       if (config.deferReorganise) {
-        const checkpointCount = await commitStore.countCheckpointCommits(
+        const checkpointCount = await reorganiserStore.countCheckpointCommits(
           CHECKPOINT_COMMIT_MARKER,
         );
         if (checkpointCount > 0) {
@@ -625,7 +633,7 @@ export default function (pi: ExtensionAPI) {
       // Skip reorganisation when HEAD has not moved since agent_start.
       // This means the agent run produced no commits, so there is nothing
       // to reorganise.
-      const currentHead = await commitStore.getHead();
+      const currentHead = await git.getHead();
       if (shouldSkipReorganisation(agentBaselineHead, currentHead)) {
         await statusIndicator.updateFooter();
         return;
@@ -643,7 +651,7 @@ export default function (pi: ExtensionAPI) {
             ctx,
             config,
             event,
-            commitStore,
+            reorganiserStore,
             undefined,
             sessionId,
           ),
