@@ -6,12 +6,12 @@ import type { OrganizerResult, PipelineEvent } from "./commit-events.js";
 import type { PiAutocommitConfig } from "./config.js";
 import {
   completeCommitGroups,
-  completeSingleMessage,
   extractAssistantContext,
   type CommitGroup,
   type CompleteFn,
 } from "./commit-prompt.js";
-import type { CommitStore } from "./commit-store.js";
+import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
+import type { ReorganiserStore } from "./reorganiser-store.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const CHECKPOINT_COMMIT_MARKER = "wip(checkpoint):";
@@ -47,7 +47,7 @@ export async function organizeCheckpointCommits(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
-  store: CommitStore,
+  store: ReorganiserStore,
   complete?: CompleteFn,
   targetSessionId?: string,
 ): Promise<OrganizerResult> {
@@ -131,7 +131,7 @@ export async function organizeCheckpointCommits(
 export async function reorganiseCheckpointsManual(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
-  store: CommitStore,
+  store: ReorganiserStore,
   targetSessionId?: string,
   complete?: CompleteFn,
 ): Promise<OrganizerResult> {
@@ -267,7 +267,7 @@ export async function reorganiseCheckpointsManual(
 async function assembleAndCommit(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
-  store: CommitStore,
+  store: ReorganiserStore,
   checkpointCount: number,
   events: PipelineEvent[],
   reasoning: string,
@@ -363,7 +363,7 @@ async function proposeCommitGroups(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
-  store: CommitStore,
+  store: ReorganiserStore,
   complete?: CompleteFn,
 ): Promise<CommitGroup[]> {
   const { diff } = await store.getStagedMaterials();
@@ -382,7 +382,7 @@ async function proposeCommitGroups(
 async function proposeCommitGroupsFromReasoning(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
-  store: CommitStore,
+  store: ReorganiserStore,
   reasoning: string,
   complete?: CompleteFn,
 ): Promise<CommitGroup[]> {
@@ -391,82 +391,6 @@ async function proposeCommitGroupsFromReasoning(
     return [];
   }
   return completeCommitGroups(ctx, config, { diff, reasoning }, complete);
-}
-
-/**
- * Stage and commit each logical group in order.
- *
- * Skips groups with no staged changes. Throws when a commit fails so the
- * caller can catch and run the fallback path.
- *
- * @returns The number of commits actually executed.
- */
-async function commitGroups(
-  store: CommitStore,
-  groups: CommitGroup[],
-  events: PipelineEvent[],
-): Promise<number> {
-  let commitCount = 0;
-  for (const group of groups) {
-    await store.unstageAll();
-    await store.stageFiles(group.files);
-
-    // Skip groups with no staged changes (e.g. duplicate files already committed).
-    if (!(await store.hasStagedChanges())) {
-      events.push({
-        type: "info",
-        message: `Skipped empty commit group: ${group.message.split("\n")[0]}`,
-      });
-      continue;
-    }
-
-    commitCount++;
-    const result = await store.commit(group.message);
-    if (result.code !== 0) {
-      const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
-      throw new Error(
-        `Commit failed (code ${result.code}): ${detail}`,
-      );
-    }
-  }
-  return commitCount;
-}
-
-/**
- * Fall back to a single Conventional Commit for all staged changes.
- *
- * One call to {@link completeSingleMessage} absorbs the LLM path and the
- * heuristic path alike — so the reorganiser's fallback no longer triggers a
- * second silent LLM roundtrip.
- */
-async function fallbackSingleCommit(
-  ctx: ExtensionContext,
-  config: PiAutocommitConfig,
-  store: CommitStore,
-  events: PipelineEvent[],
-  complete?: CompleteFn,
-): Promise<void> {
-  const { diff, nameStatus, stat } = await store.getStagedMaterials();
-
-  const message = await completeSingleMessage(
-    ctx,
-    config,
-    { diff, nameStatus, stat },
-    complete,
-  );
-
-  const result = await store.commit(message);
-  if (result.code !== 0) {
-    const detail = result.stderr.trim() || result.stdout.trim() || "Unknown error";
-    throw new Error(
-      `Fallback commit failed (code ${result.code}): ${detail}`,
-    );
-  }
-
-  events.push({
-    type: "fallback",
-    message: `Reorganisation fell back to a single commit:\n${message.split("\n")[0]}`,
-  });
 }
 
 /**
@@ -485,7 +409,7 @@ export async function reorganiseSelectedRange(
   ctx: ExtensionContext,
   config: PiAutocommitConfig,
   event: AgentEndEvent,
-  store: CommitStore,
+  store: ReorganiserStore,
   range: { startIndex: number; endIndex: number },
   complete?: CompleteFn,
 ): Promise<OrganizerResult> {

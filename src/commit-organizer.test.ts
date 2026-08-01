@@ -12,7 +12,7 @@ import {
   completeCommitGroups,
   type CompleteFn,
 } from "./commit-prompt.js";
-import type { CommitStore } from "./commit-store.js";
+import type { ReorganiserStore } from "./reorganiser-store.js";
 
 /** Minimal model stub for fake adapters. */
 const stubModel = { id: "test-model" } as unknown as Parameters<CompleteFn>[0];
@@ -182,7 +182,7 @@ package-lock.json
   });
 });
 
-// ── In-memory CommitStore for tests ────────────────────────
+// ── In-memory ReorganiserStore for tests ────────────────────────
 
 /**
  * Description of one checkpoint commit in the in-memory store.
@@ -196,11 +196,11 @@ interface CheckpointCommit {
 }
 
 /**
- * In-memory CommitStore for testing the reorganiser policy without a real git
+ * In-memory ReorganiserStore for testing the reorganiser policy without a real git
  * repository. Tracks staged files and committed messages so tests can assert
  * on the sequence of operations and the final state.
  */
-class InMemoryCommitStore implements CommitStore {
+class InMemoryReorganiserStore implements ReorganiserStore {
   public commits: string[] = [];
   public stagedFiles: string[] = [];
   public operations: string[] = [];
@@ -208,8 +208,6 @@ class InMemoryCommitStore implements CommitStore {
   constructor(
     private readonly options: {
       insideRepo?: boolean;
-      /** Current HEAD SHA. Defaults to `null`. */
-      headSha?: string | null;
       /** Ordered from HEAD (index 0) backward. */
       checkpointCommits?: CheckpointCommit[];
       /**
@@ -233,11 +231,6 @@ class InMemoryCommitStore implements CommitStore {
   async isInsideGitRepo(): Promise<boolean> {
     this.operations.push("isInsideGitRepo");
     return this.options.insideRepo ?? true;
-  }
-
-  async getHead(): Promise<string | null> {
-    this.operations.push("getHead");
-    return this.options.headSha ?? null;
   }
 
   async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
@@ -400,7 +393,7 @@ function makeEvent(): AgentEndEvent {
 
 void describe("organizeCheckpointCommits", () => {
   void it("returns no-op when not inside a git repo", async () => {
-    const store = new InMemoryCommitStore({ insideRepo: false });
+    const store = new InMemoryReorganiserStore({ insideRepo: false });
 
     const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
@@ -415,7 +408,7 @@ void describe("organizeCheckpointCommits", () => {
   });
 
   void it("returns no-op when there are no checkpoint commits", async () => {
-    const store = new InMemoryCommitStore({ checkpointCommits: [] });
+    const store = new InMemoryReorganiserStore({ checkpointCommits: [] });
 
     const result = await organizeCheckpointCommits(
       makeCtx(stubModel),
@@ -438,7 +431,7 @@ void describe("organizeCheckpointCommits", () => {
   });
 
   void it("reorganises a single checkpoint commit into one logical group", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -482,7 +475,7 @@ src/auth/types.ts
   });
 
   void it("reorganises multiple checkpoint commits into multiple logical groups", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["src/db/query.ts"] },
         { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["src/auth/login.ts"] },
@@ -526,7 +519,7 @@ src/db/query.ts
   });
 
   void it("falls back to a single commit when group proposition fails", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -559,7 +552,7 @@ src/db/query.ts
   });
 
   void it("stages each group independently and leaves the index clean", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -598,7 +591,7 @@ src/b.ts
   });
 
   void it("includes stdout in error message when stderr is empty", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -642,7 +635,7 @@ src/a.ts
   });
 
   void it("skips empty commit groups during reorganisation", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -698,7 +691,7 @@ src/b.ts
   // ── Session-aware agent_end tests ────────────────────────
 
   void it("with targetSessionId: reorganises only matching consecutive checkpoints", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         // HEAD: turns are added in order, newest first.
         {
@@ -750,7 +743,7 @@ src/db/query.ts
   });
 
   void it("with targetSessionId: stops at foreign session checkpoint", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         // HEAD: this session's checkpoint on top.
         {
@@ -804,7 +797,7 @@ src/own.ts
   });
 
   void it("with targetSessionId: returns no-op when no matching checkpoints at HEAD", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} foreign`,
@@ -831,7 +824,7 @@ src/own.ts
   });
 
   void it("backward-compat: no targetSessionId counts all consecutive checkpoints", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
@@ -881,7 +874,7 @@ src/b.ts
 
 void describe("reorganiseCheckpointsManual", () => {
   void it("returns no-op when not inside a git repo", async () => {
-    const store = new InMemoryCommitStore({ insideRepo: false });
+    const store = new InMemoryReorganiserStore({ insideRepo: false });
 
     const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
@@ -894,7 +887,7 @@ void describe("reorganiseCheckpointsManual", () => {
   });
 
   void it("returns no-op when there are no checkpoint commits", async () => {
-    const store = new InMemoryCommitStore({ checkpointCommits: [] });
+    const store = new InMemoryReorganiserStore({ checkpointCommits: [] });
 
     const result = await reorganiseCheckpointsManual(
       makeCtx(stubModel),
@@ -909,7 +902,7 @@ void describe("reorganiseCheckpointsManual", () => {
   });
 
   void it("no targetSessionId: reorganises all consecutive checkpoints", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
@@ -956,7 +949,7 @@ src/b.ts
 
   void it("no targetSessionId: reorganises scattered checkpoints behind regular commits", async () => {
     // HEAD is a regular commit; checkpoints are deeper in history.
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: "feat: regular commit on top",
@@ -1004,7 +997,7 @@ src/b.ts
   });
 
   void it("with targetSessionId contiguous: reset-soft path", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
@@ -1044,7 +1037,7 @@ src/b.ts
 
   void it("with targetSessionId scattered: apply-commit-diff path", async () => {
     // Scattered: HEAD belongs to session-b, session-a checkpoints are below.
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         // HEAD (index 0) belongs to the OTHER session.
         {
@@ -1093,7 +1086,7 @@ src/own2.ts
   });
 
   void it("with targetSessionId: returns no-op when no matching checkpoints exist", async () => {
-    const store = new InMemoryCommitStore({
+    const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         {
           message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
