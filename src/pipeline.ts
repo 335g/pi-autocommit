@@ -1,5 +1,5 @@
 import type { PipelineEvent, PipelineResult } from "./commit-events.js";
-import { GitOperations } from "./git-operations.js";
+import type { CheckpointStore } from "./checkpoint-store.js";
 
 // ── Checkpoint commit ──────────────────────────────────────
 
@@ -25,7 +25,7 @@ import { GitOperations } from "./git-operations.js";
  * Footer-status updates are the caller's responsibility.
  */
 export async function runCheckpointCommit(
-  git: GitOperations,
+  store: CheckpointStore,
   message: string,
   sessionId?: string,
 ): Promise<PipelineResult> {
@@ -34,13 +34,13 @@ export async function runCheckpointCommit(
 
   try {
     // ── 1. Verify git repository ────────────────────────
-    if (!(await git.isInsideGitRepo())) {
+    if (!(await store.isInsideGitRepo())) {
       events.push({ type: "error", message: "Not a git repository" });
       return { events, committed: false };
     }
 
     // ── 2. Check for merge conflict ─────────────────────
-    if (await git.hasMergeConflict()) {
+    if (await store.hasMergeConflict()) {
       events.push({
         type: "error",
         message: "Merge conflict in progress. Skipping checkpoint commit.",
@@ -49,7 +49,7 @@ export async function runCheckpointCommit(
     }
 
     // ── 3. Check for changes ────────────────────────────
-    const status = await git.checkStatus();
+    const status = await store.checkStatus();
     if (!status.hasChanges) {
       events.push({ type: "info", message: "No changes to checkpoint" });
       events.push({ type: "stage-changed", hasChanges: false });
@@ -57,14 +57,14 @@ export async function runCheckpointCommit(
     }
 
     // ── 4. Stage all files ──────────────────────────────
-    await git.stageAll();
+    await store.stageAll();
 
     // ── 5. Execute commit ───────────────────────────────
     // Append Checkpoint-Session trailer when a session id is available.
     const commitMessage = sessionId
       ? `${message}\n\nCheckpoint-Session: ${sessionId}`
       : message;
-    const result = await git.commit(commitMessage);
+    const result = await store.commit(commitMessage);
     if (result.code !== 0) {
       throw new Error(
         `Commit failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
@@ -81,7 +81,7 @@ export async function runCheckpointCommit(
   } catch (error) {
     // Error boundary: cleanup before re-throwing.
     try {
-      await git.unstageAll();
+      await store.unstageAll();
     } catch {
       // Best-effort cleanup
     }
