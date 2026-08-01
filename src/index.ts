@@ -7,9 +7,11 @@ import {
 import {
   type AutocompleteItem,
 } from "@earendil-works/pi-tui";
-import { shouldCreateCheckpointCommit } from "./commit-decider.js";
-import { isGitCommitCommand } from "./commit-guard.js";
-import { shouldSkipReorganisation } from "./head-guard.js";
+import {
+  shouldCreateCheckpointCommit,
+  shouldBlockGitCommit,
+  shouldSkipReorganisation,
+} from "./commit-policy.js";
 import type { PipelineEvent } from "./commit-events.js";
 import {
   organizeCheckpointCommits,
@@ -544,7 +546,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    if (!isGitCommitCommand(event.input.command)) {
+    if (!shouldBlockGitCommit(event.input.command)) {
       return;
     }
 
