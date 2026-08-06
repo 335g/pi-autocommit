@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import {
   shouldBlockGitCommit,
+  shouldBlockGitPush,
   shouldCreateCheckpointCommit,
   shouldSkipReorganisation,
 } from "./commit-policy.js";
@@ -169,6 +170,86 @@ void describe("shouldBlockGitCommit", () => {
       ),
       true,
     );
+  });
+});
+
+void describe("shouldBlockGitPush", () => {
+  void it("returns false for empty string", () => {
+    assert.strictEqual(shouldBlockGitPush(""), false);
+  });
+
+  void it("returns false for unrelated commands", () => {
+    assert.strictEqual(shouldBlockGitPush("git status"), false);
+    assert.strictEqual(shouldBlockGitPush("git fetch"), false);
+    assert.strictEqual(shouldBlockGitPush("git pull"), false);
+    assert.strictEqual(shouldBlockGitPush("git add -A"), false);
+    assert.strictEqual(shouldBlockGitPush("ls -la"), false);
+    assert.strictEqual(shouldBlockGitPush("npm run build"), false);
+  });
+
+  void it("detects bare git push", () => {
+    assert.strictEqual(shouldBlockGitPush("git push"), true);
+  });
+
+  void it("detects git push with refspec", () => {
+    assert.strictEqual(
+      shouldBlockGitPush("git push origin main"),
+      true,
+    );
+  });
+
+  void it("detects git push with flags", () => {
+    assert.strictEqual(
+      shouldBlockGitPush("git push --force-with-lease origin main"),
+      true,
+    );
+  });
+
+  void it("detects git push --delete", () => {
+    assert.strictEqual(
+      shouldBlockGitPush("git push origin --delete feature-branch"),
+      true,
+    );
+  });
+
+  void it("detects git -C push", () => {
+    assert.strictEqual(
+      shouldBlockGitPush("git -C /some/path push origin main"),
+      true,
+    );
+  });
+
+  void it("detects git push in a compound command", () => {
+    assert.strictEqual(
+      shouldBlockGitPush('npm run build && git push origin main'),
+      true,
+    );
+  });
+
+  void it("detects git push on a new line", () => {
+    assert.strictEqual(
+      shouldBlockGitPush('git add -A\ngit push origin main'),
+      true,
+    );
+  });
+
+  void it("detects git push nested in sh -c quotes", () => {
+    assert.strictEqual(
+      shouldBlockGitPush('sh -c "git push origin main"'),
+      true,
+    );
+  });
+
+  void it("does not false-positive on git log --grep=push", () => {
+    assert.strictEqual(
+      shouldBlockGitPush("git log --grep=push"),
+      false,
+    );
+  });
+
+  void it("does not false-positive on a file named git-push", () => {
+    assert.strictEqual(shouldBlockGitPush("./git-push"), false);
+    assert.strictEqual(shouldBlockGitPush("git-push"), false);
   });
 });
 
