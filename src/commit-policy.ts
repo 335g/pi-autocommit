@@ -30,25 +30,28 @@ export function shouldCreateCheckpointCommit(
 }
 
 /**
- * Commit guard — blocks agent-initiated `git commit` during the agent loop.
+ * Git guard — blocks agent-initiated `git commit` / `git push` during the
+ * agent loop.
  *
  * When `enable` is true, pi-autocommit owns commits via the
  * checkpoint-then-reorganise strategy. An agent committing on its own
  * interleaves a foreign commit into the checkpoint run at HEAD, which
- * makes the final history impossible to reassemble cleanly. This function
- * detects `git ... commit` invocations inside a `bash` tool command so
- * the `tool_call` handler in `index.ts` can block them.
+ * makes the final history impossible to reassemble cleanly; and a push
+ * before `agent_end` ships the raw checkpoint run to the remote, which
+ * diverges from the reorganised history created afterwards. This module
+ * detects such invocations inside a `bash` tool command so the
+ * `tool_call` handler in `index.ts` can block them.
  *
- * Detection is deliberately conservative: only `git commit` is blocked.
- * `git add`, `git reset`, `git stash` and other operations are left alone
- * because staging state is restored by the reorganiser at every
- * `turn_end`/`agent_end`, and blocking them would hamper legitimate
- * agent investigation.
+ * Detection is deliberately conservative: only `git commit` and
+ * `git push` are blocked. `git add`, `git reset`, `git stash`, `git
+ * fetch` and other operations are left alone because staging state is
+ * restored by the reorganiser at every `turn_end`/`agent_end`, and
+ * blocking them would hamper legitimate agent investigation.
  */
 
 /**
  * Split a shell command string into segments that could each be a
- * distinct command, then test each segment for a `git ... commit`
+ * distinct command, then test each segment for a `git ... <verb>`
  * invocation.
  *
  * Splits on `&&`, `||`, `;`, `|`, and newlines — the shell operators
@@ -56,17 +59,17 @@ export function shouldCreateCheckpointCommit(
  * segment retains its quotes, so `sh -c "git commit"` stays inside one
  * segment and the `git commit` inside the quotes is detected.
  *
- * Within each segment, the pattern `/\bgit\b(?:\s+\S+)*\s+commit\b/`
+ * Within each segment, the pattern `/\bgit\b(?:\s+\S+)*\s+<verb>/`
  * matches `git` followed by zero or more global options (e.g.
- * `-C /path`) followed by `commit`. This catches:
+ * `-C /path`) followed by `<verb>`. This catches:
  *
- * - `git commit -m "..."`
- * - `git -C /path commit`
- * - `sh -c "git commit"` (quotes stay in the segment)
+ * - `git commit -m "..."` / `git push origin main`
+ * - `git -C /path commit` / `git -C /path push`
+ * - `sh -c "git push"` (quotes stay in the segment)
  *
- * @returns `true` when any segment contains a `git ... commit` invocation.
+ * @returns `true` when any segment contains a `git ... <verb>` invocation.
  */
-export function shouldBlockGitCommit(command: string): boolean {
+function shouldBlockGitVerb(command: string, verb: string): boolean {
   if (!command) {
     return false;
   }
@@ -77,13 +80,35 @@ export function shouldBlockGitCommit(command: string): boolean {
   // cannot cause a false negative — only a redundant check.
   const segments = command.split(/&&|\|\||;|\||\n/);
 
-  // `git` optionally followed by global options, then `commit` as a
+  // `git` optionally followed by global options, then the verb as a
   // standalone word (followed by whitespace or end of segment). The
-  // lookahead `(?=\s|$)` prevents matching `commit` inside a filename
+  // lookahead `(?=\s|$)` prevents matching a verb inside a filename
   // like `commit-message.txt`.
-  const pattern = /\bgit\b(?:\s+\S+)*\s+commit(?=\s|$)/;
+  const pattern = new RegExp(`\\bgit\\b(?:\\s+\\S+)*\\s+${verb}(?=\\s|$)`);
 
   return segments.some((segment) => pattern.test(segment));
+}
+
+/**
+ * Detect a `git ... commit` invocation inside a shell command.
+ *
+ * @returns `true` when any segment contains a `git ... commit` invocation.
+ */
+export function shouldBlockGitCommit(command: string): boolean {
+  return shouldBlockGitVerb(command, "commit");
+}
+
+/**
+ * Detect a `git ... push` invocation inside a shell command.
+ *
+ * Pushing before `agent_end` ships raw checkpoint commits to the remote,
+ * which then diverge from the reorganised history pi-autocommit creates
+ * afterwards.
+ *
+ * @returns `true` when any segment contains a `git ... push` invocation.
+ */
+export function shouldBlockGitPush(command: string): boolean {
+  return shouldBlockGitVerb(command, "push");
 }
 
 /**
