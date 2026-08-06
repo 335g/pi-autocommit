@@ -10,6 +10,7 @@ import {
 import {
   shouldCreateCheckpointCommit,
   shouldBlockGitCommit,
+  shouldBlockGitPush,
   shouldSkipReorganisation,
 } from "./commit-policy.js";
 import type { PipelineEvent } from "./commit-events.js";
@@ -533,7 +534,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ───────────────────────────────────────────────────────
-  // Commit guard: block agent-initiated `git commit` during the agent loop
+  // Git guard: block agent-initiated `git commit` / `git push` during the
+  // agent loop
   // ───────────────────────────────────────────────────────
 
   pi.on("tool_call", async (event, ctx) => {
@@ -546,15 +548,22 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    if (!shouldBlockGitCommit(event.input.command)) {
+    const command = event.input.command;
+    const blocked = shouldBlockGitCommit(command)
+      ? "commit"
+      : shouldBlockGitPush(command)
+        ? "push"
+        : null;
+    if (blocked === null) {
       return;
     }
 
     return {
       block: true,
       reason:
-        "pi-autocommit がコミットを管理しているため、エージェントループ中の `git commit` はブロックされました。" +
-        "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されるため、手動でコミットする必要はありません。",
+        `pi-autocommit がコミット履歴を管理しているため、エージェントループ中の \`git ${blocked}\` はブロックされました。` +
+        "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されます。" +
+        "整理前に push するとリモートがチェックポイント履歴と乖離するため、手動で commit/push する必要はありません。",
     };
   });
 
