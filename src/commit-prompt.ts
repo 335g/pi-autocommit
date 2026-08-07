@@ -3,7 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatFullMessage, generateCommitMessage } from "./commit-message.js";
 import { COMMIT_TYPES } from "./commit-types.js";
 import type { PiAutocommitConfig } from "./config.js";
-import { isJapanese } from "./config.js";
+import { resolvedLanguageName } from "./config.js";
 import { parseNameStatus } from "./git-parser.js";
 import { hasScopeMapping, injectScopeIntoMessage, resolveScope } from "./scope-resolver.js";
 
@@ -77,16 +77,26 @@ export interface CommitGroup {
 
 /** Language-aware subject instruction. */
 function subjectLangInstruction(config: PiAutocommitConfig): string {
-  return isJapanese(config)
-    ? "Write the subject in Japanese (日本語). No period, 50 chars or fewer."
-    : "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
+  const name = resolvedLanguageName(config);
+  if (name === "Japanese") {
+    return "Write the subject in Japanese (日本語). No period, 50 chars or fewer.";
+  }
+  if (name === "English") {
+    return "English, imperative present tense, lowercase, no period, 50 chars or fewer.";
+  }
+  return `Write the subject in ${name}. No period, 50 chars or fewer.`;
 }
 
 /** Language-aware body instruction. */
 function bodyLangInstruction(config: PiAutocommitConfig): string {
-  return isJapanese(config)
-    ? "Write the body in Japanese (日本語)."
-    : "Write the body in English.";
+  const name = resolvedLanguageName(config);
+  if (name === "Japanese") {
+    return "Write the body in Japanese (日本語).";
+  }
+  if (name === "English") {
+    return "Write the body in English.";
+  }
+  return `Write the body in ${name}.`;
 }
 
 /** The type reference block shared by both prompt variants. */
