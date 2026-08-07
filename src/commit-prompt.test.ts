@@ -40,7 +40,6 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     lang: "en",
     enable: true,
     commitPickerMaxCommits: 30,
-    deferReorganise: false,
     ...over,
   };
 }

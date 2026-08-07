@@ -12,7 +12,6 @@ function config(scope?: Record<string, string>): PiAutocommitConfig {
     lang: "en",
     enable: true,
     commitPickerMaxCommits: 30,
-    deferReorganise: false,
     scope,
   };
 }
