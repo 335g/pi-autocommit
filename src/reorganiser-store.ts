@@ -112,6 +112,15 @@ export interface ReorganiserStore {
    * Cherry-pick a single commit onto the current HEAD.
    */
   cherryPick(sha: string): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Number of local-only commits vs the upstream branch (`0` when HEAD is
+   * even with or behind upstream). `null` when no upstream can be resolved.
+   *
+   * Used as a safety guard: never rewrite commits at or below this index,
+   * they already exist on the remote.
+   */
+  getUpstreamAheadCount(): Promise<number | null>;
 }
 
 /**
@@ -206,5 +215,9 @@ export class GitReorganiserStore implements ReorganiserStore {
     sha: string,
   ): Promise<{ success: boolean; error?: string }> {
     return this.git.cherryPick(sha);
+  }
+
+  async getUpstreamAheadCount(): Promise<number | null> {
+    return this.git.getUpstreamAheadCount();
   }
 }

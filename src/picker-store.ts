@@ -19,6 +19,12 @@ export interface PickerStore {
    * @param skip number of commits to skip from HEAD (for pagination)
    */
   getRecentCommits(maxCount: number, skip?: number): Promise<string>;
+
+  /**
+   * SHA of the upstream tip (`@{upstream}`, falling back to `origin/HEAD`),
+   * or `null` when no upstream can be resolved.
+   */
+  getUpstreamTip(): Promise<string | null>;
 }
 
 /**
@@ -34,5 +40,9 @@ export class GitPickerStore implements PickerStore {
 
   async getRecentCommits(maxCount: number, skip?: number): Promise<string> {
     return this.git.getRecentCommits(maxCount, skip);
+  }
+
+  async getUpstreamTip(): Promise<string | null> {
+    return this.git.getUpstreamTip();
   }
 }
