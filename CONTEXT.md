@@ -57,6 +57,14 @@ _Avoid_: commit model, LLM model
 A user-defined mapping from changed file paths to a fixed Conventional Commits scope, specified in `.pi/pi-autocommit.json` under `scope`. When present, the commit scope is determined by a deterministic path-matching module rather than the LLM, so the scope stays stable across reorganised commits.
 _Avoid_: scope config, scope rules
 
+**Commit message language**
+The language of generated commit messages, resolved by priority: the `lang` config when set, otherwise auto-detected from the user's messages, otherwise English. The language name is passed to the LLM prompt; the heuristic fallback only supports Japanese and English.
+_Avoid_: locale, i18n
+
+**Language auto-detection**
+Resolving the commit message language from the user's messages when `lang` is unset, by inspecting character scripts (kana → Japanese, hangul → Korean, han → Chinese, Cyrillic → Russian). Only user messages are considered; Latin-script conversations are undetectable and fall back to English.
+_Avoid_: language detection (this is scoped to commit messages)
+
 ## Manual operations
 
 **Manual organise command**

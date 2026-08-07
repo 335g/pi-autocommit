@@ -13,7 +13,7 @@ A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension
 - **LLM-powered reorganisation** — at the end of the agent loop, checkpoints are soft-reset and split into coherent Conventional Commits using the assistant's own reasoning as context.
 - **Heuristic fallback** — when the LLM is unavailable, a single Conventional Commit is produced from diff analysis.
 - **Uncommitted-changes footer indicator** — a footer cue shows whether the working tree has changes, so you can spot unintended files *before* a checkpoint captures them.
-- **Language support** — commit messages can be written in English or Japanese.
+- **Language support** — commit messages follow the conversation's language automatically (English, Japanese, Korean, Chinese, Russian by script), or a fixed language of your choice via `lang`.
 - **Merge conflict detection** — skips committing when a merge is in progress.
 
 ## Installation
@@ -60,10 +60,12 @@ Create `.pi/pi-autocommit.json` in your project root:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `lang` | string | `"en"` | Commit message language: `"ja"` (Japanese) or `"en"` (English) |
+| `lang` | string | `"auto"` | Commit message language. `"auto"` (default) detects it from the conversation (Japanese, Korean, Chinese, Russian by script); Latin-script conversations fall back to English. Any other value — a code (`"ja"`, `"ko"`) or a language name in any language (`"Korean"`, `"한국어"`) — fixes that language |
 | `enable` | boolean | `true` | Whether auto-commit is active |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
+
+The `lang` resolution priority: the configured value when set (a fixed language wins over detection), else auto-detection from the conversation's user messages, else English. Auto-detection inspects character scripts; the heuristic fallback (used when the LLM is unavailable) only writes Japanese or English.
 
 ### Disabling auto-commit
 
