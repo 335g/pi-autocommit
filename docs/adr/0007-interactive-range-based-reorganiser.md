@@ -41,10 +41,7 @@ common case (squash all checkpoints) is a single Enter press.
 - **`/autocommit-organise` (manual):** shows the interactive commit
   picker popup (TUI) or a fallback select menu (non-TUI) that lets the
   user choose an arbitrary range of commits to reorganise.
-- **`/autocommit-defer false` (manual):** shows the same interactive
-  popup to reorganise pending checkpoints immediately.
 - Auto-organise at `agent_end` is skipped when:
-  - `deferReorganise` is `true` in config.
   - HEAD did not move during the agent run (`head-guard`).
   - There are no checkpoint commits at HEAD.
 
