@@ -304,6 +304,49 @@ export class GitOperations {
   }
 
   /**
+   * Resolve the SHA of the upstream tip (`@{upstream}`, falling back to
+   * `origin/HEAD` when the branch has no upstream). Returns `null` when
+   * neither ref can be resolved.
+   */
+  async getUpstreamTip(): Promise<string | null> {
+    const candidates = ["@{upstream}", "origin/HEAD"];
+    for (const ref of candidates) {
+      const { stdout, code } = await this.pi.exec("git", [
+        "rev-parse",
+        "--verify",
+        ref,
+      ]);
+      if (code !== 0) continue;
+      const tip = stdout.trim();
+      if (tip) return tip;
+    }
+    return null;
+  }
+
+  /**
+   * Count how many commits on HEAD are not on the upstream branch
+   * (`git rev-list --count <upstream>..HEAD`). On a linear history this is
+   * the index of the upstream tip relative to HEAD — reorganising any range
+   * whose oldest commit is at or below this index rewrites already-pushed
+   * commits.
+   *
+   * Returns `null` when no upstream can be resolved (nothing to protect
+   * against).
+   */
+  async getUpstreamAheadCount(): Promise<number | null> {
+    const tip = await this.getUpstreamTip();
+    if (!tip) return null;
+    const { stdout, code } = await this.pi.exec("git", [
+      "rev-list",
+      "--count",
+      `${tip}..HEAD`,
+    ]);
+    if (code !== 0) return null;
+    const count = parseInt(stdout.trim(), 10);
+    return Number.isFinite(count) && count >= 0 ? count : null;
+  }
+
+  /**
    * Walk backwards from HEAD and return every reachable commit whose subject
    * starts with `marker`, along with its SHA and `Checkpoint-Session` trailer
    * value (or `null` when absent).
