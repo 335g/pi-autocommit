@@ -12,6 +12,7 @@ import {
 } from "./commit-prompt.js";
 import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
+import { detectLanguage, languageName, userMessageTexts } from "./language.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const CHECKPOINT_COMMIT_MARKER = "wip(checkpoint):";
@@ -69,6 +70,11 @@ export async function organizeCheckpointCommits(
 
   // Undo the checkpoint commits but keep all their changes staged.
   await store.resetSoft(checkpointCount);
+
+  // Resolve the commit message language from the conversation when `lang`
+  // is unset (auto-detect). Detection needs user messages, so the manual
+  // command (no messages) keeps the configured/default language.
+  resolveLanguageFromMessages(config, event.messages);
 
   try {
     const groups = await proposeCommitGroups(ctx, config, event, store, complete);
@@ -391,6 +397,24 @@ function checkContiguity(
 }
 
 /**
+ * Resolve the commit message language from the conversation when `lang` is
+ * unset (auto-detect), storing the display name on the config. No-op when
+ * `lang` is fixed or no user message has a detectable script.
+ */
+function resolveLanguageFromMessages(
+  config: PiAutocommitConfig,
+  messages: ReadonlyArray<unknown>,
+): void {
+  if (config.lang && config.lang !== "auto") {
+    return;
+  }
+  const detected = detectLanguage(userMessageTexts(messages));
+  if (detected) {
+    config.langName = languageName(detected);
+  }
+}
+
+/**
  * Ask the commit prompt module to split the staged diff into logical
  * commit groups, using the agent's own reasoning as context.
  */
@@ -451,6 +475,9 @@ export async function reorganiseSelectedRange(
   const events: PipelineEvent[] = [];
   const { startIndex: lo, endIndex: hi } = range;
   const commitCount = hi - lo + 1;
+
+  // Same language auto-detection as the agent_end path.
+  resolveLanguageFromMessages(config, event.messages);
 
   // ── Remote-tip guard ────────────────────────────────────────────
   // Never rewrite commits that already exist on the upstream branch:
