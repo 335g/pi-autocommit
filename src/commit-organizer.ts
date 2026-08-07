@@ -160,6 +160,9 @@ export async function reorganiseCheckpointsManual(
     const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
     if (checkpointCount > 0) {
       // Consecutive at HEAD: fast path with resetSoft.
+      if (await crossesRemoteTip(store, checkpointCount, events)) {
+        return { events, organised: false };
+      }
       await store.resetSoft(checkpointCount);
       return assembleAndCommit(ctx, config, store, checkpointCount, events, "", complete);
     }
@@ -216,6 +219,9 @@ export async function reorganiseCheckpointsManual(
 
   if (contiguity.contiguous) {
     // Contiguous from HEAD: happy path.
+    if (await crossesRemoteTip(store, contiguity.matchCount, events)) {
+      return { events, organised: false };
+    }
     await store.resetSoft(contiguity.matchCount);
     return assembleAndCommit(
       ctx,
@@ -329,6 +335,35 @@ async function assembleAndCommit(
 }
 
 /**
+ * Check whether soft-resetting `commitCount` commits from HEAD would
+ * rewrite commits that already exist on the upstream branch. When it
+ * would, pushes an error event and returns `true`.
+ */
+async function crossesRemoteTip(
+  store: ReorganiserStore,
+  commitCount: number,
+  events: PipelineEvent[],
+): Promise<boolean> {
+  const aheadCount = await store.getUpstreamAheadCount();
+  if (aheadCount === null || commitCount <= aheadCount) {
+    return false;
+  }
+  const remoteTipLabel =
+    aheadCount === 0 ? "現在のHEAD" : `HEAD~${aheadCount}`;
+  events.push({
+    type: "error",
+    message:
+      `pi-autocommit: チェックポイントがリモート先端（${remoteTipLabel}）より古いコミットまで続いているため中止しました。` +
+      "先に push するか、範囲を狭めて再実行してください。",
+  });
+  events.push({
+    type: "stage-changed",
+    hasChanges: await store.checkUncommittedChanges(),
+  });
+  return true;
+}
+
+/**
  * Check whether all commits matching `targetSessionId` are contiguous at
  * the very top of the `reachableCheckpoints` list (i.e. HEAD is one of them and
  * every commit before the first non-matching one also matches).
@@ -416,6 +451,28 @@ export async function reorganiseSelectedRange(
   const events: PipelineEvent[] = [];
   const { startIndex: lo, endIndex: hi } = range;
   const commitCount = hi - lo + 1;
+
+  // ── Remote-tip guard ────────────────────────────────────────────
+  // Never rewrite commits that already exist on the upstream branch:
+  // reorganising them rewrites pushed history and breaks the next push.
+  // The range [lo, hi] is safe only when its oldest commit (hi) is newer
+  // than the upstream tip, i.e. hi < aheadCount.
+  const aheadCount = await store.getUpstreamAheadCount();
+  if (aheadCount !== null && hi >= aheadCount) {
+    const remoteTipLabel =
+      aheadCount === 0 ? "現在のHEAD" : `HEAD~${aheadCount}`;
+    events.push({
+      type: "error",
+      message:
+        `pi-autocommit: 選択範囲がリモート先端（${remoteTipLabel}）まで達しています。` +
+        "プッシュ済み履歴を書き換えるため中止しました。範囲を狭めて再実行してください。",
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised: false };
+  }
 
   if (lo === 0) {
     // ════════════════════════════════════════════════════════════
@@ -514,6 +571,23 @@ export async function reorganiseSelectedRange(
   const aboveSHAs = allSHAs.slice(0, lo);
   // Reverse to oldest-first for cherry-pick
   const aboveSHAsOldestFirst = [...aboveSHAs].reverse();
+  // Original HEAD: exact pre-operation state for full restore on failure.
+  const originalHead = allSHAs[0];
+
+  // hardReset destroys uncommitted changes — refuse to run on a dirty tree.
+  if (await store.checkUncommittedChanges()) {
+    events.push({
+      type: "error",
+      message:
+        "pi-autocommit: 未コミットの変更があるため範囲の再編成を中止しました。" +
+        "先にコミットまたはstashしてください。",
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: true,
+    });
+    return { events, organised: false };
+  }
 
   try {
     // Step 2: reset to before the range (clean working tree + index).
@@ -522,12 +596,9 @@ export async function reorganiseSelectedRange(
     // Step 3: apply the combined range diff to both working tree and index.
     const applyResult = await store.applyRangeDiff(beforeSHA, rangeStartSHA);
     if (!applyResult.success) {
-      events.push({
-        type: "error",
-        message:
-          `pi-autocommit: 範囲の差分適用に失敗しました — ${applyResult.error || "不明なエラー"}`,
-      });
-      return { events, organised: false };
+      throw new Error(
+        `範囲の差分適用に失敗しました — ${applyResult.error || "不明なエラー"}`,
+      );
     }
 
     // Step 4: run reorganiser — propose groups and commit them.
@@ -559,30 +630,31 @@ export async function reorganiseSelectedRange(
     for (const sha of aboveSHAsOldestFirst) {
       const cherryResult = await store.cherryPick(sha);
       if (!cherryResult.success) {
-        events.push({
-          type: "error",
-          message:
-            `pi-autocommit: cherry-pick に失敗しました — ${cherryResult.error || "不明なエラー"}。手動で解決してください。`,
-        });
-        break;
+        throw new Error(
+          `上のコミットの復元（cherry-pick）に失敗しました — ${cherryResult.error || "不明なエラー"}`,
+        );
       }
     }
   } catch (error) {
+    // Restore the exact pre-operation state so no commit is left dismantled.
+    // The original commits are still reachable (reflog) if manual recovery
+    // is ever needed.
     try {
-      await store.stageAll();
-      await fallbackSingleCommit(ctx, config, store, events, complete);
-      events.push({
-        type: "organised",
-        checkpointCount: commitCount,
-        commitCount: 1,
-      });
+      await store.hardReset(originalHead);
     } catch {
-      const message = error instanceof Error ? error.message : String(error);
-      events.push({
-        type: "error",
-        message: `pi-autocommit: 範囲の再編成に失敗しました — ${message}`,
-      });
+      // Best effort: report the original error below.
     }
+    const message = error instanceof Error ? error.message : String(error);
+    events.push({
+      type: "error",
+      message:
+        `pi-autocommit: 範囲の再編成に失敗しました（操作前の状態に復元済み）— ${message}`,
+    });
+    events.push({
+      type: "stage-changed",
+      hasChanges: await store.checkUncommittedChanges(),
+    });
+    return { events, organised: false };
   }
 
   events.push({

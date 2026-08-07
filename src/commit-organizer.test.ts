@@ -6,6 +6,7 @@ import type { PiAutocommitConfig } from "./config.js";
 import {
   organizeCheckpointCommits,
   reorganiseCheckpointsManual,
+  reorganiseSelectedRange,
   CHECKPOINT_COMMIT_MARKER,
 } from "./commit-organizer.js";
 import {
@@ -220,6 +221,13 @@ class InMemoryReorganiserStore implements ReorganiserStore {
        * `commit()` returns this instead of the default success response.
        */
       commitResult?: ExecResult;
+      /**
+       * Value returned by `getUpstreamAheadCount()` (default `null` =
+       * no upstream configured).
+       */
+      upstreamAheadCount?: number | null;
+      /** When set, `cherryPick()` returns this failure. */
+      cherryPickError?: string;
     } = {},
   ) {
     // Normalise session to null when absent.
@@ -381,7 +389,15 @@ class InMemoryReorganiserStore implements ReorganiserStore {
 
   async cherryPick(_sha: string): Promise<{ success: boolean; error?: string }> {
     this.operations.push(`cherryPick:${_sha}`);
+    if (this.options.cherryPickError) {
+      return { success: false, error: this.options.cherryPickError };
+    }
     return { success: true };
+  }
+
+  async getUpstreamAheadCount(): Promise<number | null> {
+    this.operations.push("getUpstreamAheadCount");
+    return this.options.upstreamAheadCount ?? null;
   }
 }
 
@@ -1112,5 +1128,187 @@ src/own2.ts
           e.message.includes("No checkpoint commits found for session session-a"),
       ),
     );
+  });
+});
+
+// ── reorganiseSelectedRange (interactive picker range) ─────────────
+
+void describe("reorganiseSelectedRange", () => {
+  const groupInput = `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+
+Implement login with JWT.
+=== FILES ===
+src/auth/login.ts
+=== END ===
+`.trim();
+
+  void it("fast path: reorganises the selected range from HEAD", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5, // remote tip is far below the selection
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] },
+        { message: "feat: X", files: ["c.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 1 },
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.ok(store.operations.includes("resetSoft:2"));
+    assert.strictEqual(store.commits.length, 1);
+  });
+
+  void it("fast path: blocks when the range reaches the remote tip", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 2, // remote tip is at index 2
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 3`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["b.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["c.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 2 }, // hi(2) >= aheadCount(2) → includes pushed commit
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      result.events.some((e) => e.type === "error" && e.message.includes("リモート先端")),
+    );
+    assert.ok(!store.operations.some((op) => op.startsWith("resetSoft")));
+  });
+
+  void it("slow path: preserves above-range commits via cherry-pick", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: "feat: above", files: ["above.ts"] }, // index 0 (kept)
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] }, // 1
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] }, // 2
+        { message: "feat: below", files: ["below.ts"] }, // 3
+        { message: "feat: below2", files: ["below2.ts"] }, // 4 (beforeSHA)
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 1, endIndex: 3 },
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, true);
+    const ops = store.operations;
+    // Reset to before the range (parent of index 3 = sha-4).
+    assert.ok(ops.includes("hardReset:sha-4"));
+    assert.ok(ops.some((op) => op.startsWith("applyRangeDiff:")));
+    // Above-range commit (index 0) restored oldest-first via cherry-pick.
+    assert.ok(ops.some((op) => op === "cherryPick:sha-0"));
+  });
+
+  void it("slow path: blocks when the range reaches the remote tip", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 2,
+      checkpointCommits: [
+        { message: "feat: above", files: ["above.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] },
+        { message: "feat: below", files: ["below.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 1, endIndex: 3 }, // hi(3) >= aheadCount(2) → includes pushed commit
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      result.events.some((e) => e.type === "error" && e.message.includes("リモート先端")),
+    );
+    assert.ok(!store.operations.some((op) => op.startsWith("hardReset")));
+  });
+
+  void it("slow path: aborts on a dirty working tree before hardReset", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: "feat: above", files: ["above.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["a.ts"] },
+        { message: "feat: below", files: ["below.ts"] },
+        { message: "feat: below2", files: ["below2.ts"] },
+      ],
+    });
+    store.stagedFiles.push("dirty.ts"); // uncommitted change
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 1, endIndex: 2 },
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      result.events.some((e) => e.type === "error" && e.message.includes("未コミットの変更")),
+    );
+    assert.ok(!store.operations.some((op) => op.startsWith("hardReset")));
+  });
+
+  void it("slow path: restores the original HEAD when a cherry-pick fails", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      cherryPickError: "conflict",
+      checkpointCommits: [
+        { message: "feat: above", files: ["above.ts"] }, // index 0 (kept)
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] }, // 1
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] }, // 2
+        { message: "feat: below", files: ["below.ts"] }, // 3
+        { message: "feat: below2", files: ["below2.ts"] }, // 4 (beforeSHA)
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 1, endIndex: 3 },
+      fakeCompleteReturning(groupInput),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("操作前の状態に復元済み"),
+      ),
+    );
+    // Final hardReset targets the original HEAD (sha-0) — full restore.
+    const resets = store.operations.filter((op) => op.startsWith("hardReset:"));
+    assert.strictEqual(resets[resets.length - 1], "hardReset:sha-0");
   });
 });
