@@ -28,7 +28,6 @@ import {
 import {
   loadConfig,
   type PiAutocommitConfig,
-  saveDeferReorganise,
   saveEnable,
   saveModel,
 } from "./config.js";
@@ -105,13 +104,10 @@ async function runWithOrganiseProgress<T>(
 /**
  * Show the commit picker popup and reorganise the selected range.
  *
- * Used by `/autocommit-organise`, `/autocommit-defer false`, and `agent_end`.
- * In TUI mode, shows the picker; in non-TUI mode, auto-reorganises using the
- * appropriate manual or agent_end path.
+ * Used by `/autocommit-organise` and `agent_end`.
+ * In TUI mode, shows the picker; in non-TUI mode, auto-reorganises via the
+ * manual reorganise path (`reorganiseCheckpointsManual`).
  *
- * @param manual When `true`, use the manual command reorganise path
- *   (`reorganiseCheckpointsManual`). When `false`, use the agent_end path
- *   (`organizeCheckpointCommits` scoped to the current session).
  * @param emptyMessage Optional message shown when no recent commits are found.
  */
 async function maybeRunInteractiveReorganise(
@@ -121,7 +117,6 @@ async function maybeRunInteractiveReorganise(
   statusIndicator: StatusIndicator,
   pickerStore: PickerStore,
   reorganiserStore: ReorganiserStore,
-  manual: boolean,
   emptyMessage?: string,
 ): Promise<void> {
   const raw = await pickerStore.getRecentCommits(config.commitPickerMaxCommits);
@@ -157,30 +152,12 @@ async function maybeRunInteractiveReorganise(
       );
     }
   } else {
-    if (manual) {
-      const result = await runWithOrganiseProgress(
-        ctx,
-        "⏳ Reorganising checkpoint commits...",
-        () => reorganiseCheckpointsManual(ctx, config, reorganiserStore),
-      );
-      await handlePipelineEvents(ctx, statusIndicator, result.events);
-    } else {
-      const sessionId = ctx.sessionManager.getSessionId();
-      const result = await runWithOrganiseProgress(
-        ctx,
-        "⏳ Reorganising checkpoint commits...",
-        () =>
-          organizeCheckpointCommits(
-            ctx,
-            config,
-            event,
-            reorganiserStore,
-            undefined,
-            sessionId,
-          ),
-      );
-      await handlePipelineEvents(ctx, statusIndicator, result.events);
-    }
+    const result = await runWithOrganiseProgress(
+      ctx,
+      "⏳ Reorganising checkpoint commits...",
+      () => reorganiseCheckpointsManual(ctx, config, reorganiserStore),
+    );
+    await handlePipelineEvents(ctx, statusIndicator, result.events);
   }
 }
 
@@ -231,67 +208,6 @@ export default function (pi: ExtensionAPI) {
       const enable = trimmed === "true";
       saveEnable(ctx.cwd, enable);
       ctx.ui.notify(`pi-autocommit: enable = ${enable}`, "info");
-    },
-  });
-
-  // ───────────────────────────────────────────────────────
-  // /autocommit-defer [true|false]
-  // ───────────────────────────────────────────────────────
-
-  pi.registerCommand("autocommit-defer", {
-    description:
-      "Toggle deferred reorganisation (true|false). When true, checkpoint " +
-      "commits are created at turn_end but the commit reorganiser (and " +
-      "the auto-reorganise at agent_end) is skipped; use false to show the " +
-      "commit picker and reorganise immediately. No arg shows current state.",
-    handler: async (args, ctx) => {
-      const config = loadConfig(ctx.cwd);
-      const trimmed = args?.trim().toLowerCase();
-
-      if (trimmed === "") {
-        ctx.ui.notify(
-          `pi-autocommit: deferReorganise = ${config.deferReorganise}`,
-          "info",
-        );
-        return;
-      }
-
-      if (trimmed !== "true" && trimmed !== "false") {
-        ctx.ui.notify("Usage: /autocommit-defer <true|false>", "error");
-        return;
-      }
-
-      const defer = trimmed === "true";
-      saveDeferReorganise(ctx.cwd, defer);
-      ctx.ui.notify(`pi-autocommit: deferReorganise = ${defer}`, "info");
-
-      if (!defer) {
-        const statusIndicator = new StatusIndicator(git, ctx);
-        const reorganiserStore = new GitReorganiserStore(git);
-        const checkpointCount = await reorganiserStore.countCheckpointCommits(
-          CHECKPOINT_COMMIT_MARKER,
-        );
-        if (checkpointCount === 0) {
-          ctx.ui.notify(
-            "pi-autocommit: 整理対象の checkpoint がありません",
-            "info",
-          );
-          await statusIndicator.updateFooter();
-          return;
-        }
-        const pickerStore = new GitPickerStore(git);
-        const event = { type: "agent_end", messages: [] } as AgentEndEvent;
-        await maybeRunInteractiveReorganise(
-          ctx,
-          config,
-          event,
-          statusIndicator,
-          pickerStore,
-          reorganiserStore,
-          true,
-        );
-        await statusIndicator.updateFooter();
-      }
     },
   });
 
@@ -428,7 +344,6 @@ export default function (pi: ExtensionAPI) {
           statusIndicator,
           pickerStore,
           reorganiserStore,
-          true,
           "pi-autocommit: コミットが見つかりません",
         );
         await statusIndicator.updateFooter();
@@ -626,22 +541,6 @@ export default function (pi: ExtensionAPI) {
     try {
       const reorganiserStore = new GitReorganiserStore(git);
 
-      // Deferred reorganisation: keep creating checkpoints at turn_end,
-      // but skip the commit picker popup / auto-reorganise at agent_end.
-      if (config.deferReorganise) {
-        const checkpointCount = await reorganiserStore.countCheckpointCommits(
-          CHECKPOINT_COMMIT_MARKER,
-        );
-        if (checkpointCount > 0) {
-          ctx.ui.notify(
-            `pi-autocommit: deferReorganise が有効なため整理をスキップしました（未整理 checkpoint: ${checkpointCount}件）。/autocommit-defer false で整理できます`,
-            "info",
-          );
-        }
-        await statusIndicator.updateFooter();
-        return;
-      }
-
       // Skip reorganisation when HEAD has not moved since agent_start.
       // This means the agent run produced no commits, so there is nothing
       // to reorganise.
@@ -652,8 +551,8 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Auto-organise checkpoint commits directly (no interactive popup).
-      // The manual /autocommit-organise command and /autocommit-defer toggle
-      // are available for interactive use when needed.
+      // The manual /autocommit-organise command is available for interactive
+      // use when needed.
       const sessionId = ctx.sessionManager.getSessionId();
       const result = await runWithOrganiseProgress(
         ctx,
