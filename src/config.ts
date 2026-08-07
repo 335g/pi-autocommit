@@ -8,7 +8,6 @@ const KNOWN_KEYS = new Set([
   "model",
   "scope",
   "commitPickerMaxCommits",
-  "deferReorganise",
 ]);
 
 /** Config file name, relative to `.pi/`. */
@@ -42,21 +41,12 @@ export interface PiAutocommitConfig {
    * popup shown at `agent_end`. Defaults to `30`.
    */
   commitPickerMaxCommits: number;
-
-  /**
-   * When `true`, checkpoint commits are still created at `turn_end`, but the
-   * commit reorganiser (and the commit picker popup at `agent_end`) is
-   * skipped. Use `/autocommit-defer` to toggle.
-   * Defaults to `false`.
-   */
-  deferReorganise: boolean;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
   lang: "en",
   enable: false,
   commitPickerMaxCommits: 30,
-  deferReorganise: false,
 };
 
 /**
@@ -109,12 +99,7 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? parsed.commitPickerMaxCommits
         : DEFAULT_CONFIG.commitPickerMaxCommits;
 
-    const deferReorganise =
-      typeof parsed.deferReorganise === "boolean"
-        ? parsed.deferReorganise
-        : DEFAULT_CONFIG.deferReorganise;
-
-    return { lang, enable, model, scope, commitPickerMaxCommits, deferReorganise };
+    return { lang, enable, model, scope, commitPickerMaxCommits };
   } catch {
     return { ...DEFAULT_CONFIG };
   }
@@ -174,36 +159,6 @@ export function saveEnable(cwd: string, enable: boolean): void {
  * session model). When the file does not exist, it is created with default
  * values (`lang: "en"`, `enable: true`) and the given `model` value.
  */
-/**
- * Persist `deferReorganise` to `.pi/pi-autocommit.json`, preserving every
- * other key.
- *
- * Reads the existing file (if any) and replaces only the `deferReorganise`
- * field, so unknown keys and other known keys are kept intact.
- * When the file does not exist, it is created with default values
- * (`lang: "en"`, `enable: false`) and the given `deferReorganise` value.
- */
-export function saveDeferReorganise(
-  cwd: string,
-  deferReorganise: boolean,
-): void {
-  const configPath = join(cwd, ".pi", CONFIG_FILENAME);
-
-  let parsed: Record<string, unknown> = {};
-  try {
-    const raw = readFileSync(configPath, "utf-8");
-    parsed = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    // Missing or unreadable file — start from defaults.
-    parsed = { lang: DEFAULT_CONFIG.lang, enable: DEFAULT_CONFIG.enable };
-  }
-
-  parsed.deferReorganise = deferReorganise;
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
-}
-
 export function saveModel(cwd: string, model: string | undefined): void {
   const configPath = join(cwd, ".pi", CONFIG_FILENAME);
 
