@@ -1,10 +1,10 @@
-# Commit guard blocks agent-initiated `git commit` during the agent loop
+# Commit guard blocks agent-initiated `git commit` / `git push` during the agent loop
 
 When `enable` is true, pi-autocommit intercepts the `tool_call` event for
 the `bash` tool and blocks any command whose segments contain a
-`git ... commit` invocation. The block reason explains that pi-autocommit
-manages commits via checkpoint-then-reorganise, so the agent should not
-commit on its own.
+`git ... commit` or `git ... push` invocation. The block reason explains
+that pi-autocommit manages commits via checkpoint-then-reorganise, so the
+agent should not commit or push on its own.
 
 ## Rationale
 
@@ -15,6 +15,10 @@ first non-checkpoint subject, so checkpoints below the foreign commit
 are silently dropped from automatic reorganisation. The user's concern
 is that interleaved commits make the final history impossible to
 reassemble cleanly.
+
+Pushing before `agent_end` is blocked for the same reason: it ships the
+raw checkpoint commits to the remote, which then diverge from the
+reorganised history pi-autocommit creates afterwards.
 
 ## Considered options
 
@@ -37,20 +41,20 @@ reassemble cleanly.
 
 The `bash` tool's `command` string is split on `&&`, `||`, `;`, `|`, and
 newlines into segments. Each segment (including any quoted substring) is
-tested against `/\bgit\b(?:\s+\S+)*\s+commit(?=\s|$)/`. The
-lookahead `(?=\s|$)` requires `commit` to be followed by whitespace or
+tested against `/\bgit\b(?:\s+\S+)*\s+(commit|push)(?=\s|$)/`. The
+lookahead `(?=\s|$)` requires the verb to be followed by whitespace or
 end-of-segment, so `git commit-tree` or a file named `commit-message.txt`
 is not mistaken for a commit. This catches:
 
-- `git commit -m "..."`
-- `git -C /path commit` (global options between `git` and `commit`)
+- `git commit -m "..."` / `git push origin main`
+- `git -C /path commit` / `git -C /path push` (global options between `git` and the verb)
 - `git add foo && git commit` (segment split isolates the `git commit`)
-- `sh -c "git commit"` (the quote stays inside one segment)
+- `sh -c "git push"` (the quote stays inside one segment)
 
-Only `git commit` is blocked. `git add`, `git reset`, `git stash` and
-other operations are left alone — staging state is restored by the
-reorganiser at every `turn_end`/`agent_end`, and blocking them would
-hamper legitimate agent investigation.
+Only `git commit` and `git push` are blocked. `git add`, `git reset`,
+`git stash` and other operations are left alone — staging state is
+restored by the reorganiser at every `turn_end`/`agent_end`, and blocking
+them would hamper legitimate agent investigation.
 
 ## Consequences
 
@@ -58,7 +62,7 @@ hamper legitimate agent investigation.
   pattern-matching logic, kept separate from the `bash` event handler in
   `index.ts` so it is unit-testable.
 - The guard is active only while `enable` is true. When disabled, the
-  agent is free to commit.
+  agent is free to commit and push.
 - The reorganiser is unchanged: the existing `agent_end` automatic path
   (`countCheckpointCommits`, consecutive-at-HEAD) stays as-is. Stray
   checkpoints from a crash or a rare bypass are recoverable via the
