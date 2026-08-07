@@ -62,8 +62,10 @@ common case (squash all checkpoints) is a single Enter press.
 ### Default state
 
 - Marker `[1]` (range start, newest side) at HEAD.
-- Marker `[2]` (range end, oldest side) at the last `wip(checkpoint):`
-  commit in the list.
+- Marker `[2]` (range end, oldest side) at the bottom of the **contiguous
+  `wip(checkpoint):` run at HEAD** (stops at the first non-checkpoint
+  commit, so scattered historical checkpoints — which may already be
+  pushed — are never included by default).
 - Cursor starts at `[2]` — the user's most common action is to extend
   the range downward by moving the cursor and pressing `2` again.
 - All commits between `[1]` and `[2]` (inclusive) are visually
@@ -92,6 +94,16 @@ When the user confirms a range `[lo, hi]` (0-based indexes from HEAD):
 
 The range is always contiguous: no skip-selection. If the user wants to
 exclude a commit, they narrow the range instead.
+
+### Remote-tip guard
+
+Reorganising rewrites every commit in the range (new SHAs), so a range
+that reaches the upstream tip (`@{upstream}`, falling back to
+`origin/HEAD`) rewrites already-pushed history and breaks the next push.
+`reorganiseSelectedRange` therefore refuses any range whose oldest commit
+is at or below the upstream tip, and the picker marks the upstream tip
+with a `← リモート先端` boundary so the user can see where the safe
+limit is.
 
 ### Auto-organise at agent_end
 
