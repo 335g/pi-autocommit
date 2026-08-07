@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { languageName } from "./language.js";
 
 // Known config keys (camelCase as they appear in JSON)
 const KNOWN_KEYS = new Set([
@@ -17,8 +18,18 @@ const CONFIG_FILENAME = "pi-autocommit.json";
  * Normalised configuration for the pi-autocommit extension.
  */
 export interface PiAutocommitConfig {
-  /** Language for the commit message (subject and body). `"ja"` → Japanese, anything else → English */
+  /**
+   * Language for the commit message (subject and body). `"auto"` (default)
+   * resolves from the conversation; any language name or code (e.g. `"ja"`,
+   * `"Korean"`) is passed to the LLM prompt as-is.
+   */
   lang: string;
+  /**
+   * Resolved commit message language display name (e.g. "Japanese"), set by
+   * the reorganiser from conversation auto-detection when `lang` is unset.
+   * Runtime-only — never persisted to the config file.
+   */
+  langName?: string;
   /** Whether auto-commit is enabled. Defaults to `false`. */
   enable: boolean;
   /**
@@ -44,7 +55,7 @@ export interface PiAutocommitConfig {
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
-  lang: "en",
+  lang: "auto",
   enable: false,
   commitPickerMaxCommits: 30,
 };
@@ -52,8 +63,8 @@ const DEFAULT_CONFIG: PiAutocommitConfig = {
 /**
  * Load `.pi/pi-autocommit.json` from the project root.
  *
- * Returns default config (English, auto-commit disabled) when the file is
- * missing or unreadable.
+ * Returns default config (language auto-detect, auto-commit disabled) when
+ * the file is missing or unreadable.
  */
 export function loadConfig(cwd: string): PiAutocommitConfig {
   try {
@@ -130,7 +141,7 @@ function normaliseScope(
  * Reads the existing file (if any) and replaces only the `enable` field,
  * so unknown keys and other known keys (`lang`, `model`) are kept intact.
  * When the file does not exist, it is created with default values
- * (`lang: "en"`, no `model`) and the given `enable` value.
+ * (`lang: "auto"`, no `model`) and the given `enable` value.
  */
 export function saveEnable(cwd: string, enable: boolean): void {
   const configPath = join(cwd, ".pi", CONFIG_FILENAME);
@@ -157,7 +168,7 @@ export function saveEnable(cwd: string, enable: boolean): void {
  * so unknown keys and other known keys (`lang`, `enable`) are kept intact.
  * Pass `undefined` to clear the `model` key entirely (fall back to the
  * session model). When the file does not exist, it is created with default
- * values (`lang: "en"`, `enable: true`) and the given `model` value.
+ * values (`lang: "auto"`, `enable: true`) and the given `model` value.
  */
 export function saveModel(cwd: string, model: string | undefined): void {
   const configPath = join(cwd, ".pi", CONFIG_FILENAME);
@@ -182,8 +193,21 @@ export function saveModel(cwd: string, model: string | undefined): void {
 }
 
 /**
+ * The language display name used for commit message generation, by
+ * priority: the `lang` config when set (a fixed language wins over
+ * detection), else the auto-detected `langName` (set at `agent_end`),
+ * else English.
+ */
+export function resolvedLanguageName(config: PiAutocommitConfig): string {
+  if (config.lang && config.lang !== "auto") {
+    return languageName(config.lang);
+  }
+  return config.langName ?? "English";
+}
+
+/**
  * Returns `true` when the commit message should be written in Japanese.
  */
 export function isJapanese(config: PiAutocommitConfig): boolean {
-  return config.lang === "ja";
+  return resolvedLanguageName(config) === "Japanese";
 }

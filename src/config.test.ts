@@ -28,7 +28,7 @@ void describe("loadConfig", () => {
     try {
       const config = loadConfig(dir);
       assert.strictEqual(config.enable, false);
-      assert.strictEqual(config.lang, "en");
+      assert.strictEqual(config.lang, "auto");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -175,7 +175,7 @@ void describe("saveEnable", () => {
       const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
       const parsed = JSON.parse(raw);
       assert.strictEqual(parsed.enable, false);
-      assert.strictEqual(parsed.lang, "en");
+      assert.strictEqual(parsed.lang, "auto");
       assert.strictEqual(parsed.model, undefined);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -230,7 +230,7 @@ void describe("saveModel", () => {
       const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
       const parsed = JSON.parse(raw);
       assert.strictEqual(parsed.model, "anthropic/claude-sonnet-4");
-      assert.strictEqual(parsed.lang, "en");
+      assert.strictEqual(parsed.lang, "auto");
       assert.strictEqual(parsed.enable, false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
