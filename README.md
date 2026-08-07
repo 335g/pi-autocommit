@@ -34,7 +34,7 @@ Or add it to your pi package config:
 
 ## How it works
 
-Auto-commit is **enabled by default**. Once installed, the extension:
+Auto-commit is **disabled by default**. Enable it by setting `"enable": true` in `.pi/pi-autocommit.json` or running `/autocommit-enable true`; the extension then:
 
 1. **`turn_end`** — After each turn that ran a file-mutating tool (`write`, `edit`, `bash`), if the working tree has changes, it stages everything (`git add -A`) and creates a checkpoint commit:
    ```
@@ -43,6 +43,8 @@ Auto-commit is **enabled by default**. Once installed, the extension:
 2. **`agent_end`** — At the end of the agent loop, it counts the checkpoint commits at HEAD, soft-resets them, and asks the LLM to split the combined diff into logical Conventional Commits (using the assistant's own messages as context). Each logical group is then staged and committed separately.
 
 The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files.
+
+While enabled, agent-initiated `git commit` and `git push` commands in the `bash` tool are blocked: pi-autocommit owns history through checkpoint-then-reorganise, and a push before `agent_end` would ship raw checkpoint commits to the remote. When disabled, the agent is free to commit and push on its own.
 
 This runs silently in the background. Notifications appear for progress and errors, but no interactive confirmation is required.
 
@@ -61,7 +63,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `lang` | string | `"auto"` | Commit message language. `"auto"` (default) detects it from the conversation (Japanese, Korean, Chinese, Russian by script); Latin-script conversations fall back to English. Any other value — a code (`"ja"`, `"ko"`) or a language name in any language (`"Korean"`, `"한국어"`) — fixes that language |
-| `enable` | boolean | `true` | Whether auto-commit is active |
+| `enable` | boolean | `false` | Whether auto-commit is active |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 

@@ -36,7 +36,7 @@ pi install @335g/pi-autocommit
 
 ## 仕組み
 
-自動コミットは**デフォルトで有効**です。インストールすると、拡張機能は次を行います。
+自動コミットは**デフォルトでは無効**です。`.pi/pi-autocommit.json` で `"enable": true` を設定するか `/autocommit-enable true` を実行すると有効化され、拡張機能は次を行います。
 
 1. **`turn_end`** — ファイルを変更するツール（`write`, `edit`, `bash`）を実行したターンの終了後、ワーキングツリーに変更があればすべてステージ（`git add -A`）し、checkpoint コミットを作成します:
    ```
@@ -45,6 +45,8 @@ pi install @335g/pi-autocommit
 2. **`agent_end`** — エージェントループ終了時に HEAD にある checkpoint コミットを数え、soft reset し、LLM に結合差分を論理的な Conventional Commits に分割させます（アシスタント自身のメッセージをコンテキストとして使用）。各論理グループを順にステージしてコミットします。
 
 フッター表示（`[has changes]`）は未コミット変更の有無を知らせます。次のプロンプトを書く前に確認すれば、意図しないファイルの混入に気づけます。
+
+有効な間、エージェントが `bash` ツールで実行する `git commit`・`git push` はブロックされます。pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうためです。無効な間は、エージェントは自由に commit/push できます。
 
 バックグラウンドで動作し、進捗やエラーは UI に通知されますが、対話的な確認は不要です。
 
@@ -63,7 +65,7 @@ pi install @335g/pi-autocommit
 | キー | 型 | デフォルト | 説明 |
 |-----|------|---------|-------------|
 | `lang` | string | `"auto"` | コミットメッセージの言語。`"auto"`（デフォルト）は会話から判定（文字種で日本語・韓国語・中国語・ロシア語を検出。ラテン文字の会話は英語にフォールバック）。その他の値 — コード（`"ja"`、`"ko"`）または任意の言語名（`"Korean"`、`"한국어"`）— で言語を固定 |
-| `enable` | boolean | `true` | 自動コミットを有効にするか |
+| `enable` | boolean | `false` | 自動コミットを有効にするか |
 | `model` | string | — | コミットメッセージ生成に使用する LLM モデルを `"provider/modelId"` 形式で指定（例: `"anthropic/claude-sonnet-4"`）。省略時はセッションの現在のモデルを使用 |
 | `scope` | object | — | パスから scope へのマッピング。Conventional Commits の scope を決定論的に固定します。設定すると LLM は scope を推論せず、変更ファイルパスから解決されます。下記の [スコープマッピング](#スコープマッピング) を参照 |
 
