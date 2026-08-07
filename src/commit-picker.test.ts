@@ -48,7 +48,7 @@ describe("buildCommitItems", () => {
 // ── defaultRange ──────────────────────────────────────────
 
 describe("defaultRange", () => {
-  it("sets [1] at HEAD and [2] at last checkpoint", () => {
+  it("sets [1] at HEAD and [2] at the bottom of the contiguous checkpoint run", () => {
     const items: CommitItem[] = [
       { sha: "a", subject: "wip(checkpoint): turn 3", isCheckpoint: true },
       { sha: "b", subject: "wip(checkpoint): turn 2", isCheckpoint: true },
@@ -57,7 +57,24 @@ describe("defaultRange", () => {
 
     const { startIndex, endIndex } = defaultRange(items);
     assert.equal(startIndex, 0); // HEAD
-    assert.equal(endIndex, 1); // last checkpoint at index 1
+    assert.equal(endIndex, 1); // bottom of the run at index 1
+  });
+
+  it("stops at the first non-checkpoint, excluding scattered old checkpoints", () => {
+    // Old checkpoints below previously reorganised commits must NOT be
+    // included by default (they may already be pushed).
+    const items: CommitItem[] = [
+      { sha: "a", subject: "wip(checkpoint): turn 2", isCheckpoint: true },
+      { sha: "b", subject: "wip(checkpoint): turn 1", isCheckpoint: true },
+      { sha: "c", subject: "feat: X", isCheckpoint: false },
+      { sha: "d", subject: "fix: Y", isCheckpoint: false },
+      { sha: "e", subject: "wip(checkpoint): old turn 2", isCheckpoint: true },
+      { sha: "f", subject: "wip(checkpoint): old turn 1", isCheckpoint: true },
+    ];
+
+    const { startIndex, endIndex } = defaultRange(items);
+    assert.equal(startIndex, 0);
+    assert.equal(endIndex, 1); // NOT 4 (old scattered checkpoint)
   });
 
   it("falls back to both at HEAD when no checkpoints exist", () => {

@@ -126,6 +126,7 @@ async function maybeRunInteractiveReorganise(
 ): Promise<void> {
   const raw = await pickerStore.getRecentCommits(config.commitPickerMaxCommits);
   const items = buildCommitItems(raw);
+  const remoteTipSha = await pickerStore.getUpstreamTip();
 
   if (items.length === 0) {
     if (emptyMessage) {
@@ -141,7 +142,7 @@ async function maybeRunInteractiveReorganise(
       return buildCommitItems(raw);
     };
 
-    const range = await showCommitPicker(ctx, items, loadMore);
+    const range = await showCommitPicker(ctx, items, loadMore, remoteTipSha);
     if (range !== null) {
       const result = await runWithOrganiseProgress(
         ctx,

@@ -54,8 +54,12 @@ export function buildCommitItems(rawGitLog: string): CommitItem[] {
 }
 
 /**
- * Compute the default range: [1] at HEAD, [2] at the last checkpoint.
- * Falls back to both at HEAD when there are no checkpoints.
+ * Compute the default range: [1] at HEAD, [2] at the bottom of the
+ * contiguous checkpoint run at HEAD. Falls back to both at HEAD when HEAD
+ * is not a checkpoint.
+ *
+ * Stops at the first non-checkpoint commit so scattered historical
+ * checkpoints (possibly already pushed) are never included by default.
  */
 export function defaultRange(
   items: CommitItem[],
@@ -63,9 +67,10 @@ export function defaultRange(
   const startIndex = 0;
   let endIndex = 0;
   for (let i = 0; i < items.length; i++) {
-    if (items[i].isCheckpoint) {
-      endIndex = i;
+    if (!items[i].isCheckpoint) {
+      break;
     }
+    endIndex = i;
   }
   return { startIndex, endIndex };
 }
@@ -102,6 +107,8 @@ export class CommitPicker {
   private scrollOffset: number;
   private maxVisible: number;
   private errorMessage: string | null = null;
+  /** SHA of the upstream tip; rendered as a boundary marker in the list. */
+  private remoteTipSha: string | null;
   /** Stored theme reference for render(). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private theme: { fg: (color: any, text: string) => string; bg: (color: any, text: string) => string };
@@ -122,6 +129,7 @@ export class CommitPicker {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     theme: { fg: (color: any, text: string) => string; bg: (color: any, text: string) => string },
     maxVisible = MAX_VISIBLE,
+    remoteTipSha: string | null = null,
   ) {
     this.items = items;
     this.cursorIndex = defaultEnd;
@@ -130,6 +138,7 @@ export class CommitPicker {
     this.maxVisible = maxVisible;
     this.scrollOffset = 0;
     this.theme = theme;
+    this.remoteTipSha = remoteTipSha;
     this.ensureCursorVisible();
   }
 
@@ -177,7 +186,10 @@ export class CommitPicker {
     const isEnd = absIndex === this.endIndex;
     const marker = isStart ? "1" : isEnd ? "2" : " ";
     const cursor = absIndex === this.cursorIndex ? "▸" : " ";
-    const label = formatSubject(item.subject);
+    let label = formatSubject(item.subject);
+    if (item.sha === this.remoteTipSha) {
+      label += ` ${this.theme.fg("dim", "← リモート先端")}`;
+    }
     return `${cursor} [${marker}] ${label}`;
   }
 
@@ -294,11 +306,12 @@ export async function showCommitPicker(
   ctx: ExtensionContext,
   items: CommitItem[],
   loadMore?: (count: number) => Promise<CommitItem[]>,
+  remoteTipSha?: string | null,
 ): Promise<PickerResult | null> {
   if (items.length === 0) return null;
 
   if (ctx.mode !== "tui") {
-    return showCommitPickerNonTUI(ctx, items);
+    return showCommitPickerNonTUI(ctx, items, remoteTipSha);
   }
 
   const { startIndex, endIndex } = defaultRange(items);
@@ -329,7 +342,7 @@ export async function showCommitPicker(
       ),
     );
 
-    const picker = new CommitPicker(items, startIndex, endIndex, theme);
+    const picker = new CommitPicker(items, startIndex, endIndex, theme, undefined, remoteTipSha);
     picker.onConfirm = (result) => done(result);
     picker.onCancel = () => done(null);
     picker.onLoadMore = loadMore;
@@ -358,6 +371,7 @@ export async function showCommitPicker(
 async function showCommitPickerNonTUI(
   ctx: ExtensionContext,
   items: CommitItem[],
+  remoteTipSha?: string | null,
 ): Promise<PickerResult | null> {
   const { startIndex, endIndex } = defaultRange(items);
 
@@ -371,7 +385,8 @@ async function showCommitPickerNonTUI(
             ? "[2]"
             : "   ";
     const prefix = item.isCheckpoint ? "⚡" : " ";
-    const label = `${marker} ${prefix} ${formatSubject(item.subject)}`;
+    const remoteMarker = item.sha === remoteTipSha ? " ← リモート先端" : "";
+    const label = `${marker} ${prefix} ${formatSubject(item.subject)}${remoteMarker}`;
     // Truncate for display.
     const maxLen = 80;
     return label.length > maxLen ? label.slice(0, maxLen - 3) + "..." : label;
