@@ -20,11 +20,15 @@ _Avoid_: WIP commit, scratch commit
 The pi session that owns a checkpoint commit. Recorded as a `Checkpoint-Session: <sessionId>` Git trailer on each checkpoint commit so that the reorganiser can limit its scope to the current session when multiple sessions share history.
 _Avoid_: session id (ambiguous), commit owner
 
+**Checkpoint branch**
+The origin branch of a checkpoint commit, recorded as a `Checkpoint-Branch: <branch>` Git trailer (the worktree branch the checkpoint was created on). Lets merged checkpoints be traced back to the delegated worktree that produced them; shown in the commit picker and `/autocommit-organise` session completions.
+_Avoid_: origin, source branch
+
 **Stray checkpoint**
 A checkpoint commit left un-reorganised in the branch, typically because its owning session crashed before `agent_end`. The manual `/autocommit-organise` command lets a later session reorganise stray checkpoints by selecting a checkpoint session from a popup.
 
 **Merged checkpoint**
-A stray checkpoint from another session that entered the branch via a merge (e.g. a delegated worktree agent crashed before `agent_end` and its branch was merged as-is). Its changes are already in the tree and it cannot be reassembled by the manual scattered path (re-applying the diff is a no-op), so it stays in history as `wip(checkpoint)`. The `agent_end` handler detects these via `findCheckpointsSince` (baseline..HEAD, filtered to foreign sessions) and warns; the prevention is integrating with `git merge --squash`.
+A stray checkpoint from another session that entered the branch via a merge (e.g. a delegated worktree agent crashed before `agent_end` and its branch was merged as-is). Its changes are already in the tree and it cannot be reassembled by the manual scattered path (re-applying the diff is a no-op), so it stays in history as `wip(checkpoint)`. Detected at `session_start` (foreign-session checkpoints in the un-pushed range vs the upstream tip) and `agent_end` (`findCheckpointsSince` baseline..HEAD, filtered to foreign sessions); the prevention is integrating with `git merge --squash`.
 _Avoid_: leak, foreign checkpoint
 
 **Commit pipeline**

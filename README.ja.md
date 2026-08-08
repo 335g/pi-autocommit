@@ -53,7 +53,7 @@ pi install @335g/pi-autocommit
 - **`git merge --squash` は常に許可** — コミットを作らずに差分だけをステージするため、checkpoint の列を壊しません。ワークツリーのブランチ統合の推奨手段で、相手エージェントが `agent_end` 前にクラッシュして branch tip に `wip(checkpoint)` が残っていても無害です。
 - **HEAD に checkpoint がない場合、素の `git merge` / `git cherry-pick` は許可** — 割り込ませる checkpoint の列がなければ安全で、相手エージェントが整理済みのコミットを積んだブランチをそのまま統合できます。HEAD に checkpoint がある間は従来通りブロックされ、ブロック理由は `/autocommit-organise` か `--squash` を案内します。
 
-もしマージで他セッションの未整理 checkpoint を取り込んでしまった場合（相手エージェントのクラッシュなど）は `agent_end` で警告されます — 変更自体はツリーに入っていますが `wip(checkpoint)` が履歴に残るため、次回は `--squash` で統合してください。
+もしマージで他セッションの未整理 checkpoint を取り込んでしまった場合（相手エージェントのクラッシュなど）は `session_start` と `agent_end` の両方で警告されます — 変更自体はツリーに入っていますが `wip(checkpoint)` が履歴に残るため、次回は `--squash` で統合してください。取り込まれた checkpoint には由来のワークツリーブランチが `Checkpoint-Branch` trailer として記録され、コミットピッカーや `/autocommit-organise` のセッション補完にも表示されるので、どの委譲ブランチ由来か判別できます。
 
 ブロック理由は設定されたコミットメッセージ言語（日本語設定時は日本語、それ以外は英語）で表示され、`/autocommit-enable false` で解除できる旨も含まれます。無効な間は、エージェントは自由に git を操作できます。
 

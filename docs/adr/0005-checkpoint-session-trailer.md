@@ -30,6 +30,11 @@ trailer-matching commits as its own and leaves others untouched.
 
 - `runCheckpointCommit` must accept a session id and write a trailer;
   the commit body format becomes `wip(checkpoint): auto-commit at turn N\n\nCheckpoint-Session: <id>`.
+- Checkpoint commits additionally record a `Checkpoint-Branch: <branch>`
+  trailer (the worktree branch the checkpoint was created on) so merged
+  checkpoints can be traced back to the delegated worktree that produced
+  them. The commit picker and `/autocommit-organise` session completions
+  display this branch instead of the raw session id.
 - `countWipCommits` is replaced by a session-aware scan: collect
   consecutive `wip(checkpoint):` commits whose trailer matches the
   current session id. Non-matching commits terminate the run and are
