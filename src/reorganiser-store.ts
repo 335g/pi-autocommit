@@ -84,6 +84,18 @@ export interface ReorganiserStore {
   >;
 
   /**
+   * Return checkpoint commits reachable from HEAD but not from `ref` — i.e.
+   * checkpoints that arrived during this run (typically via a merge of a
+   * branch whose agent crashed before `agent_end`).
+   */
+  findCheckpointsSince(
+    ref: string,
+    marker: string,
+  ): Promise<
+    Array<{ sha: string; subject: string; session: string | null }>
+  >;
+
+  /**
    * Extract the diff of a single commit (relative to its first parent) and
    * apply it to the index via `git apply --cached`.
    *
@@ -192,6 +204,15 @@ export class GitReorganiserStore implements ReorganiserStore {
     Array<{ sha: string; subject: string; session: string | null }>
   > {
     return this.git.findReachableCheckpoints(marker);
+  }
+
+  async findCheckpointsSince(
+    ref: string,
+    marker: string,
+  ): Promise<
+    Array<{ sha: string; subject: string; session: string | null }>
+  > {
+    return this.git.findCheckpointsSince(ref, marker);
   }
 
   async applyCommitDiffToIndex(

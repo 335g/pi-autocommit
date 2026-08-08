@@ -347,6 +347,21 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     }));
   }
 
+  async findCheckpointsSince(
+    ref: string,
+    marker: string,
+  ): Promise<
+    Array<{ sha: string; subject: string; session: string | null }>
+  > {
+    this.operations.push(`findCheckpointsSince:${ref}:${marker}`);
+    const commits = this.options.checkpointCommits ?? [];
+    return commits.map((c, i) => ({
+      sha: `sha-${i}`,
+      subject: c.message,
+      session: c.session ?? null,
+    }));
+  }
+
   async applyCommitDiffToIndex(
     sha: string,
   ): Promise<{ success: boolean; error?: string }> {
