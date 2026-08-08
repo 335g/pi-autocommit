@@ -129,3 +129,60 @@ describe("GitOperations.resetSoft", () => {
     );
   });
 });
+
+describe("GitOperations.findCheckpointsSince", () => {
+  const marker = "wip(checkpoint):";
+  const output = [
+    "deadbeef\u0000wip(checkpoint): auto-commit at turn 2\u0000session-2",
+    "cafebabe\u0000feat: regular commit\u0000",
+    "12345678\u0000wip(checkpoint): auto-commit at turn 1\u0000session-1",
+  ].join("\n");
+
+  it("returns only marker-matching commits in the range", async () => {
+    const git = new GitOperations({
+      exec: async (_cmd: string, args?: string[]) => {
+        assert.deepEqual(args, [
+          "log",
+          "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+          "--no-decorate",
+          "abc123..HEAD",
+        ]);
+        return { code: 0, stdout: output + "\n", stderr: "", killed: false };
+      },
+    } as unknown as ExtensionAPI);
+
+    const found = await git.findCheckpointsSince("abc123", marker);
+    assert.equal(found.length, 2);
+    assert.deepEqual(found[0], {
+      sha: "deadbeef",
+      subject: "wip(checkpoint): auto-commit at turn 2",
+      session: "session-2",
+    });
+    assert.deepEqual(found[1], {
+      sha: "12345678",
+      subject: "wip(checkpoint): auto-commit at turn 1",
+      session: "session-1",
+    });
+  });
+
+  it("returns [] when git fails", async () => {
+    const git = new GitOperations({
+      exec: async () => ({ code: 128, stdout: "", stderr: "fatal", killed: false }),
+    } as unknown as ExtensionAPI);
+    const found = await git.findCheckpointsSince("abc123", marker);
+    assert.deepEqual(found, []);
+  });
+
+  it("treats missing trailer as null session", async () => {
+    const git = new GitOperations({
+      exec: async () => ({
+        code: 0,
+        stdout: "deadbeef\u0000wip(checkpoint): turn\u0000\n",
+        stderr: "",
+        killed: false,
+      }),
+    } as unknown as ExtensionAPI);
+    const found = await git.findCheckpointsSince("abc123", marker);
+    assert.equal(found[0].session, null);
+  });
+});

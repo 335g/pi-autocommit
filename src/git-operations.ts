@@ -364,21 +364,26 @@ export class GitOperations {
       "--no-decorate",
     ]);
     if (code !== 0) return [];
+    return parseCheckpointLog(stdout, marker);
+  }
 
-    const result: Array<{
-      sha: string;
-      subject: string;
-      session: string | null;
-    }> = [];
-    const lines = stdout.trim().split("\n");
-    for (const line of lines) {
-      if (!line) continue;
-      const [sha, subject, sessionRaw] = line.split("\0");
-      if (subject?.startsWith(marker)) {
-        result.push({ sha, subject, session: sessionRaw?.trim() || null });
-      }
-    }
-    return result;
+  /**
+   * Return checkpoint commits reachable from HEAD but not from `ref` — i.e.
+   * checkpoints that arrived during this run, typically via a merge of a
+   * branch whose agent crashed before `agent_end` reorganisation.
+   */
+  async findCheckpointsSince(
+    ref: string,
+    marker: string,
+  ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
+    const { stdout, code } = await this.pi.exec("git", [
+      "log",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+      "--no-decorate",
+      `${ref}..HEAD`,
+    ]);
+    if (code !== 0) return [];
+    return parseCheckpointLog(stdout, marker);
   }
 
   /**
@@ -484,4 +489,28 @@ export class GitOperations {
     }
     return { success: true };
   }
+}
+
+/**
+ * Parse the `%H%x00%s%x00%(trailers:...)` log output into checkpoint entries,
+ * keeping only commits whose subject starts with `marker`.
+ */
+function parseCheckpointLog(
+  stdout: string,
+  marker: string,
+): Array<{ sha: string; subject: string; session: string | null }> {
+  const result: Array<{
+    sha: string;
+    subject: string;
+    session: string | null;
+  }> = [];
+  const lines = stdout.trim().split("\n");
+  for (const line of lines) {
+    if (!line) continue;
+    const [sha, subject, sessionRaw] = line.split("\0");
+    if (subject?.startsWith(marker)) {
+      result.push({ sha, subject, session: sessionRaw?.trim() || null });
+    }
+  }
+  return result;
 }
