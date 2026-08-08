@@ -133,9 +133,9 @@ describe("GitOperations.resetSoft", () => {
 describe("GitOperations.findCheckpointsSince", () => {
   const marker = "wip(checkpoint):";
   const output = [
-    "deadbeef\u0000wip(checkpoint): auto-commit at turn 2\u0000session-2",
-    "cafebabe\u0000feat: regular commit\u0000",
-    "12345678\u0000wip(checkpoint): auto-commit at turn 1\u0000session-1",
+    "deadbeef\u0000wip(checkpoint): auto-commit at turn 2\u0000session-2\u0000wt/task1",
+    "cafebabe\u0000feat: regular commit\u0000\u0000",
+    "12345678\u0000wip(checkpoint): auto-commit at turn 1\u0000session-1\u0000",
   ].join("\n");
 
   it("returns only marker-matching commits in the range", async () => {
@@ -143,7 +143,7 @@ describe("GitOperations.findCheckpointsSince", () => {
       exec: async (_cmd: string, args?: string[]) => {
         assert.deepEqual(args, [
           "log",
-          "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+          "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly,separator=%x00)%x00%(trailers:key=Checkpoint-Branch,valueonly,separator=%x00)",
           "--no-decorate",
           "abc123..HEAD",
         ]);
@@ -157,11 +157,13 @@ describe("GitOperations.findCheckpointsSince", () => {
       sha: "deadbeef",
       subject: "wip(checkpoint): auto-commit at turn 2",
       session: "session-2",
+      branch: "wt/task1",
     });
     assert.deepEqual(found[1], {
       sha: "12345678",
       subject: "wip(checkpoint): auto-commit at turn 1",
       session: "session-1",
+      branch: null,
     });
   });
 
@@ -173,16 +175,41 @@ describe("GitOperations.findCheckpointsSince", () => {
     assert.deepEqual(found, []);
   });
 
-  it("treats missing trailer as null session", async () => {
+  it("treats missing trailers as null", async () => {
     const git = new GitOperations({
       exec: async () => ({
         code: 0,
-        stdout: "deadbeef\u0000wip(checkpoint): turn\u0000\n",
+        stdout: "deadbeef\u0000wip(checkpoint): turn\u0000\u0000\n",
         stderr: "",
         killed: false,
       }),
     } as unknown as ExtensionAPI);
     const found = await git.findCheckpointsSince("abc123", marker);
     assert.equal(found[0].session, null);
+    assert.equal(found[0].branch, null);
+  });
+});
+
+describe("GitOperations.getCurrentBranch", () => {
+  it("returns the trimmed branch name", async () => {
+    const git = new GitOperations({
+      exec: async (_cmd: string, args?: string[]) => {
+        assert.deepEqual(args, ["branch", "--show-current"]);
+        return { code: 0, stdout: "wt/task1\n", stderr: "", killed: false };
+      },
+    } as unknown as ExtensionAPI);
+    assert.equal(await git.getCurrentBranch(), "wt/task1");
+  });
+
+  it("returns null on detached HEAD or failure", async () => {
+    const git = new GitOperations({
+      exec: async () => ({ code: 0, stdout: "", stderr: "", killed: false }),
+    } as unknown as ExtensionAPI);
+    assert.equal(await git.getCurrentBranch(), null);
+
+    const failing = new GitOperations({
+      exec: async () => ({ code: 128, stdout: "", stderr: "fatal", killed: false }),
+    } as unknown as ExtensionAPI);
+    assert.equal(await failing.getCurrentBranch(), null);
   });
 });

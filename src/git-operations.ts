@@ -197,7 +197,7 @@ export class GitOperations {
     // Session-aware: match subject AND trailer.
     const { stdout, code } = await this.pi.exec("git", [
       "log",
-      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly,separator=%x00)",
       "--no-decorate",
     ]);
     if (code !== 0) {
@@ -293,12 +293,31 @@ export class GitOperations {
   }
 
   /**
-   * Return the last N commits in `%H%x00%s` format, newest first.
+   * Get the name of the current branch, or `null` when HEAD is detached or
+   * git cannot resolve it. Used for the `Checkpoint-Branch` trailer.
+   */
+  async getCurrentBranch(): Promise<string | null> {
+    const { stdout, code } = await this.pi.exec("git", [
+      "branch",
+      "--show-current",
+    ]);
+    if (code !== 0) return null;
+    const branch = stdout.trim();
+    return branch.length > 0 ? branch : null;
+  }
+
+  /**
+   * Return the last N commits in `%H%x00%s` format (with session/branch
+   * trailers appended after the subject), newest first.
    */
   async getRecentCommits(maxCount: number, skip = 0): Promise<string> {
     const args = ["log"];
     if (skip > 0) args.push(`--skip=${skip}`);
-    args.push(`--max-count=${maxCount}`, "--pretty=format:%H%x00%s", "--no-decorate");
+    args.push(
+      `--max-count=${maxCount}`,
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly,separator=%x00)%x00%(trailers:key=Checkpoint-Branch,valueonly,separator=%x00)",
+      "--no-decorate",
+    );
     const { stdout } = await this.pi.exec("git", args);
     return stdout;
   }
@@ -348,8 +367,8 @@ export class GitOperations {
 
   /**
    * Walk backwards from HEAD and return every reachable commit whose subject
-   * starts with `marker`, along with its SHA and `Checkpoint-Session` trailer
-   * value (or `null` when absent).
+   * starts with `marker`, along with its SHA, `Checkpoint-Session` and
+   * `Checkpoint-Branch` trailer values (or `null` when absent).
    *
    * Uses `%(trailers:key=...,valueonly)` so the trailer value is the empty
    * string (not `"NONE"`) when the key is missing — which becomes `null`
@@ -357,10 +376,17 @@ export class GitOperations {
    */
   async findReachableCheckpoints(
     marker: string,
-  ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
+  ): Promise<
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
+  > {
     const { stdout, code } = await this.pi.exec("git", [
       "log",
-      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly,separator=%x00)%x00%(trailers:key=Checkpoint-Branch,valueonly,separator=%x00)",
       "--no-decorate",
     ]);
     if (code !== 0) return [];
@@ -375,10 +401,17 @@ export class GitOperations {
   async findCheckpointsSince(
     ref: string,
     marker: string,
-  ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
+  ): Promise<
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
+  > {
     const { stdout, code } = await this.pi.exec("git", [
       "log",
-      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly)",
+      "--pretty=format:%H%x00%s%x00%(trailers:key=Checkpoint-Session,valueonly,separator=%x00)%x00%(trailers:key=Checkpoint-Branch,valueonly,separator=%x00)",
       "--no-decorate",
       `${ref}..HEAD`,
     ]);
@@ -492,24 +525,35 @@ export class GitOperations {
 }
 
 /**
- * Parse the `%H%x00%s%x00%(trailers:...)` log output into checkpoint entries,
+ * Parse the `%H%x00%s%x00%(trailers...)` log output into checkpoint entries,
  * keeping only commits whose subject starts with `marker`.
  */
 function parseCheckpointLog(
   stdout: string,
   marker: string,
-): Array<{ sha: string; subject: string; session: string | null }> {
+): Array<{
+  sha: string;
+  subject: string;
+  session: string | null;
+  branch: string | null;
+}> {
   const result: Array<{
     sha: string;
     subject: string;
     session: string | null;
+    branch: string | null;
   }> = [];
   const lines = stdout.trim().split("\n");
   for (const line of lines) {
     if (!line) continue;
-    const [sha, subject, sessionRaw] = line.split("\0");
+    const [sha, subject, sessionRaw, branchRaw] = line.split("\0");
     if (subject?.startsWith(marker)) {
-      result.push({ sha, subject, session: sessionRaw?.trim() || null });
+      result.push({
+        sha,
+        subject,
+        session: sessionRaw?.trim() || null,
+        branch: branchRaw?.trim() || null,
+      });
     }
   }
   return result;

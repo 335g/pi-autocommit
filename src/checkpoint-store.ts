@@ -27,6 +27,9 @@ export interface CheckpointStore {
   /** Execute `git commit -m <message>`. */
   commit(message: string): Promise<ExecResult>;
 
+  /** Get the current branch name, or `null` when HEAD is detached. */
+  getCurrentBranch(): Promise<string | null>;
+
   /** Unstage all changes (`git reset HEAD --`). */
   unstageAll(): Promise<void>;
 }
@@ -56,6 +59,10 @@ export class GitCheckpointStore implements CheckpointStore {
 
   async commit(message: string): Promise<ExecResult> {
     return this.git.commit(message);
+  }
+
+  async getCurrentBranch(): Promise<string | null> {
+    return this.git.getCurrentBranch();
   }
 
   async unstageAll(): Promise<void> {

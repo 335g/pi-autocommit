@@ -1,6 +1,23 @@
 import type { PipelineEvent, PipelineResult } from "./commit-events.js";
 import type { CheckpointStore } from "./checkpoint-store.js";
 
+/**
+ * Build the checkpoint commit message body: the subject plus `Checkpoint-Session`
+ * and `Checkpoint-Branch` Git trailers when available. Trailers are omitted
+ * entirely when neither is present so the message stays a plain subject.
+ */
+export function buildCheckpointMessage(
+  message: string,
+  sessionId?: string,
+  branch?: string | null,
+): string {
+  const trailers: string[] = [];
+  if (sessionId) trailers.push(`Checkpoint-Session: ${sessionId}`);
+  if (branch) trailers.push(`Checkpoint-Branch: ${branch}`);
+  if (trailers.length === 0) return message;
+  return `${message}\n\n${trailers.join("\n")}`;
+}
+
 // ── Checkpoint commit ──────────────────────────────────────
 
 /**
@@ -16,7 +33,9 @@ import type { CheckpointStore } from "./checkpoint-store.js";
  * The checkpoint message (e.g. `wip(checkpoint): auto-commit at turn N`)
  * is supplied by the caller. When `sessionId` is provided, a
  * `Checkpoint-Session: <sessionId>` Git trailer is appended to the commit
- * body so the reorganiser can scope its reset to the owning session.
+ * body so the reorganiser can scope its reset to the owning session; the
+ * current branch is recorded as `Checkpoint-Branch` when resolvable so
+ * merged checkpoints can be traced back to their origin worktree.
  *
  * Checkpoint commits are later reorganised into logical Conventional
  * Commits at `agent_end` by the organiser.
@@ -60,10 +79,9 @@ export async function runCheckpointCommit(
     await store.stageAll();
 
     // ── 5. Execute commit ───────────────────────────────
-    // Append Checkpoint-Session trailer when a session id is available.
-    const commitMessage = sessionId
-      ? `${message}\n\nCheckpoint-Session: ${sessionId}`
-      : message;
+    // Append Checkpoint-Session / Checkpoint-Branch trailers when available.
+    const branch = await store.getCurrentBranch();
+    const commitMessage = buildCheckpointMessage(message, sessionId, branch);
     const result = await store.commit(commitMessage);
     if (result.code !== 0) {
       throw new Error(

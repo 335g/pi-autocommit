@@ -75,12 +75,18 @@ export interface ReorganiserStore {
   /**
    * Walk backwards from HEAD and return every reachable commit whose
    * subject starts with `marker`, along with its SHA and
-   * `Checkpoint-Session` trailer value (or `null` when absent).
+   * `Checkpoint-Session` / `Checkpoint-Branch` trailer values (or `null`
+   * when absent).
    */
   findReachableCheckpoints(
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   >;
 
   /**
@@ -92,7 +98,12 @@ export interface ReorganiserStore {
     ref: string,
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   >;
 
   /**
@@ -201,7 +212,12 @@ export class GitReorganiserStore implements ReorganiserStore {
   async findReachableCheckpoints(
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   > {
     return this.git.findReachableCheckpoints(marker);
   }
@@ -210,7 +226,12 @@ export class GitReorganiserStore implements ReorganiserStore {
     ref: string,
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   > {
     return this.git.findCheckpointsSince(ref, marker);
   }

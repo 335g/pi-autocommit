@@ -187,12 +187,14 @@ package-lock.json
 /**
  * Description of one checkpoint commit in the in-memory store.
  *
- * `session` may be set to simulate the `Checkpoint-Session` trailer.
+ * `session` may be set to simulate the `Checkpoint-Session` trailer;
+ * `branch` simulates the `Checkpoint-Branch` trailer.
  */
 interface CheckpointCommit {
   message: string;
   files: string[];
   session?: string | null;
+  branch?: string | null;
 }
 
 /**
@@ -336,7 +338,12 @@ class InMemoryReorganiserStore implements ReorganiserStore {
   async findReachableCheckpoints(
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   > {
     this.operations.push(`findReachableCheckpoints:${marker}`);
     const commits = this.options.checkpointCommits ?? [];
@@ -344,6 +351,7 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       sha: `sha-${i}`,
       subject: c.message,
       session: c.session ?? null,
+      branch: c.branch ?? null,
     }));
   }
 
@@ -351,7 +359,12 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     ref: string,
     marker: string,
   ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
+    Array<{
+      sha: string;
+      subject: string;
+      session: string | null;
+      branch: string | null;
+    }>
   > {
     this.operations.push(`findCheckpointsSince:${ref}:${marker}`);
     const commits = this.options.checkpointCommits ?? [];
@@ -359,6 +372,7 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       sha: `sha-${i}`,
       subject: c.message,
       session: c.session ?? null,
+      branch: c.branch ?? null,
     }));
   }
 
