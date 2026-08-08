@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   blockedInterleavingVerb,
   buildBlockReason,
+  interleavingAllowedWithoutCheckpoints,
   shouldBlockGitCommit,
   shouldBlockGitHardReset,
   shouldBlockGitPush,
@@ -313,6 +314,31 @@ void describe("blockedInterleavingVerb", () => {
     assert.strictEqual(blockedInterleavingVerb("git merge main"), "merge");
   });
 
+  void it("allows git merge --squash (no commit is created)", () => {
+    assert.strictEqual(
+      blockedInterleavingVerb("git merge --squash wt/task1"),
+      null,
+    );
+    assert.strictEqual(
+      blockedInterleavingVerb("git merge wt/task1 --squash"),
+      null,
+    );
+  });
+
+  void it("allows git merge --squash in a compound command", () => {
+    assert.strictEqual(
+      blockedInterleavingVerb("git merge --squash wt/task1 && git status"),
+      null,
+    );
+  });
+
+  void it("blocks git merge --no-squash", () => {
+    assert.strictEqual(
+      blockedInterleavingVerb("git merge --no-squash main"),
+      "merge",
+    );
+  });
+
   void it("detects git cherry-pick", () => {
     assert.strictEqual(
       blockedInterleavingVerb("git cherry-pick abc123"),
@@ -376,6 +402,60 @@ void describe("buildBlockReason", () => {
     assert.ok(jaMerge.includes("チェックポイント"));
     assert.ok(jaMerge.includes("merge"));
     assert.ok(jaCherryPick.includes("cherry-pick"));
+  });
+
+  void it("merge reason suggests --squash", () => {
+    const ja = buildBlockReason("merge", true);
+    const en = buildBlockReason("merge", false);
+    assert.ok(ja.includes("--squash"));
+    assert.ok(en.includes("--squash"));
+  });
+});
+
+void describe("interleavingAllowedWithoutCheckpoints", () => {
+  const marker = "wip(checkpoint):";
+
+  void it("allows merge when HEAD is not a checkpoint", () => {
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints("merge", "feat: base", marker),
+      true,
+    );
+  });
+
+  void it("allows cherry-pick when HEAD is not a checkpoint", () => {
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints("cherry-pick", "feat: base", marker),
+      true,
+    );
+  });
+
+  void it("blocks merge when HEAD is a checkpoint", () => {
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints(
+        "merge",
+        "wip(checkpoint): auto-commit at turn 1",
+        marker,
+      ),
+      false,
+    );
+  });
+
+  void it("blocks merge when HEAD cannot be resolved", () => {
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints("merge", null, marker),
+      false,
+    );
+  });
+
+  void it("does not apply to other blocked verbs", () => {
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints("rebase", "feat: base", marker),
+      false,
+    );
+    assert.strictEqual(
+      interleavingAllowedWithoutCheckpoints("commit", "feat: base", marker),
+      false,
+    );
   });
 });
 

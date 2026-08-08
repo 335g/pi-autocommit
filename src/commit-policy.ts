@@ -142,10 +142,17 @@ const INTERLEAVING_VERBS = ["merge", "cherry-pick", "rebase"] as const;
  * into the checkpoint run (merge, cherry-pick, rebase), returning the matched
  * verb, or `null` when none is found.
  *
- * All three rewrite or append history at HEAD: the merged/cherry-picked/rebased
- * commits are not checkpoints, so `countCheckpointCommits` stops at them and
- * the checkpoints below are silently dropped from automatic reorganisation.
- * `rebase` additionally leaves the repo in a half-finished state on conflict.
+ * `git merge --squash` is excluded: it stages the merged changes without
+ * creating a commit, so it cannot interleave history — the staged changes flow
+ * through the normal turn_end checkpoint instead. This is the blessed way to
+ * integrate a worktree branch whose tip may still hold un-reorganised
+ * checkpoints (e.g. a delegated agent that crashed before `agent_end`).
+ *
+ * The other three rewrite or append history at HEAD: the merged/cherry-picked/
+ * rebased commits are not checkpoints, so `countCheckpointCommits` stops at
+ * them and the checkpoints below are silently dropped from automatic
+ * reorganisation. `rebase` additionally leaves the repo in a half-finished
+ * state on conflict.
  *
  * @returns The matched verb, or `null`.
  */
@@ -154,11 +161,50 @@ export function blockedInterleavingVerb(command: string): string | null {
     return null;
   }
   for (const verb of INTERLEAVING_VERBS) {
-    if (shouldBlockGitVerb(command, verb)) {
-      return verb;
+    if (!shouldBlockGitVerb(command, verb)) {
+      continue;
     }
+    if (verb === "merge" && isSquashMerge(command)) {
+      continue; // no commit is created — nothing to interleave
+    }
+    return verb;
   }
   return null;
+}
+
+/**
+ * Whether a `git merge` invocation carries `--squash` (stages the merged
+ * changes without creating a commit). `--no-squash` does not match.
+ */
+function isSquashMerge(command: string): boolean {
+  const segments = command.split(/&&|\|\||;|\||\n/);
+  return segments.some(
+    (segment) =>
+      shouldBlockGitVerb(segment, "merge") &&
+      /(^|\s)--squash(?=\s|$)/.test(segment),
+  );
+}
+
+/**
+ * Whether a merge/cherry-pick invocation is safe to allow without a guard
+ * block because HEAD holds no checkpoint commit to interleave into.
+ *
+ * Called by the `tool_call` handler when `blockedInterleavingVerb` matched
+ * "merge" or "cherry-pick". When HEAD's subject is not a checkpoint there is
+ * no checkpoint run at the top of the branch, so the foreign commit cannot
+ * strand any checkpoints below it. A `null` headSubject (HEAD unresolved) is
+ * treated conservatively as "block" so an unreadable repo is not silently
+ * allowed to break the checkpoint run.
+ */
+export function interleavingAllowedWithoutCheckpoints(
+  blocked: string | null,
+  headSubject: string | null,
+  marker: string,
+): boolean {
+  if (blocked !== "merge" && blocked !== "cherry-pick") {
+    return false;
+  }
+  return headSubject !== null && !headSubject.startsWith(marker);
 }
 
 /** Footer note appended to every block reason. */
@@ -185,9 +231,15 @@ export function buildBlockReason(blocked: string, japanese: boolean): string {
           DISABLE_NOTE_JA
         );
       case "merge":
+        return (
+          "pi-autocommit: エージェントループ中の `git merge` は、HEAD に未整理のチェックポイントがあるためブロックされました。" +
+          "まず `/autocommit-organise` で整理するか、コミットを作らず差分だけ取り込む `git merge --squash` を使ってください。" +
+          DISABLE_NOTE_JA
+        );
       case "cherry-pick":
         return (
-          `pi-autocommit: エージェントループ中の \`git ${blocked}\` はチェックポイントコミットの列を壊すためブロックされました。` +
+          "pi-autocommit: エージェントループ中の `git cherry-pick` は、HEAD に未整理のチェックポイントがあるためブロックされました。" +
+          "まず `/autocommit-organise` で整理してから実行してください。" +
           DISABLE_NOTE_JA
         );
       case "rebase":
@@ -214,9 +266,16 @@ export function buildBlockReason(blocked: string, japanese: boolean): string {
         DISABLE_NOTE_EN
       );
     case "merge":
+      return (
+        "pi-autocommit: `git merge` is blocked during the agent loop because HEAD holds un-reorganised checkpoint commits. " +
+        "Reorganise them first with `/autocommit-organise`, or use `git merge --squash`, which stages the changes " +
+        "without creating a commit. " +
+        DISABLE_NOTE_EN
+      );
     case "cherry-pick":
       return (
-        `pi-autocommit: \`git ${blocked}\` is blocked during the agent loop because it breaks the checkpoint commit run. ` +
+        "pi-autocommit: `git cherry-pick` is blocked during the agent loop because HEAD holds un-reorganised checkpoint commits. " +
+        "Reorganise them first with `/autocommit-organise`. " +
         DISABLE_NOTE_EN
       );
     case "rebase":
