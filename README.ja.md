@@ -46,7 +46,16 @@ pi install @335g/pi-autocommit
 
 フッター表示（`[has changes]`）は未コミット変更の有無を知らせます。次のプロンプトを書く前に確認すれば、意図しないファイルの混入に気づけます。
 
-有効な間、エージェントが `bash` ツールで実行する破壊的・履歴割り込み系の git コマンドはブロックされます: `git commit`（`--amend` 含む）・`git push`・`git reset --hard`・`git merge`・`git cherry-pick`・`git rebase`。commit/push は pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうため、`reset --hard` はインデックスとワーキングツリーを破棄するため、merge/cherry-pick/rebase は checkpoint の列に別のコミットを割り込ませ自動再整理を壊すためです。ブロック理由は設定されたコミットメッセージ言語（日本語設定時は日本語、それ以外は英語）で表示され、`/autocommit-enable false` で解除できる旨も含まれます。無効な間は、エージェントは自由に git を操作できます。
+有効な間、エージェントが `bash` ツールで実行する破壊的・履歴割り込み系の git コマンドはブロックされます: `git commit`（`--amend` 含む）・`git push`・`git reset --hard`・`git merge`・`git cherry-pick`・`git rebase`。commit/push は pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうため、`reset --hard` はインデックスとワーキングツリーを破棄するため、merge/cherry-pick/rebase は checkpoint の列に別のコミットを割り込ませ自動再整理を壊すためです。
+
+ワークツリーで別のエージェントに作業を委譲して統合する場合、2つの例外でブランチ統合がスムーズになります:
+
+- **`git merge --squash` は常に許可** — コミットを作らずに差分だけをステージするため、checkpoint の列を壊しません。ワークツリーのブランチ統合の推奨手段で、相手エージェントが `agent_end` 前にクラッシュして branch tip に `wip(checkpoint)` が残っていても無害です。
+- **HEAD に checkpoint がない場合、素の `git merge` / `git cherry-pick` は許可** — 割り込ませる checkpoint の列がなければ安全で、相手エージェントが整理済みのコミットを積んだブランチをそのまま統合できます。HEAD に checkpoint がある間は従来通りブロックされ、ブロック理由は `/autocommit-organise` か `--squash` を案内します。
+
+もしマージで他セッションの未整理 checkpoint を取り込んでしまった場合（相手エージェントのクラッシュなど）は `agent_end` で警告されます — 変更自体はツリーに入っていますが `wip(checkpoint)` が履歴に残るため、次回は `--squash` で統合してください。
+
+ブロック理由は設定されたコミットメッセージ言語（日本語設定時は日本語、それ以外は英語）で表示され、`/autocommit-enable false` で解除できる旨も含まれます。無効な間は、エージェントは自由に git を操作できます。
 
 バックグラウンドで動作し、進捗やエラーは UI に通知されますが、対話的な確認は不要です。
 

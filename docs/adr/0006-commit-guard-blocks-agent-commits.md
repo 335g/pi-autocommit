@@ -5,8 +5,10 @@ the `bash` tool and blocks any command that would:
 
 - commit or push on its own: `git commit` (including `--amend`) and `git push`;
 - destroy the index and working tree: `git reset --hard`; or
-- interleave a foreign commit into the checkpoint run: `git merge`,
-  `git cherry-pick`, and `git rebase`.
+- interleave a foreign commit into the checkpoint run: `git merge`
+  (except `--squash`, which creates no commit), `git cherry-pick`, and
+  `git rebase`. Plain `merge`/`cherry-pick` are additionally allowed
+  when HEAD holds no checkpoint commits (see Rationale).
 
 The block reason explains why the operation is blocked, how to resolve
 rebases started outside pi (manually), and that the guard can be disabled
@@ -30,8 +32,24 @@ reorganised history pi-autocommit creates afterwards.
 `merge`, `cherry-pick`, and `rebase` interleave the same way: their
 commits are not checkpoints, so they stop the checkpoint scan at HEAD.
 `rebase` additionally rewrites the checkpoint run and can leave the repo
-half-finished on conflict. None of the three have a legitimate
-agent-loop use: branch integration is the user's job after the run.
+half-finished on conflict.
+
+Two exceptions make worktree branch integration practical. `git merge
+--squash` creates no commit — it stages the merged changes, which flow
+through the normal turn_end checkpoint — so it is always allowed.
+Plain `merge`/`cherry-pick` are allowed when HEAD holds no checkpoint
+commits: with a clean HEAD there is no checkpoint run to strand below the
+foreign commit. They remain blocked while checkpoints sit at HEAD, and
+the block reason then suggests `/autocommit-organise` or `--squash`.
+
+Merging a branch whose tip is still un-reorganised checkpoints (the
+owning agent crashed before `agent_end`) brings `wip(checkpoint)` into
+history permanently: the changes are in the tree, and the manual
+scattered reassembly path re-applies their diffs as a no-op (nothing to
+commit), so they cannot be reorganised after the fact. The `agent_end`
+handler detects checkpoints from other sessions that arrived since the
+agent baseline (`findCheckpointsSince`, ADR-0005 trailers) and warns;
+the prevention is integrating with `--squash`.
 
 `reset --hard` is blocked because it destroys the index and the working
 tree — including changes made in the current turn that the next
@@ -81,7 +99,8 @@ inert when `enable` is false.
 
 - `commit-policy.ts` owns the detection predicates
   (`shouldBlockGitCommit`, `shouldBlockGitPush`,
-  `shouldBlockGitHardReset`, `blockedInterleavingVerb`) and the reason
+  `shouldBlockGitHardReset`, `blockedInterleavingVerb`,
+  `interleavingAllowedWithoutCheckpoints`) and the reason
   builder, kept separate from the `bash` event handler in `index.ts` so
   it is unit-testable.
 - The guard is active only while `enable` is true.
@@ -89,7 +108,9 @@ inert when `enable` is false.
   (`countCheckpointCommits`, consecutive-at-HEAD) stays as-is. Stray
   checkpoints from a crash or a rare bypass are recoverable via the
   existing manual `/autocommit-organise <sessionId>` command
-  (ADR-0005).
+  (ADR-0005) as long as they have not been merged into a branch — once
+  merged, the changes are in the tree and only `--squash`-style
+  prevention or a manual history rewrite can clean them up.
 - `git clean -f`, `git checkout .` / `git restore`, `git branch -D` and
   other destructive-but-context-dependent commands are NOT guarded:
   they require argument parsing (path vs branch) or have legitimate

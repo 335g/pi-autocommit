@@ -44,7 +44,16 @@ Auto-commit is **disabled by default**. Enable it by setting `"enable": true` in
 
 The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files.
 
-While enabled, agent-initiated destructive or history-interleaving git commands in the `bash` tool are blocked: `git commit` (including `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. Commits and pushes are blocked so history stays under pi-autocommit's checkpoint-then-reorganise control — a push before `agent_end` would ship raw checkpoint commits to the remote; `reset --hard` is blocked because it destroys the index and working tree; `merge`, `cherry-pick`, and `rebase` are blocked because they interleave a foreign commit into the checkpoint run, breaking automatic reorganisation. The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, otherwise English) and notes that the guard can be disabled with `/autocommit-enable false`. When disabled, the agent is free to use git on its own.
+While enabled, agent-initiated destructive or history-interleaving git commands in the `bash` tool are blocked: `git commit` (including `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. Commits and pushes are blocked so history stays under pi-autocommit's checkpoint-then-reorganise control — a push before `agent_end` would ship raw checkpoint commits to the remote; `reset --hard` is blocked because it destroys the index and working tree; `merge`, `cherry-pick`, and `rebase` are blocked because they interleave a foreign commit into the checkpoint run, breaking automatic reorganisation.
+
+Two exceptions make branch integration practical when delegating work to another agent via a separate worktree:
+
+- **`git merge --squash` is always allowed** — it stages the merged changes without creating a commit, so it cannot break the checkpoint run. This is the recommended way to integrate a worktree branch, and it is immune to the case where the other agent crashed before `agent_end` and left `wip(checkpoint)` commits at its branch tip.
+- **Plain `git merge` / `git cherry-pick` are allowed when HEAD holds no checkpoint commits** — with a clean HEAD there is no checkpoint run to strand below the foreign commit, so merging a finished worktree branch (whose commits were already reorganised by the other agent) works directly. They are still blocked when checkpoints sit at HEAD; the block reason then suggests `/autocommit-organise` or `--squash`.
+
+If a merge does pull in un-reorganised checkpoint commits from another session (the other agent crashed), `agent_end` reports them — the changes are already in the tree, but the `wip(checkpoint)` entries stay in history, so re-integrate with `--squash` next time.
+
+The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, otherwise English) and notes that the guard can be disabled with `/autocommit-enable false`. When disabled, the agent is free to use git on its own.
 
 This runs silently in the background. Notifications appear for progress and errors, but no interactive confirmation is required.
 

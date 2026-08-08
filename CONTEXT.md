@@ -5,7 +5,7 @@ Vocabulary for the pi-autocommit extension, which automatically commits changes 
 ## Committing
 
 **Commit guard**
-A safety measure that blocks agent-initiated destructive or history-interleaving git commands during the agent loop when `enable` is true: `git commit` (incl. `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. It intercepts the `bash` tool via the `tool_call` event. `commit`/`push` stay under checkpoint-then-reorganise control (a push before `agent_end` would ship raw checkpoint history); `reset --hard` would destroy the index and working tree; `merge`/`cherry-pick`/`rebase` would interleave a foreign commit into the checkpoint run. The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, English otherwise) and notes that the guard is lifted via `/autocommit-enable false`. When `enable` is false, the guard is inert and the agent may use git freely.
+A safety measure that blocks agent-initiated destructive or history-interleaving git commands during the agent loop when `enable` is true: `git commit` (incl. `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. It intercepts the `bash` tool via the `tool_call` event. `commit`/`push` stay under checkpoint-then-reorganise control (a push before `agent_end` would ship raw checkpoint history); `reset --hard` would destroy the index and working tree; `merge`/`cherry-pick`/`rebase` would interleave a foreign commit into the checkpoint run. Two exceptions serve worktree branch integration: `git merge --squash` is always allowed (it creates no commit), and plain `merge`/`cherry-pick` are allowed when HEAD holds no checkpoint commits. The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, English otherwise) and notes that the guard is lifted via `/autocommit-enable false`. When `enable` is false, the guard is inert and the agent may use git freely.
 _Avoid_: commit blocker, commit firewall
 
 **Auto-commit**
@@ -22,6 +22,10 @@ _Avoid_: session id (ambiguous), commit owner
 
 **Stray checkpoint**
 A checkpoint commit left un-reorganised in the branch, typically because its owning session crashed before `agent_end`. The manual `/autocommit-organise` command lets a later session reorganise stray checkpoints by selecting a checkpoint session from a popup.
+
+**Merged checkpoint**
+A stray checkpoint from another session that entered the branch via a merge (e.g. a delegated worktree agent crashed before `agent_end` and its branch was merged as-is). Its changes are already in the tree and it cannot be reassembled by the manual scattered path (re-applying the diff is a no-op), so it stays in history as `wip(checkpoint)`. The `agent_end` handler detects these via `findCheckpointsSince` (baseline..HEAD, filtered to foreign sessions) and warns; the prevention is integrating with `git merge --squash`.
+_Avoid_: leak, foreign checkpoint
 
 **Commit pipeline**
 The sequence of steps that stages files, generates a commit message, and executes the commit. Used by auto-commit.
