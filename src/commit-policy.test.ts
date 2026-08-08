@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import {
   shouldBlockGitCommit,
+  shouldBlockGitHardReset,
   shouldBlockGitPush,
   shouldCreateCheckpointCommit,
   shouldSkipReorganisation,
@@ -250,6 +251,58 @@ void describe("shouldBlockGitPush", () => {
   void it("does not false-positive on a file named git-push", () => {
     assert.strictEqual(shouldBlockGitPush("./git-push"), false);
     assert.strictEqual(shouldBlockGitPush("git-push"), false);
+  });
+});
+
+void describe("shouldBlockGitHardReset", () => {
+  void it("detects git reset --hard", () => {
+    assert.strictEqual(shouldBlockGitHardReset("git reset --hard"), true);
+  });
+
+  void it("detects git reset --hard HEAD~1", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git reset --hard HEAD~1"),
+      true,
+    );
+  });
+
+  void it("detects git reset --hard with global options", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git -C /path reset --hard"),
+      true,
+    );
+  });
+
+  void it("detects git reset --hard in a compound command", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git add -A && git reset --hard"),
+      true,
+    );
+  });
+
+  void it("detects git reset --hard on a new line", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git reset --hard\ngit status"),
+      true,
+    );
+  });
+
+  void it("allows git reset --soft", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git reset --soft HEAD~1"),
+      false,
+    );
+  });
+
+  void it("allows git reset --mixed", () => {
+    assert.strictEqual(
+      shouldBlockGitHardReset("git reset --mixed HEAD~1"),
+      false,
+    );
+  });
+
+  void it("allows plain git reset", () => {
+    assert.strictEqual(shouldBlockGitHardReset("git reset HEAD~1"), false);
   });
 });
 

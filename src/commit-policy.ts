@@ -112,6 +112,29 @@ export function shouldBlockGitPush(command: string): boolean {
 }
 
 /**
+ * Detect a `git ... reset --hard` invocation inside a shell command.
+ *
+ * `git reset --soft` / `--mixed` (the default) only move HEAD and staging and
+ * are left alone — agents legitimately use them to inspect and rewind history.
+ * `--hard` additionally destroys the working tree, which can wipe changes made
+ * in the current turn before the next checkpoint captures them.
+ *
+ * @returns `true` when any segment contains a `git ... reset` invocation and a
+ *   `--hard` flag.
+ */
+export function shouldBlockGitHardReset(command: string): boolean {
+  if (!command) {
+    return false;
+  }
+
+  const segments = command.split(/&&|\|\||;|\||\n/);
+  const resetPattern = /\bgit\b(?:\s+\S+)*\s+reset(?=\s|$)/;
+  return segments.some(
+    (segment) => resetPattern.test(segment) && /--hard\b/.test(segment),
+  );
+}
+
+/**
  * Decide whether the commit reorganiser should be skipped at `agent_end`.
  *
  * Returns `true` when the HEAD commit captured at `agent_start` matches the

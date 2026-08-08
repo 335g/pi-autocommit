@@ -10,6 +10,7 @@ import {
 import {
   shouldCreateCheckpointCommit,
   shouldBlockGitCommit,
+  shouldBlockGitHardReset,
   shouldBlockGitPush,
   shouldSkipReorganisation,
 } from "./commit-policy.js";
@@ -436,18 +437,22 @@ export default function (pi: ExtensionAPI) {
       ? "commit"
       : shouldBlockGitPush(command)
         ? "push"
-        : null;
+        : shouldBlockGitHardReset(command)
+          ? "reset --hard"
+          : null;
     if (blocked === null) {
       return;
     }
 
-    return {
-      block: true,
-      reason:
-        `pi-autocommit がコミット履歴を管理しているため、エージェントループ中の \`git ${blocked}\` はブロックされました。` +
-        "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されます。" +
-        "整理前に push するとリモートがチェックポイント履歴と乖離するため、手動で commit/push する必要はありません。",
-    };
+    const reason =
+      blocked === "reset --hard"
+        ? "pi-autocommit: エージェントループ中の `git reset --hard` はインデックスと作業ツリーを破棄するためブロックされました。" +
+          "履歴を戻すには `git reset --soft` を、変更を捨てる必要がある場合は turn_end のチェックポイントに任せてください。"
+        : `pi-autocommit がコミット履歴を管理しているため、エージェントループ中の \`git ${blocked}\` はブロックされました。` +
+          "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されます。" +
+          "整理前に push するとリモートがチェックポイント履歴と乖離するため、手動で commit/push する必要はありません。";
+
+    return { block: true, reason };
   });
 
   // ───────────────────────────────────────────────────────
