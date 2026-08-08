@@ -1,6 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import {
+  blockedInterleavingVerb,
+  buildBlockReason,
   shouldBlockGitCommit,
   shouldBlockGitHardReset,
   shouldBlockGitPush,
@@ -303,6 +305,77 @@ void describe("shouldBlockGitHardReset", () => {
 
   void it("allows plain git reset", () => {
     assert.strictEqual(shouldBlockGitHardReset("git reset HEAD~1"), false);
+  });
+});
+
+void describe("blockedInterleavingVerb", () => {
+  void it("detects git merge", () => {
+    assert.strictEqual(blockedInterleavingVerb("git merge main"), "merge");
+  });
+
+  void it("detects git cherry-pick", () => {
+    assert.strictEqual(
+      blockedInterleavingVerb("git cherry-pick abc123"),
+      "cherry-pick",
+    );
+  });
+
+  void it("detects git rebase", () => {
+    assert.strictEqual(blockedInterleavingVerb("git rebase main"), "rebase");
+  });
+
+  void it("detects in a compound command", () => {
+    assert.strictEqual(
+      blockedInterleavingVerb("git fetch && git rebase main"),
+      "rebase",
+    );
+  });
+
+  void it("returns null for safe verbs", () => {
+    assert.strictEqual(blockedInterleavingVerb("git status"), null);
+    assert.strictEqual(blockedInterleavingVerb("git add -A"), null);
+    assert.strictEqual(blockedInterleavingVerb("git reset --hard"), null);
+    assert.strictEqual(blockedInterleavingVerb("git log"), null);
+    assert.strictEqual(blockedInterleavingVerb("git fetch origin"), null);
+  });
+});
+
+void describe("buildBlockReason", () => {
+  void it("mentions the disable command in Japanese", () => {
+    const reason = buildBlockReason("commit", true);
+    assert.ok(reason.includes("commit"));
+    assert.ok(reason.includes("/autocommit-enable false"));
+  });
+
+  void it("mentions the disable command in English", () => {
+    const reason = buildBlockReason("commit", false);
+    assert.ok(reason.includes("commit"));
+    assert.ok(reason.includes("/autocommit-enable false"));
+  });
+
+  void it("rebase reason mentions manual resolution in Japanese", () => {
+    const reason = buildBlockReason("rebase", true);
+    assert.ok(reason.includes("rebase --abort"));
+  });
+
+  void it("rebase reason mentions manual resolution in English", () => {
+    const reason = buildBlockReason("rebase", false);
+    assert.ok(reason.includes("rebase --abort"));
+  });
+
+  void it("reset --hard reason explains the destructive nature", () => {
+    const ja = buildBlockReason("reset --hard", true);
+    assert.ok(ja.includes("作業ツリー"));
+    const en = buildBlockReason("reset --hard", false);
+    assert.ok(en.includes("working tree"));
+  });
+
+  void it("merge and cherry-pick use the interleaving reason", () => {
+    const jaMerge = buildBlockReason("merge", true);
+    const jaCherryPick = buildBlockReason("cherry-pick", true);
+    assert.ok(jaMerge.includes("チェックポイント"));
+    assert.ok(jaMerge.includes("merge"));
+    assert.ok(jaCherryPick.includes("cherry-pick"));
   });
 });
 
