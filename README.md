@@ -44,7 +44,7 @@ Auto-commit is **disabled by default**. Enable it by setting `"enable": true` in
 
 The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files.
 
-While enabled, agent-initiated `git commit` and `git push` commands in the `bash` tool are blocked: pi-autocommit owns history through checkpoint-then-reorganise, and a push before `agent_end` would ship raw checkpoint commits to the remote. When disabled, the agent is free to commit and push on its own.
+While enabled, agent-initiated destructive or history-interleaving git commands in the `bash` tool are blocked: `git commit` (including `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. Commits and pushes are blocked so history stays under pi-autocommit's checkpoint-then-reorganise control — a push before `agent_end` would ship raw checkpoint commits to the remote; `reset --hard` is blocked because it destroys the index and working tree; `merge`, `cherry-pick`, and `rebase` are blocked because they interleave a foreign commit into the checkpoint run, breaking automatic reorganisation. The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, otherwise English) and notes that the guard can be disabled with `/autocommit-enable false`. When disabled, the agent is free to use git on its own.
 
 This runs silently in the background. Notifications appear for progress and errors, but no interactive confirmation is required.
 

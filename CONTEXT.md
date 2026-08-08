@@ -5,7 +5,7 @@ Vocabulary for the pi-autocommit extension, which automatically commits changes 
 ## Committing
 
 **Commit guard**
-A safety measure that blocks agent-initiated `git commit` and `git push` commands during the agent loop when `enable` is true. It intercepts the `bash` tool via the `tool_call` event so that commits stay under pi-autocommit's checkpoint-then-reorganise control and are not interleaved into the checkpoint run, and a push before `agent_end` cannot ship raw checkpoint history to the remote. When `enable` is false, the guard is inert and the agent may commit and push freely.
+A safety measure that blocks agent-initiated destructive or history-interleaving git commands during the agent loop when `enable` is true: `git commit` (incl. `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. It intercepts the `bash` tool via the `tool_call` event. `commit`/`push` stay under checkpoint-then-reorganise control (a push before `agent_end` would ship raw checkpoint history); `reset --hard` would destroy the index and working tree; `merge`/`cherry-pick`/`rebase` would interleave a foreign commit into the checkpoint run. The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, English otherwise) and notes that the guard is lifted via `/autocommit-enable false`. When `enable` is false, the guard is inert and the agent may use git freely.
 _Avoid_: commit blocker, commit firewall
 
 **Auto-commit**

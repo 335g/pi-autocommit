@@ -46,7 +46,7 @@ pi install @335g/pi-autocommit
 
 フッター表示（`[has changes]`）は未コミット変更の有無を知らせます。次のプロンプトを書く前に確認すれば、意図しないファイルの混入に気づけます。
 
-有効な間、エージェントが `bash` ツールで実行する `git commit`・`git push` はブロックされます。pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうためです。無効な間は、エージェントは自由に commit/push できます。
+有効な間、エージェントが `bash` ツールで実行する破壊的・履歴割り込み系の git コマンドはブロックされます: `git commit`（`--amend` 含む）・`git push`・`git reset --hard`・`git merge`・`git cherry-pick`・`git rebase`。commit/push は pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうため、`reset --hard` はインデックスとワーキングツリーを破棄するため、merge/cherry-pick/rebase は checkpoint の列に別のコミットを割り込ませ自動再整理を壊すためです。ブロック理由は設定されたコミットメッセージ言語（日本語設定時は日本語、それ以外は英語）で表示され、`/autocommit-enable false` で解除できる旨も含まれます。無効な間は、エージェントは自由に git を操作できます。
 
 バックグラウンドで動作し、進捗やエラーは UI に通知されますが、対話的な確認は不要です。
 
