@@ -134,6 +134,107 @@ export function shouldBlockGitHardReset(command: string): boolean {
   );
 }
 
+/** Verbs that would interleave a foreign commit into the checkpoint run at HEAD. */
+const INTERLEAVING_VERBS = ["merge", "cherry-pick", "rebase"] as const;
+
+/**
+ * Detect a `git ... <verb>` invocation that would interleave a foreign commit
+ * into the checkpoint run (merge, cherry-pick, rebase), returning the matched
+ * verb, or `null` when none is found.
+ *
+ * All three rewrite or append history at HEAD: the merged/cherry-picked/rebased
+ * commits are not checkpoints, so `countCheckpointCommits` stops at them and
+ * the checkpoints below are silently dropped from automatic reorganisation.
+ * `rebase` additionally leaves the repo in a half-finished state on conflict.
+ *
+ * @returns The matched verb, or `null`.
+ */
+export function blockedInterleavingVerb(command: string): string | null {
+  if (!command) {
+    return null;
+  }
+  for (const verb of INTERLEAVING_VERBS) {
+    if (shouldBlockGitVerb(command, verb)) {
+      return verb;
+    }
+  }
+  return null;
+}
+
+/** Footer note appended to every block reason. */
+const DISABLE_NOTE_JA =
+  "無効化するには `/autocommit-enable false` を実行してください。";
+const DISABLE_NOTE_EN =
+  "To disable this guard, run `/autocommit-enable false`.";
+
+/**
+ * Build the user-facing block reason for a blocked git operation.
+ *
+ * Explains why the operation is blocked and how to disable the guard
+ * (`/autocommit-enable false`). Written in Japanese when `japanese` is true,
+ * English otherwise. When `enable` is false the guard is inert and none of
+ * these operations are blocked.
+ */
+export function buildBlockReason(blocked: string, japanese: boolean): string {
+  if (japanese) {
+    switch (blocked) {
+      case "reset --hard":
+        return (
+          "pi-autocommit: エージェントループ中の `git reset --hard` はインデックスと作業ツリーを破棄するためブロックされました。" +
+          "履歴を戻すには `git reset --soft` を、変更を捨てる必要がある場合は turn_end のチェックポイントに任せてください。" +
+          DISABLE_NOTE_JA
+        );
+      case "merge":
+      case "cherry-pick":
+        return (
+          `pi-autocommit: エージェントループ中の \`git ${blocked}\` はチェックポイントコミットの列を壊すためブロックされました。` +
+          DISABLE_NOTE_JA
+        );
+      case "rebase":
+        return (
+          "pi-autocommit: エージェントループ中の `git rebase` はチェックポイントコミットの列を壊すためブロックされました。" +
+          "pi の外で開始した rebase が進行中の場合、`git rebase --abort` 等は手動で解決してください。" +
+          DISABLE_NOTE_JA
+        );
+      default:
+        return (
+          `pi-autocommit がコミット履歴を管理しているため、エージェントループ中の \`git ${blocked}\` はブロックされました。` +
+          "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されます。" +
+          "整理前に push するとリモートがチェックポイント履歴と乖離するため、手動で commit/push する必要はありません。" +
+          DISABLE_NOTE_JA
+        );
+    }
+  }
+
+  switch (blocked) {
+    case "reset --hard":
+      return (
+        "pi-autocommit: `git reset --hard` is blocked during the agent loop because it destroys the index and the working tree. " +
+        "To rewind history use `git reset --soft`; to discard changes, rely on the turn_end checkpoint. " +
+        DISABLE_NOTE_EN
+      );
+    case "merge":
+    case "cherry-pick":
+      return (
+        `pi-autocommit: \`git ${blocked}\` is blocked during the agent loop because it breaks the checkpoint commit run. ` +
+        DISABLE_NOTE_EN
+      );
+    case "rebase":
+      return (
+        "pi-autocommit: `git rebase` is blocked during the agent loop because it breaks the checkpoint commit run. " +
+        "If a rebase started outside pi is in progress, resolve it manually (e.g. `git rebase --abort`). " +
+        DISABLE_NOTE_EN
+      );
+    default:
+      return (
+        `pi-autocommit manages the commit history, so \`git ${blocked}\` is blocked during the agent loop. ` +
+        "Checkpoint commits are created at turn_end and reorganised into logical Conventional Commits at agent_end. " +
+        "Pushing before reorganisation would diverge the remote from the reorganised history, so there is no need to commit or push manually. " +
+        DISABLE_NOTE_EN
+      );
+  }
+}
+
 /**
  * Decide whether the commit reorganiser should be skipped at `agent_end`.
  *
