@@ -383,11 +383,17 @@ export default function (pi: ExtensionAPI) {
         const sessions = [
           ...new Set(commits.map((w) => w.session).filter((s): s is string => s !== null)),
         ];
-        return sessions.map((s) => ({
-          value: s,
-          label: s,
-          description: "Reorganise only this session's checkpoint commits",
-        }));
+        return sessions.map((s) => {
+          // Label the origin branch when the session's checkpoints carry one
+          // (e.g. a delegated worktree branch) so the cryptic session id is
+          // recognisable.
+          const branch = commits.find((c) => c.session === s)?.branch;
+          return {
+            value: s,
+            label: branch ? `${branch} · ${s}` : s,
+            description: "Reorganise only this session's checkpoint commits",
+          };
+        });
       } catch {
         return null;
       }
@@ -403,18 +409,46 @@ export default function (pi: ExtensionAPI) {
     const statusIndicator = new StatusIndicator(git, ctx);
     await statusIndicator.updateFooter();
 
-    // Notify the user if unreorganised checkpoint commits remain at HEAD
-    // (crash recovery). Uses countCheckpointCommits so only consecutive
-    // checkpoints at HEAD are reported — scattered historical checkpoints
-    // buried under regular commits are silently ignored because they cannot
-    // be reorganised by the no-arg command.
     try {
-      const checkpointCount = await git.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
+      const sessionId = ctx.sessionManager.getSessionId();
+
+      // Own-session crash leftovers at HEAD (session-aware so a resumed
+      // session only claims its own checkpoints). These are reorganisable
+      // via the manual command.
+      const checkpointCount = sessionId
+        ? await git.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER, sessionId)
+        : await git.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
       if (checkpointCount > 0) {
         ctx.ui.notify(
           `pi-autocommit: 未整理のチェックポイントが残っています。/autocommit-organise で整理できます`,
           "warning",
         );
+      }
+
+      // Foreign-session checkpoints in the un-pushed range: checkpoints
+      // merged in from another session's branch (e.g. a delegated worktree
+      // agent that crashed before agent_end). These cannot be reorganised
+      // after the merge — surface them so the user can decide.
+      if (sessionId) {
+        const upstreamTip = await git.getUpstreamTip();
+        if (upstreamTip) {
+          const merged = await git.findCheckpointsSince(
+            upstreamTip,
+            CHECKPOINT_COMMIT_MARKER,
+          );
+          const foreign = merged.filter(
+            (c) => c.session !== null && c.session !== sessionId,
+          );
+          if (foreign.length > 0) {
+            const origin = foreign[0].branch
+              ? `（由来: ${foreign[0].branch}）`
+              : "";
+            ctx.ui.notify(
+              `pi-autocommit: マージによって他セッションの未整理チェックポイントが ${foreign.length} 件取り込まれています${origin}（履歴に wip(checkpoint) が残ります）。ブランチ統合時は \`git merge --squash\` を使うと回避できます。`,
+              "warning",
+            );
+          }
+        }
       }
     } catch {
       // Best-effort: ignore errors during startup check.
@@ -584,8 +618,11 @@ export default function (pi: ExtensionAPI) {
           );
           const foreign = merged.filter((c) => c.session !== sessionId);
           if (foreign.length > 0) {
+            const origin = foreign[0].branch
+              ? `（由来: ${foreign[0].branch}）`
+              : "";
             ctx.ui.notify(
-              `pi-autocommit: マージによって他セッションの未整理チェックポイントが ${foreign.length} 件取り込まれました（履歴に wip(checkpoint) が残ります）。` +
+              `pi-autocommit: マージによって他セッションの未整理チェックポイントが ${foreign.length} 件取り込まれました${origin}（履歴に wip(checkpoint) が残ります）。` +
                 "ブランチ統合時は `git merge --squash` を使うと回避できます。",
               "warning",
             );
