@@ -8,6 +8,8 @@ import {
   type AutocompleteItem,
 } from "@earendil-works/pi-tui";
 import {
+  blockedInterleavingVerb,
+  buildBlockReason,
   shouldCreateCheckpointCommit,
   shouldBlockGitCommit,
   shouldBlockGitHardReset,
@@ -27,6 +29,7 @@ import {
   type CommitItem,
 } from "./commit-picker.js";
 import {
+  isJapanese,
   loadConfig,
   type PiAutocommitConfig,
   saveEnable,
@@ -439,20 +442,15 @@ export default function (pi: ExtensionAPI) {
         ? "push"
         : shouldBlockGitHardReset(command)
           ? "reset --hard"
-          : null;
+          : blockedInterleavingVerb(command);
     if (blocked === null) {
       return;
     }
 
-    const reason =
-      blocked === "reset --hard"
-        ? "pi-autocommit: エージェントループ中の `git reset --hard` はインデックスと作業ツリーを破棄するためブロックされました。" +
-          "履歴を戻すには `git reset --soft` を、変更を捨てる必要がある場合は turn_end のチェックポイントに任せてください。"
-        : `pi-autocommit がコミット履歴を管理しているため、エージェントループ中の \`git ${blocked}\` はブロックされました。` +
-          "turn_end でチェックポイントコミットが自動作成され、agent_end で論理的な Conventional Commits に整理されます。" +
-          "整理前に push するとリモートがチェックポイント履歴と乖離するため、手動で commit/push する必要はありません。";
-
-    return { block: true, reason };
+    return {
+      block: true,
+      reason: buildBlockReason(blocked, isJapanese(config)),
+    };
   });
 
   // ───────────────────────────────────────────────────────
