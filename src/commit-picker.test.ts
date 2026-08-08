@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildCommitItems,
   defaultRange,
+  formatOrigin,
   formatSubject,
   type CommitItem,
   type CommitPicker,
@@ -14,9 +15,9 @@ import {
 describe("buildCommitItems", () => {
   it("parses git log output into CommitItems", () => {
     const raw = [
-      "abc123\0wip(checkpoint): turn 3",
-      "def456\0feat: implement X",
-      "789012\0wip(checkpoint): turn 2",
+      "abc123\0wip(checkpoint): turn 3\0\0",
+      "def456\0feat: implement X\0\0",
+      "789012\0wip(checkpoint): turn 2\0session-1\0wt/task1",
     ].join("\n");
 
     const items = buildCommitItems(raw);
@@ -24,12 +25,23 @@ describe("buildCommitItems", () => {
     assert.equal(items[0].sha, "abc123");
     assert.equal(items[0].subject, "wip(checkpoint): turn 3");
     assert.equal(items[0].isCheckpoint, true);
+    assert.equal(items[0].session, undefined);
     assert.equal(items[1].sha, "def456");
     assert.equal(items[1].subject, "feat: implement X");
     assert.equal(items[1].isCheckpoint, false);
     assert.equal(items[2].sha, "789012");
     assert.equal(items[2].subject, "wip(checkpoint): turn 2");
     assert.equal(items[2].isCheckpoint, true);
+    assert.equal(items[2].session, "session-1");
+    assert.equal(items[2].branch, "wt/task1");
+  });
+
+  it("parses legacy two-field log lines (session/branch absent)", () => {
+    const raw = "abc123\0wip(checkpoint): turn 3";
+    const items = buildCommitItems(raw);
+    assert.equal(items[0].sha, "abc123");
+    assert.equal(items[0].session, undefined);
+    assert.equal(items[0].branch, undefined);
   });
 
   it("returns empty array for empty input", () => {
@@ -42,6 +54,48 @@ describe("buildCommitItems", () => {
     const items = buildCommitItems(raw);
     assert.equal(items.length, 1);
     assert.equal(items[0].sha, "abc123");
+  });
+});
+
+// ── formatOrigin ───────────────────────────────────────────
+
+describe("formatOrigin", () => {
+  it("prefers the branch over the session id", () => {
+    const item: CommitItem = {
+      sha: "a",
+      subject: "wip(checkpoint): turn 1",
+      isCheckpoint: true,
+      session: "session-abc",
+      branch: "wt/task1",
+    };
+    assert.equal(formatOrigin(item), "wt/task1");
+  });
+
+  it("falls back to a short session id when no branch is recorded", () => {
+    const item: CommitItem = {
+      sha: "a",
+      subject: "wip(checkpoint): turn 1",
+      isCheckpoint: true,
+      session: "0123456789abcdef",
+    };
+    assert.equal(formatOrigin(item), "01234567…");
+  });
+
+  it("returns null for non-checkpoints and unknown origins", () => {
+    const regular: CommitItem = {
+      sha: "a",
+      subject: "feat: X",
+      isCheckpoint: false,
+      session: "session-abc",
+    };
+    assert.equal(formatOrigin(regular), null);
+
+    const orphan: CommitItem = {
+      sha: "b",
+      subject: "wip(checkpoint): turn 1",
+      isCheckpoint: true,
+    };
+    assert.equal(formatOrigin(orphan), null);
   });
 });
 

@@ -17,6 +17,10 @@ export interface CommitItem {
   sha: string;
   subject: string;
   isCheckpoint: boolean;
+  /** Owning pi session (`Checkpoint-Session` trailer), when present. */
+  session?: string | null;
+  /** Origin branch (`Checkpoint-Branch` trailer), when present. */
+  branch?: string | null;
 }
 
 /** Index range the user selected, 0-based from HEAD. */
@@ -35,22 +39,46 @@ const MAX_VISIBLE = 15;
 // ── Build items ──────────────────────────────────────────
 
 /**
- * Parse `git log --pretty=format:"%H%x00%s"` output into CommitItem[].
+ * Parse `git log --pretty=format:"%H%x00%s%x00%(trailers...)"` output into
+ * CommitItem[]. The trailing session/branch fields are optional: legacy log
+ * formats (and old commits) simply leave them undefined.
  */
 export function buildCommitItems(rawGitLog: string): CommitItem[] {
   const items: CommitItem[] = [];
   const lines = rawGitLog.trim().split("\n");
   for (const line of lines) {
     if (!line) continue;
-    const [sha, subject] = line.split("\0");
+    const [sha, subject, sessionRaw, branchRaw] = line.split("\0");
     if (!sha || subject === undefined) continue;
+    const session = sessionRaw?.trim() || null;
+    const branch = branchRaw?.trim() || null;
     items.push({
       sha,
       subject,
       isCheckpoint: subject.startsWith(CHECKPOINT_PREFIX),
+      session: session || undefined,
+      branch: branch || undefined,
     });
   }
   return items;
+}
+
+/**
+ * Readable origin label for a checkpoint item: the origin branch when
+ * recorded (`Checkpoint-Branch`), else a short form of the owning session
+ * id. Returns `null` for non-checkpoints and unknown origins.
+ */
+export function formatOrigin(item: CommitItem): string | null {
+  if (!item.isCheckpoint) {
+    return null;
+  }
+  if (item.branch) {
+    return item.branch;
+  }
+  if (item.session) {
+    return item.session.length > 8 ? `${item.session.slice(0, 8)}…` : item.session;
+  }
+  return null;
 }
 
 /**
@@ -187,6 +215,10 @@ export class CommitPicker {
     const marker = isStart ? "1" : isEnd ? "2" : " ";
     const cursor = absIndex === this.cursorIndex ? "▸" : " ";
     let label = formatSubject(item.subject);
+    const origin = formatOrigin(item);
+    if (origin) {
+      label += ` ${this.theme.fg("dim", `(${origin})`)}`;
+    }
     if (item.sha === this.remoteTipSha) {
       label += ` ${this.theme.fg("dim", "← リモート先端")}`;
     }
@@ -385,8 +417,10 @@ async function showCommitPickerNonTUI(
             ? "[2]"
             : "   ";
     const prefix = item.isCheckpoint ? "⚡" : " ";
+    const origin = formatOrigin(item);
+    const originSuffix = origin ? ` (${origin})` : "";
     const remoteMarker = item.sha === remoteTipSha ? " ← リモート先端" : "";
-    const label = `${marker} ${prefix} ${formatSubject(item.subject)}${remoteMarker}`;
+    const label = `${marker} ${prefix} ${formatSubject(item.subject)}${originSuffix}${remoteMarker}`;
     // Truncate for display.
     const maxLen = 80;
     return label.length > maxLen ? label.slice(0, maxLen - 3) + "..." : label;
