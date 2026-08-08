@@ -10,6 +10,7 @@ import {
 import {
   blockedInterleavingVerb,
   buildBlockReason,
+  interleavingAllowedWithoutCheckpoints,
   shouldCreateCheckpointCommit,
   shouldBlockGitCommit,
   shouldBlockGitHardReset,
@@ -163,6 +164,16 @@ async function maybeRunInteractiveReorganise(
     );
     await handlePipelineEvents(ctx, statusIndicator, result.events);
   }
+}
+
+/**
+ * Read the subject of the HEAD commit, or `null` when HEAD cannot be
+ * resolved (e.g. an unborn branch).
+ */
+async function getHeadSubject(git: GitOperations): Promise<string | null> {
+  const raw = await git.getRecentCommits(1);
+  const subject = raw.split("\0")[1];
+  return subject && subject.length > 0 ? subject : null;
 }
 
 /**
@@ -436,13 +447,33 @@ export default function (pi: ExtensionAPI) {
     }
 
     const command = event.input.command;
-    const blocked = shouldBlockGitCommit(command)
+    let blocked = shouldBlockGitCommit(command)
       ? "commit"
       : shouldBlockGitPush(command)
         ? "push"
         : shouldBlockGitHardReset(command)
           ? "reset --hard"
           : blockedInterleavingVerb(command);
+
+    // `git merge --squash` never blocks (blockedInterleavingVerb skips it:
+    // no commit is created). Plain merge/cherry-pick only break the
+    // checkpoint run when checkpoints sit at HEAD; with a clean HEAD there
+    // is nothing to strand below the foreign commit, so allow the
+    // integration — e.g. merging a delegated worktree branch from the main
+    // session.
+    if (blocked === "merge" || blocked === "cherry-pick") {
+      const headSubject = await getHeadSubject(git);
+      if (
+        interleavingAllowedWithoutCheckpoints(
+          blocked,
+          headSubject,
+          CHECKPOINT_COMMIT_MARKER,
+        )
+      ) {
+        blocked = null;
+      }
+    }
+
     if (blocked === null) {
       return;
     }
@@ -538,6 +569,32 @@ export default function (pi: ExtensionAPI) {
           ),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
+
+      // Detect checkpoint commits from other sessions that entered via a
+      // merge during this run (e.g. a delegated worktree branch whose agent
+      // crashed before agent_end). Their changes are already in the tree and
+      // the scattered manual path cannot re-apply them, so they stay in
+      // history as wip(checkpoint) — surface them so the user can decide
+      // (leave it, or re-integrate with --squash next time).
+      if (agentBaselineHead !== null && sessionId !== null) {
+        try {
+          const merged = await reorganiserStore.findCheckpointsSince(
+            agentBaselineHead,
+            CHECKPOINT_COMMIT_MARKER,
+          );
+          const foreign = merged.filter((c) => c.session !== sessionId);
+          if (foreign.length > 0) {
+            ctx.ui.notify(
+              `pi-autocommit: マージによって他セッションの未整理チェックポイントが ${foreign.length} 件取り込まれました（履歴に wip(checkpoint) が残ります）。` +
+                "ブランチ統合時は `git merge --squash` を使うと回避できます。",
+              "warning",
+            );
+          }
+        } catch {
+          // Best-effort: ignore detection errors.
+        }
+      }
+
       await statusIndicator.updateFooter();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
