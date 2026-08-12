@@ -399,15 +399,22 @@ class InMemoryReorganiserStore implements ReorganiserStore {
   }
 
   async applyRangeDiff(
-    _ancestor: string,
-    _descendant: string,
+    ancestor: string,
+    descendant: string,
   ): Promise<{ success: boolean; error?: string }> {
-    this.operations.push(`applyRangeDiff:${_ancestor}..${_descendant}`);
+    this.operations.push(`applyRangeDiff:${ancestor}..${descendant}`);
     if (this.stagedFiles.length === 0 && this.options.checkpointCommits) {
-      for (const commit of this.options.checkpointCommits) {
-        for (const file of commit.files) {
-          if (!this.stagedFiles.includes(file)) {
-            this.stagedFiles.push(file);
+      // Stage only the files inside the range, mirroring `git apply --index`
+      // of the range diff. SHAs are "sha-<index>" (0 = HEAD): descendant is
+      // the range start (index lo), ancestor is before the range (hi+1).
+      const lo = parseInt(descendant.replace("sha-", ""), 10);
+      const hiExclusive = parseInt(ancestor.replace("sha-", ""), 10);
+      if (Number.isFinite(lo) && Number.isFinite(hiExclusive) && lo < hiExclusive) {
+        for (const commit of this.options.checkpointCommits.slice(lo, hiExclusive)) {
+          for (const file of commit.files) {
+            if (!this.stagedFiles.includes(file)) {
+              this.stagedFiles.push(file);
+            }
           }
         }
       }
@@ -732,6 +739,55 @@ src/b.ts
     assert.ok(store.operations.includes("hasStagedChanges"));
   });
 
+  void it("falls back to a single commit when the groups drop a staged file", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
+          files: ["src/kept.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/dropped.ts"],
+          session: "session-a",
+        },
+      ],
+    });
+
+    // The groups cover only src/kept.ts — src/dropped.ts is omitted.
+    const input = `
+=== COMMIT 1 ===
+feat(kept): kept
+=== FILES ===
+src/kept.ts
+=== END ===
+`.trim();
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(input),
+      "session-a",
+    );
+
+    assert.strictEqual(result.organised, true);
+    // The covered group is committed and the dropped file is swept into a
+    // fallback commit — nothing is left uncommitted.
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "fallback" && e.message.includes("single commit"),
+      ),
+      "Expected a fallback event for the omitted file",
+    );
+    assert.strictEqual(store.commits.length, 2);
+    assert.ok(store.commits.some((c) => c.startsWith("feat(kept):")));
+    // The fallback path re-stages everything (git add -A) before committing.
+    assert.ok(store.operations.includes("stageAll"));
+  });
+
   // ── Session-aware agent_end tests ────────────────────────
 
   void it("with targetSessionId: reorganises only matching consecutive checkpoints", async () => {
@@ -889,6 +945,7 @@ src/own.ts
 feat(b): b
 === FILES ===
 src/b.ts
+src/a.ts
 === END ===
 `.trim();
 
@@ -1188,7 +1245,14 @@ src/auth/login.ts
       makeEvent(),
       store,
       { startIndex: 0, endIndex: 1 },
-      fakeCompleteReturning(groupInput),
+      fakeCompleteReturning(`
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+b.ts
+=== END ===
+`.trim()),
     );
 
     assert.strictEqual(result.organised, true);
@@ -1240,7 +1304,15 @@ src/auth/login.ts
       makeEvent(),
       store,
       { startIndex: 1, endIndex: 3 },
-      fakeCompleteReturning(groupInput),
+      fakeCompleteReturning(`
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+b.ts
+below.ts
+=== END ===
+`.trim()),
     );
 
     assert.strictEqual(result.organised, true);
@@ -1326,7 +1398,15 @@ src/auth/login.ts
       makeEvent(),
       store,
       { startIndex: 1, endIndex: 3 },
-      fakeCompleteReturning(groupInput),
+      fakeCompleteReturning(`
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+b.ts
+below.ts
+=== END ===
+`.trim()),
     );
 
     assert.strictEqual(result.organised, false);

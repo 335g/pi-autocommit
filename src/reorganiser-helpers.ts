@@ -11,6 +11,12 @@ import type { ReorganiserStore } from "./reorganiser-store.js";
  * Skips groups with no staged changes. Throws when a commit fails so the
  * caller can catch and run the fallback path.
  *
+ * Also throws when the groups do not cover every staged file: the prompt
+ * contract is "every file in exactly one group, no omissions", so a group
+ * partition that drops a file would otherwise leave that change silently
+ * uncommitted. Throwing routes the caller into the fallback single-commit
+ * path, which stages and commits everything remaining.
+ *
  * @returns The number of commits actually executed.
  */
 export async function commitGroups(
@@ -18,6 +24,10 @@ export async function commitGroups(
   groups: CommitGroup[],
   events: PipelineEvent[],
 ): Promise<number> {
+  // Capture the full staged file set before group staging mutates the index.
+  const { nameStatus } = await store.getStagedMaterials();
+  const stagedPaths = parseNameStatusPaths(nameStatus);
+
   let commitCount = 0;
   for (const group of groups) {
     await store.unstageAll();
@@ -42,7 +52,36 @@ export async function commitGroups(
       );
     }
   }
+
+  // Coverage guard: every staged file must be claimed by at least one group.
+  const covered = new Set(groups.flatMap((g) => g.files));
+  const missing = stagedPaths.filter((p) => !covered.has(p));
+  if (missing.length > 0) {
+    throw new Error(
+      `Commit groups do not cover ${missing.length} staged file(s): ` +
+        `${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ", ..." : ""}. ` +
+        "Falling back to a single commit.",
+    );
+  }
+
   return commitCount;
+}
+
+/**
+ * Parse `git diff --cached --name-status` output into the staged paths.
+ * Rename lines carry three tab-separated fields (status, old path, new path);
+ * the new path is the one a commit group would reference.
+ */
+function parseNameStatusPaths(nameStatus: string): string[] {
+  const paths: string[] = [];
+  for (const line of nameStatus.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parts = trimmed.split("\t");
+    const path = parts.length >= 3 ? parts[2] : parts[1];
+    if (path) paths.push(path);
+  }
+  return paths;
 }
 
 /**
