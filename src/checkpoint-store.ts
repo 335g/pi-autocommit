@@ -18,6 +18,9 @@ export interface CheckpointStore {
   /** Check whether a merge conflict is in progress. */
   hasMergeConflict(): Promise<boolean>;
 
+  /** Check whether the index contains any staged changes. */
+  hasStagedChanges(): Promise<boolean>;
+
   /** Run `git status --short` and return whether there are uncommitted changes. */
   checkStatus(): Promise<GitStatus>;
 
@@ -47,6 +50,10 @@ export class GitCheckpointStore implements CheckpointStore {
 
   async hasMergeConflict(): Promise<boolean> {
     return this.git.hasMergeConflict();
+  }
+
+  async hasStagedChanges(): Promise<boolean> {
+    return this.git.hasStagedChanges();
   }
 
   async checkStatus(): Promise<GitStatus> {

@@ -35,3 +35,78 @@ describe("buildCheckpointMessage", () => {
     assert.equal(buildCheckpointMessage(msg, "", "wt/task1"), `${msg}\n\nCheckpoint-Branch: wt/task1`);
   });
 });
+
+import type { ExecResult } from "@earendil-works/pi-coding-agent";
+import type { CheckpointStore } from "./checkpoint-store.js";
+import { runCheckpointCommit } from "./pipeline.js";
+
+function fakeStore(
+  overrides: Partial<CheckpointStore> = {},
+): {
+  store: CheckpointStore;
+  commitCalls: string[];
+} {
+  const commitCalls: string[] = [];
+  const store: CheckpointStore = {
+    isInsideGitRepo: async () => true,
+    hasMergeConflict: async () => false,
+    checkStatus: async () => ({ hasChanges: true, raw: " m sub" }),
+    stageAll: async () => {},
+    hasStagedChanges: async () => true,
+    commit: async (message: string): Promise<ExecResult> => {
+      commitCalls.push(message);
+      return { code: 0, stdout: "[main abc123] wip(checkpoint)", stderr: "", killed: false };
+    },
+    getCurrentBranch: async () => "main",
+    unstageAll: async () => {},
+    ...overrides,
+  } as CheckpointStore;
+  return { store, commitCalls };
+}
+
+describe("runCheckpointCommit", () => {
+  const message = "wip(checkpoint): auto-commit at turn 1";
+
+  it("skips silently when nothing is stageable (submodule-only dirt)", async () => {
+    const { store, commitCalls } = fakeStore({
+      hasStagedChanges: async () => false,
+    });
+    const result = await runCheckpointCommit(store, message, "session-1");
+    assert.equal(result.committed, false);
+    assert.equal(commitCalls.length, 0, "must not attempt a commit");
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "info" && /no stageable changes/i.test(e.message),
+      ),
+      "should report a clean skip instead of throwing",
+    );
+  });
+
+  it("commits when staging produced changes", async () => {
+    const { store, commitCalls } = fakeStore();
+    const result = await runCheckpointCommit(store, message, "session-1");
+    assert.equal(result.committed, true);
+    assert.equal(commitCalls.length, 1);
+    assert.equal(
+      commitCalls[0],
+      `${message}\n\nCheckpoint-Session: session-1\nCheckpoint-Branch: main`,
+    );
+  });
+
+  it("unstages and rethrows when the commit itself fails", async () => {
+    let unstageCalls = 0;
+    const { store } = fakeStore({
+      commit: async () => ({
+        code: 1,
+        stdout: "",
+        stderr: "nothing to commit",
+        killed: false,
+      }),
+      unstageAll: async () => {
+        unstageCalls++;
+      },
+    });
+    await assert.rejects(() => runCheckpointCommit(store, message), /Commit failed/);
+    assert.equal(unstageCalls, 1);
+  });
+});
