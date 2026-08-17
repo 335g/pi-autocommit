@@ -1,6 +1,6 @@
 {
   "name": "@335g/pi-autocommit",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Auto-commit extension for pi-coding-agent (checkpoint-then-reorganise strategy)",
   "type": "module",
   "main": "./dist/index.js",
