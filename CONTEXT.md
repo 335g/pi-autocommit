@@ -97,3 +97,21 @@ _Avoid_: spinner, loading icon, organise loader
 **Uncommitted-changes indicator**
 A footer element that shows whether the working tree has uncommitted changes. Its purpose is to give the user a pre-commit cue to spot unintended files before a checkpoint commit captures them.
 _Avoid_: status badge, dirty flag
+
+## Submodules
+
+**Gitlink**
+The parent repository's index entry for a submodule (file mode 160000). It pins the checked-out commit of the submodule by SHA. A submodule's own working-tree changes are not visible in the parent's index; only a changed gitlink (a `Subproject commit` pointer diff) can be recorded by the parent.
+_Avoid_: submodule pointer, submodule reference
+
+**Submodule-internal change**
+A change inside a submodule's working tree that the parent repository cannot stage: the gitlink is unchanged, so `git add -A` in the parent stages nothing. The only parent-side record of such a change is a gitlink update, which requires the submodule to have been committed first (manually).
+_Avoid_: nested change, submodule edit
+
+**Detached-orphan submodule commit**
+A commit on a submodule's HEAD that differs from the parent gitlink and is unreachable from any branch or tag. Running `git submodule update` checks out the gitlink SHA and leaves the orphaned commits reachable only via the reflog, effectively discarding them. pi-autocommit detects this state and warns; commits on a real branch survive an update and are not reported.
+_Avoid_: lost commit, dangling submodule commit
+
+**Manual submodule mode**
+The agreed approach to submodules: pi-autocommit never commits inside a submodule. The user commits changes inside submodules (e.g. from another terminal); pi-autocommit records the resulting gitlink updates in the parent and warns about detached-orphan submodule commits. Recursive auto-commit into submodules is deliberately out of scope (see ADR-0008).
+_Avoid_: recursive mode, submodule auto-commit
