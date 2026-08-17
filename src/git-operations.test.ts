@@ -190,6 +190,98 @@ describe("GitOperations.findCheckpointsSince", () => {
   });
 });
 
+describe("GitOperations.getStagedDiff", () => {
+  it("passes --submodule=log so submodule commit logs reach the LLM", async () => {
+    const git = new GitOperations({
+      exec: async (_cmd: string, args?: string[]) => {
+        assert.deepEqual(args, ["diff", "--cached", "--submodule=log"]);
+        return {
+          code: 0,
+          stdout: "diff --git a/sub b/sub\nSubmodule sub 1111..2222:\n  > feat: add widget\n",
+          stderr: "",
+          killed: false,
+        };
+      },
+    } as unknown as ExtensionAPI);
+    const diff = await git.getStagedDiff();
+    assert.match(diff, /Submodule sub 1111\.\.2222:/);
+  });
+});
+
+describe("GitOperations.findOrphanedSubmoduleHeads", () => {
+  const gitlink =
+    "160000 aaaa1111bbbb2222cccc3333dddd4444eeee5555 0\tsub\n";
+  const regular = "100644 1234567890abcdef1234567890abcdef12345678 0\tfile.txt\n";
+
+  function makePi(
+    lsOutput: string,
+    subStates: Record<
+      string,
+      { head?: string; refs?: string; code?: number } | undefined
+    > = {},
+  ): ExtensionAPI {
+    return {
+      exec: async (_cmd: string, args?: string[]) => {
+        if (args?.[0] === "ls-files") {
+          return { code: 0, stdout: lsOutput, stderr: "", killed: false };
+        }
+        if (args?.[0] === "-C") {
+          const state = subStates[args[1]];
+          if (args[2] === "rev-parse") {
+            if (!state || state.code !== undefined) {
+              return { code: state?.code ?? 128, stdout: "", stderr: "fatal", killed: false };
+            }
+            return { code: 0, stdout: state.head + "\n", stderr: "", killed: false };
+          }
+          if (args[2] === "for-each-ref") {
+            return { code: 0, stdout: state?.refs ?? "", stderr: "", killed: false };
+          }
+        }
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    } as unknown as ExtensionAPI;
+  }
+
+  it("returns [] when the index has no gitlinks", async () => {
+    const git = new GitOperations(makePi(regular));
+    assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
+  });
+
+  it("returns [] when the submodule HEAD matches the gitlink", async () => {
+    const git = new GitOperations(
+      makePi(gitlink, { sub: { head: "aaaa1111bbbb2222cccc3333dddd4444eeee5555" } }),
+    );
+    assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
+  });
+
+  it("returns [] when HEAD differs but is reachable from a branch", async () => {
+    const git = new GitOperations(
+      makePi(gitlink, { sub: { head: "bbbb2222...", refs: "feature/x" } }),
+    );
+    assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
+  });
+
+  it("reports the path when HEAD is a detached orphan", async () => {
+    const git = new GitOperations(
+      makePi(gitlink, { sub: { head: "cccc3333", refs: "" } }),
+    );
+    const found = await git.findOrphanedSubmoduleHeads();
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0], {
+      path: "sub",
+      indexSha: "aaaa1111bbbb2222cccc3333dddd4444eeee5555",
+      headSha: "cccc3333",
+    });
+  });
+
+  it("skips missing or uninitialised submodule directories", async () => {
+    const git = new GitOperations(
+      makePi(gitlink, { sub: { code: 128 } }),
+    );
+    assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
+  });
+});
+
 describe("GitOperations.getCurrentBranch", () => {
   it("returns the trimmed branch name", async () => {
     const git = new GitOperations({

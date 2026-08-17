@@ -76,10 +76,20 @@ export class GitOperations {
   }
 
   /**
-   * Get the full diff of staged changes (`git diff --cached`).
+   * Get the full diff of staged changes (`git diff --cached --submodule=log`).
+   *
+   * `--submodule=log` adds a summary of the commits contained in each
+   * submodule (gitlink) change — e.g. `Submodule sub <old>..<new>:` followed
+   * by the child commit subjects — so commit-message generation can describe
+   * what actually changed inside the submodule instead of only seeing the
+   * `Subproject commit` pointer bump. It is a no-op for regular files.
    */
   async getStagedDiff(): Promise<string> {
-    const { stdout } = await this.pi.exec("git", ["diff", "--cached"]);
+    const { stdout } = await this.pi.exec("git", [
+      "diff",
+      "--cached",
+      "--submodule=log",
+    ]);
     return stdout.trim();
   }
 
@@ -155,6 +165,64 @@ export class GitOperations {
   async checkUncommittedChanges(): Promise<boolean> {
     const { stdout } = await this.pi.exec("git", ["status", "--porcelain"]);
     return stdout.trim().length > 0;
+  }
+
+  /**
+   * List submodule paths whose checked-out HEAD is a **detached orphan**:
+   * it differs from the gitlink recorded in the parent index and is
+   * unreachable from any ref (`git for-each-ref --contains HEAD` is empty).
+   *
+   * Running `git submodule update` in this state checks out the gitlink SHA
+   * and discards the orphaned commits (reflog-only survival). Commits that
+   * sit on a branch survive an update, so they are not reported.
+   *
+   * Returns an empty array when the repo has no gitlinks, submodules are in
+   * sync, missing/uninitialised, or their HEAD is reachable from a ref.
+   */
+  async findOrphanedSubmoduleHeads(): Promise<
+    Array<{ path: string; indexSha: string; headSha: string }>
+  > {
+    // Enumerate gitlink entries (mode 160000) from the index. This covers
+    // registered submodules and absorbed embedded git repositories alike.
+    const { stdout } = await this.pi.exec("git", ["ls-files", "-s"]);
+    const gitlinks: Array<{ path: string; sha: string }> = [];
+    for (const line of stdout.split("\n")) {
+      const match = line.match(/^160000 ([0-9a-f]{40}) \d+\t(.+)$/);
+      if (match) {
+        gitlinks.push({ path: match[2], sha: match[1] });
+      }
+    }
+
+    const result: Array<{ path: string; indexSha: string; headSha: string }> =
+      [];
+    for (const gitlink of gitlinks) {
+      const { stdout: headOut, code } = await this.pi.exec("git", [
+        "-C",
+        gitlink.path,
+        "rev-parse",
+        "HEAD",
+      ]);
+      if (code !== 0) {
+        continue; // missing / uninitialised submodule
+      }
+      const headSha = headOut.trim();
+      if (!headSha || headSha === gitlink.sha) {
+        continue; // in sync with the parent gitlink
+      }
+      const { stdout: refs } = await this.pi.exec("git", [
+        "-C",
+        gitlink.path,
+        "for-each-ref",
+        "--contains",
+        "HEAD",
+        "--format=%(refname:short)",
+      ]);
+      if (refs.trim()) {
+        continue; // reachable from a branch/tag → recoverable after update
+      }
+      result.push({ path: gitlink.path, indexSha: gitlink.sha, headSha });
+    }
+    return result;
   }
 
   /**
