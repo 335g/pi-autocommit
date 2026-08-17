@@ -177,6 +177,45 @@ async function getHeadSubject(git: GitOperations): Promise<string | null> {
 }
 
 /**
+ * Submodule paths (and the orphaned HEAD they pointed at) that were already
+ * reported this session, so the same danger is not re-notified on every
+ * turn. A new orphaned commit (different head SHA) for the same path is
+ * reported again.
+ */
+const warnedSubmoduleOrphans = new Set<string>();
+
+/**
+ * Warn about submodule HEADs that point at commits unreachable from any
+ * branch and not referenced by the parent gitlink — running
+ * `git submodule update` would discard them. Best-effort: never breaks the
+ * agent loop on detection errors.
+ */
+async function warnOrphanedSubmoduleHeads(
+  ctx: ExtensionContext,
+  git: GitOperations,
+  japanese: boolean,
+): Promise<void> {
+  try {
+    const orphans = await git.findOrphanedSubmoduleHeads();
+    for (const orphan of orphans) {
+      const key = `${orphan.path}:${orphan.headSha}`;
+      if (warnedSubmoduleOrphans.has(key)) {
+        continue;
+      }
+      warnedSubmoduleOrphans.add(key);
+      const message = japanese
+        ? `pi-autocommit: submodule "${orphan.path}" の HEAD が親の gitlink と乖離し、どのブランチからも到達不能なコミットを指しています。\n` +
+          `git submodule update を実行するとこのコミットは消失します。親の gitlink を更新するか、submodule 内でブランチにコミットを置いてください。`
+        : `pi-autocommit: submodule "${orphan.path}" HEAD points at commits unreachable from any branch and not referenced by the parent gitlink.\n` +
+          `Running git submodule update would discard them. Bump the parent gitlink or move the commits onto a branch in the submodule.`;
+      ctx.ui.notify(message, "warning");
+    }
+  } catch {
+    // Best-effort: ignore detection errors.
+  }
+}
+
+/**
  * pi-autocommit extension
  *
  * Automatically commits changes inside pi using a checkpoint-then-reorganise
@@ -411,6 +450,11 @@ export default function (pi: ExtensionAPI) {
 
     try {
       const sessionId = ctx.sessionManager.getSessionId();
+      const config = loadConfig(ctx.cwd);
+
+      // Submodule warning: catches detached-orphan submodule commits that
+      // appeared while no pi session was watching (another terminal).
+      await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
 
       // Own-session crash leftovers at HEAD (session-aware so a resumed
       // session only claims its own checkpoints). These are reorganisable
@@ -530,6 +574,10 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    // Submodule warning: surfaces detached-orphan submodule commits
+    // (see B3) as soon as they exist, before an update can discard them.
+    await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+
     if (!shouldCreateCheckpointCommit(event.toolResults)) {
       return;
     }
@@ -631,6 +679,11 @@ export default function (pi: ExtensionAPI) {
           // Best-effort: ignore detection errors.
         }
       }
+
+      // Submodule warning: detached-orphan submodule commits that arrived
+      // during this run (e.g. via a delegated worktree or another
+      // terminal) are surfaced before the session ends.
+      await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
 
       await statusIndicator.updateFooter();
     } catch (error) {
