@@ -75,6 +75,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 | `enable` | boolean | `false` | Whether auto-commit is active |
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
+| `ignoreSubmodules` | boolean | `false` | Keep submodule-related parent-side changes out of auto-commits: gitlink updates (mode 160000 index entries, including absorbed embedded repositories) and `.gitmodules`. Checkpoint commits and the reorganiser never record these paths, so pin updates are left to you. Detached-orphan detection stays active as an informational notice at session start. See [Submodules](#submodules) below. |
 
 The `lang` resolution priority: the configured value when set (a fixed language wins over detection), else auto-detection from the conversation's user messages, else English. Auto-detection inspects character scripts; the heuristic fallback (used when the LLM is unavailable) only writes Japanese or English.
 
@@ -111,6 +112,18 @@ The `**` glob is a handy way to set a single fixed scope for the whole repo:
 ```json
 { "scope": { "**": "auth" } }
 ```
+
+### Submodules
+
+By default (manual submodule mode), pi-autocommit never commits inside a submodule. The user commits there; the parent records the resulting gitlink update like any other changed file, and detached-orphan submodule commits are warned about.
+
+When your workflow keeps submodule pin updates out of pi-autocommit's hands entirely, enable:
+
+```json
+{ "ignoreSubmodules": true }
+```
+
+Checkpoint commits and reorganisation then never record gitlink updates or `.gitmodules` changes — commits piling up inside a submodule produce no parent-side auto-commits. The pin drift stays visible as an uncommitted change in the footer indicator; commit it manually when you want to move the pin. Detection of detached-orphan submodule commits stays active, shown as an informational notice at session start.
 
 ## Commit Message Convention
 

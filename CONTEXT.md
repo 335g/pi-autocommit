@@ -113,5 +113,9 @@ A commit on a submodule's HEAD that differs from the parent gitlink and is unrea
 _Avoid_: lost commit, dangling submodule commit
 
 **Manual submodule mode**
-The agreed approach to submodules: pi-autocommit never commits inside a submodule. The user commits changes inside submodules (e.g. from another terminal); pi-autocommit records the resulting gitlink updates in the parent and warns about detached-orphan submodule commits. Recursive auto-commit into submodules is deliberately out of scope (see ADR-0008).
+The baseline approach to submodules: pi-autocommit never commits inside a submodule. The user commits changes inside submodules (e.g. from another terminal); by default the parent records the resulting gitlink updates and warns about detached-orphan submodule commits. Recursive auto-commit into submodules is deliberately out of scope (see ADR-0008).
 _Avoid_: recursive mode, submodule auto-commit
+
+**Ignored submodule change**
+A parent-side diff that `ignoreSubmodules` keeps out of auto-commits: a gitlink update (mode 160000 index entry, covering absorbed embedded repositories too) or a `.gitmodules` change. It is never staged by checkpoints or the reorganiser; the pin update stays visible as an uncommitted change until the user records it manually. Detached-orphan detection still applies to it, surfaced as an informational session-start notice (see ADR-0009).
+_Avoid_: skipped submodule diff, hidden submodule change
