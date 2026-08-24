@@ -9,6 +9,7 @@ const KNOWN_KEYS = new Set([
   "model",
   "scope",
   "commitPickerMaxCommits",
+  "ignoreSubmodules",
 ]);
 
 /** Config file name, relative to `.pi/`. */
@@ -52,12 +53,24 @@ export interface PiAutocommitConfig {
    * popup shown at `agent_end`. Defaults to `30`.
    */
   commitPickerMaxCommits: number;
+
+  /**
+   * Keep submodule-related parent-side changes out of auto-commits:
+   * gitlink updates (mode 160000 index entries, including absorbed embedded
+   * repositories) and `.gitmodules`. When `true`, checkpoint commits and the
+   * reorganiser never stage or record these paths; recording the pin updates
+   * is left to the user. Detached-orphan warnings stay active, presented as
+   * informational notices at `session_start` only. Defaults to `false`
+   * (gitlinks are recorded like any other changed file, per ADR-0008).
+   */
+  ignoreSubmodules: boolean;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
   lang: "auto",
   enable: false,
   commitPickerMaxCommits: 30,
+  ignoreSubmodules: false,
 };
 
 /**
@@ -110,7 +123,19 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? parsed.commitPickerMaxCommits
         : DEFAULT_CONFIG.commitPickerMaxCommits;
 
-    return { lang, enable, model, scope, commitPickerMaxCommits };
+    const ignoreSubmodules =
+      typeof parsed.ignoreSubmodules === "boolean"
+        ? parsed.ignoreSubmodules
+        : DEFAULT_CONFIG.ignoreSubmodules;
+
+    return {
+      lang,
+      enable,
+      model,
+      scope,
+      commitPickerMaxCommits,
+      ignoreSubmodules,
+    };
   } catch {
     return { ...DEFAULT_CONFIG };
   }

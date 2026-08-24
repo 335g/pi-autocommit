@@ -12,6 +12,7 @@ function config(scope?: Record<string, string>): PiAutocommitConfig {
     lang: "en",
     enable: true,
     commitPickerMaxCommits: 30,
+    ignoreSubmodules: false,
     scope,
   };
 }
@@ -26,10 +27,7 @@ void describe("hasScopeMapping", () => {
   });
 
   void it("returns true when scope has entries", () => {
-    assert.strictEqual(
-      hasScopeMapping(config({ "**": "app" })),
-      true,
-    );
+    assert.strictEqual(hasScopeMapping(config({ "**": "app" })), true);
   });
 });
 
@@ -41,10 +39,7 @@ void describe("resolveScope", () => {
   });
 
   void it("uses top-level dir when all files share one (no mapping)", () => {
-    assert.strictEqual(
-      resolveScope(["src/a.ts", "src/b.ts"], config()),
-      "src",
-    );
+    assert.strictEqual(resolveScope(["src/a.ts", "src/b.ts"], config()), "src");
   });
 
   void it("uses the top-level dir even for nested shared paths (no mapping)", () => {
@@ -66,10 +61,7 @@ void describe("resolveScope", () => {
   });
 
   void it("returns null when top-level dirs diverge (no mapping)", () => {
-    assert.strictEqual(
-      resolveScope(["src/a.ts", "docs/b.md"], config()),
-      null,
-    );
+    assert.strictEqual(resolveScope(["src/a.ts", "docs/b.md"], config()), null);
   });
 
   // ── mapping: complete match ────────────────────────────
@@ -77,20 +69,14 @@ void describe("resolveScope", () => {
   void it("returns mapped scope when all files match same rule", () => {
     const cfg = config({ "packages/frontend/**": "frontend" });
     assert.strictEqual(
-      resolveScope(
-        ["packages/frontend/a.ts", "packages/frontend/b.ts"],
-        cfg,
-      ),
+      resolveScope(["packages/frontend/a.ts", "packages/frontend/b.ts"], cfg),
       "frontend",
     );
   });
 
   void it("`**` matches everything to a single scope", () => {
     const cfg = config({ "**": "app" });
-    assert.strictEqual(
-      resolveScope(["a.ts", "packages/foo/b.ts"], cfg),
-      "app",
-    );
+    assert.strictEqual(resolveScope(["a.ts", "packages/foo/b.ts"], cfg), "app");
   });
 
   void it("returns null when files map to different scopes (mixed)", () => {
@@ -99,10 +85,7 @@ void describe("resolveScope", () => {
       "packages/backend/**": "backend",
     });
     assert.strictEqual(
-      resolveScope(
-        ["packages/frontend/a.ts", "packages/backend/b.ts"],
-        cfg,
-      ),
+      resolveScope(["packages/frontend/a.ts", "packages/backend/b.ts"], cfg),
       null,
     );
   });
@@ -143,10 +126,7 @@ void describe("resolveScope", () => {
   void it("cascaded heuristic returns null when heuristic diverges", () => {
     const cfg = config({ "docs/**": "docs-scope" });
     // Both under different top-level dirs → heuristic returns null.
-    assert.strictEqual(
-      resolveScope(["src/api/a.ts", "docs/b.md"], cfg),
-      null,
-    );
+    assert.strictEqual(resolveScope(["src/api/a.ts", "docs/b.md"], cfg), null);
   });
 });
 

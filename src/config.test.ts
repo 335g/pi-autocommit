@@ -1,12 +1,14 @@
 import assert from "node:assert";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import {
-  loadConfig,
-  saveEnable,
-  saveModel,
-} from "./config.js";
+import { loadConfig, saveEnable, saveModel } from "./config.js";
 
 /**
  * Create a temporary directory with a `.pi/pi-autocommit.json` file.
@@ -183,7 +185,11 @@ void describe("saveEnable", () => {
   });
 
   void it("overwrites only enable and preserves other known keys", () => {
-    const dir = withConfigFile({ lang: "ja", enable: true, model: "anthropic/claude-sonnet-4" });
+    const dir = withConfigFile({
+      lang: "ja",
+      enable: true,
+      model: "anthropic/claude-sonnet-4",
+    });
     try {
       saveEnable(dir, false);
       const config = loadConfig(dir);
@@ -238,7 +244,11 @@ void describe("saveModel", () => {
   });
 
   void it("overwrites only model and preserves other known keys", () => {
-    const dir = withConfigFile({ lang: "ja", enable: false, model: "openai/gpt-4o" });
+    const dir = withConfigFile({
+      lang: "ja",
+      enable: false,
+      model: "openai/gpt-4o",
+    });
     try {
       saveModel(dir, "anthropic/claude-sonnet-4");
       const config = loadConfig(dir);
@@ -251,7 +261,11 @@ void describe("saveModel", () => {
   });
 
   void it("preserves unknown keys", () => {
-    const dir = withConfigFile({ enable: true, model: "openai/gpt-4o", custom_key: "keep-me" });
+    const dir = withConfigFile({
+      enable: true,
+      model: "openai/gpt-4o",
+      custom_key: "keep-me",
+    });
     try {
       saveModel(dir, "anthropic/claude-sonnet-4");
       const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");
@@ -260,6 +274,27 @@ void describe("saveModel", () => {
       assert.strictEqual(parsed.custom_key, "keep-me");
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("loads ignoreSubmodules from config", () => {
+    const dir = withConfigFile({ ignoreSubmodules: true });
+    try {
+      const config = loadConfig(dir);
+      assert.strictEqual(config.ignoreSubmodules, true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("defaults ignoreSubmodules to false when not set or non-boolean", () => {
+    for (const data of [{}, { ignoreSubmodules: "yes" }]) {
+      const dir = withConfigFile(data);
+      try {
+        assert.strictEqual(loadConfig(dir).ignoreSubmodules, false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
   });
 
@@ -304,7 +339,11 @@ void describe("saveModel", () => {
   });
 
   void it("deletes the model key when passed undefined", () => {
-    const dir = withConfigFile({ lang: "ja", enable: true, model: "anthropic/claude-sonnet-4" });
+    const dir = withConfigFile({
+      lang: "ja",
+      enable: true,
+      model: "anthropic/claude-sonnet-4",
+    });
     try {
       saveModel(dir, undefined);
       const raw = readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8");

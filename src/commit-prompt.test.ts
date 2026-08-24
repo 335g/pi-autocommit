@@ -1,19 +1,17 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import type { PiAutocommitConfig } from "./config.js";
 import {
+  type CompleteFn,
   completeCommitGroups,
   completeSingleMessage,
   extractAssistantContext,
-  type CompleteFn,
 } from "./commit-prompt.js";
+import type { PiAutocommitConfig } from "./config.js";
 
 // ── Test helpers ─────────────────────────────────────────
 
 /** Minimal model stub for fake adapters — only `id` matters in the core. */
-const stubModel = { id: "test-model" } as unknown as Parameters<
-  CompleteFn
->[0];
+const stubModel = { id: "test-model" } as unknown as Parameters<CompleteFn>[0];
 
 /** Build a fake CompleteFn returning the given text from its first content block. */
 function fakeCompleteReturning(text: string): CompleteFn {
@@ -40,6 +38,7 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     lang: "en",
     enable: true,
     commitPickerMaxCommits: 30,
+    ignoreSubmodules: false,
     ...over,
   };
 }
@@ -166,7 +165,12 @@ void describe("completeSingleMessage", () => {
 
 void describe("completeCommitGroups", () => {
   void it("parses the LLM response into groups with injected scope (mapping present)", async () => {
-    const cfg = config({ scope: { "packages/frontend/**": "frontend", "packages/backend/**": "backend" } });
+    const cfg = config({
+      scope: {
+        "packages/frontend/**": "frontend",
+        "packages/backend/**": "backend",
+      },
+    });
     const llmText = [
       "=== COMMIT 1 ===",
       "feat: add login",
@@ -349,10 +353,7 @@ void describe("ADR-0003 scope injection", () => {
       complete,
     );
 
-    assert.strictEqual(
-      groups[0]?.message,
-      "feat(frontend): add login",
-    );
+    assert.strictEqual(groups[0]?.message, "feat(frontend): add login");
   });
 
   void it("no mapping: leaves the LLM-emitted scope untouched (single path)", async () => {

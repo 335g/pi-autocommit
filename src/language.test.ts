@@ -5,7 +5,13 @@ import { isJapanese, resolvedLanguageName } from "./config.js";
 import { detectLanguage, languageName, userMessageTexts } from "./language.js";
 
 function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
-  return { lang: "auto", enable: true, commitPickerMaxCommits: 30, ...over };
+  return {
+    lang: "auto",
+    enable: true,
+    commitPickerMaxCommits: 30,
+    ...over,
+    ignoreSubmodules: over.ignoreSubmodules ?? false,
+  };
 }
 
 void describe("detectLanguage", () => {
