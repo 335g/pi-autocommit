@@ -40,15 +40,24 @@ void describe("shouldCreateCheckpointCommit", () => {
   });
 
   void it("returns true for write tool", () => {
-    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("write")]), true);
+    assert.strictEqual(
+      shouldCreateCheckpointCommit([makeToolResult("write")]),
+      true,
+    );
   });
 
   void it("returns true for edit tool", () => {
-    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("edit")]), true);
+    assert.strictEqual(
+      shouldCreateCheckpointCommit([makeToolResult("edit")]),
+      true,
+    );
   });
 
   void it("returns true for bash tool", () => {
-    assert.strictEqual(shouldCreateCheckpointCommit([makeToolResult("bash")]), true);
+    assert.strictEqual(
+      shouldCreateCheckpointCommit([makeToolResult("bash")]),
+      true,
+    );
   });
 
   void it("returns true when any tool is potentially mutating", () => {
@@ -161,10 +170,7 @@ void describe("shouldBlockGitCommit", () => {
   });
 
   void it("does not false-positive on git log --grep=commit", () => {
-    assert.strictEqual(
-      shouldBlockGitCommit("git log --grep=commit"),
-      false,
-    );
+    assert.strictEqual(shouldBlockGitCommit("git log --grep=commit"), false);
   });
 
   void it("detects when only one segment of many is a commit", () => {
@@ -196,10 +202,7 @@ void describe("shouldBlockGitPush", () => {
   });
 
   void it("detects git push with refspec", () => {
-    assert.strictEqual(
-      shouldBlockGitPush("git push origin main"),
-      true,
-    );
+    assert.strictEqual(shouldBlockGitPush("git push origin main"), true);
   });
 
   void it("detects git push with flags", () => {
@@ -225,14 +228,14 @@ void describe("shouldBlockGitPush", () => {
 
   void it("detects git push in a compound command", () => {
     assert.strictEqual(
-      shouldBlockGitPush('npm run build && git push origin main'),
+      shouldBlockGitPush("npm run build && git push origin main"),
       true,
     );
   });
 
   void it("detects git push on a new line", () => {
     assert.strictEqual(
-      shouldBlockGitPush('git add -A\ngit push origin main'),
+      shouldBlockGitPush("git add -A\ngit push origin main"),
       true,
     );
   });
@@ -245,10 +248,7 @@ void describe("shouldBlockGitPush", () => {
   });
 
   void it("does not false-positive on git log --grep=push", () => {
-    assert.strictEqual(
-      shouldBlockGitPush("git log --grep=push"),
-      false,
-    );
+    assert.strictEqual(shouldBlockGitPush("git log --grep=push"), false);
   });
 
   void it("does not false-positive on a file named git-push", () => {
@@ -424,7 +424,11 @@ void describe("interleavingAllowedWithoutCheckpoints", () => {
 
   void it("allows cherry-pick when HEAD is not a checkpoint", () => {
     assert.strictEqual(
-      interleavingAllowedWithoutCheckpoints("cherry-pick", "feat: base", marker),
+      interleavingAllowedWithoutCheckpoints(
+        "cherry-pick",
+        "feat: base",
+        marker,
+      ),
       true,
     );
   });

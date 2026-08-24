@@ -1,7 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PipelineEvent } from "./commit-events.js";
-import { completeSingleMessage, type CompleteFn } from "./commit-prompt.js";
 import type { CommitGroup } from "./commit-prompt.js";
+import { type CompleteFn, completeSingleMessage } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
@@ -47,9 +47,7 @@ export async function commitGroups(
     if (result.code !== 0) {
       const detail =
         result.stderr.trim() || result.stdout.trim() || "Unknown error";
-      throw new Error(
-        `Commit failed (code ${result.code}): ${detail}`,
-      );
+      throw new Error(`Commit failed (code ${result.code}): ${detail}`);
     }
   }
 
@@ -111,9 +109,7 @@ export async function fallbackSingleCommit(
   if (result.code !== 0) {
     const detail =
       result.stderr.trim() || result.stdout.trim() || "Unknown error";
-    throw new Error(
-      `Fallback commit failed (code ${result.code}): ${detail}`,
-    );
+    throw new Error(`Fallback commit failed (code ${result.code}): ${detail}`);
   }
 
   events.push({

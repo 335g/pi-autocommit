@@ -77,7 +77,9 @@ export function resolveModel(
 
   const result = validateModelString(ctx, modelStr);
   if (!result.ok) {
-    console.warn(`[pi-autocommit] ${result.reason} Falling back to session model.`);
+    console.warn(
+      `[pi-autocommit] ${result.reason} Falling back to session model.`,
+    );
     return ctx.model;
   }
 

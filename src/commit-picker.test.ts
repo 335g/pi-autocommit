@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buildCommitItems,
+  type CommitItem,
+  type CommitPicker,
   defaultRange,
   formatOrigin,
   formatSubject,
-  type CommitItem,
-  type CommitPicker,
   type PickerResult,
 } from "./commit-picker.js";
 
@@ -50,7 +50,9 @@ describe("buildCommitItems", () => {
   });
 
   it("skips lines missing sha or subject", () => {
-    const raw = ["abc123\0valid", "invalid-no-null", "\0subject-only"].join("\n");
+    const raw = ["abc123\0valid", "invalid-no-null", "\0subject-only"].join(
+      "\n",
+    );
     const items = buildCommitItems(raw);
     assert.equal(items.length, 1);
     assert.equal(items[0].sha, "abc123");

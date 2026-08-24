@@ -4,9 +4,9 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import {
   Container,
+  type SelectItem,
   SelectList,
   Text,
-  type SelectItem,
 } from "@earendil-works/pi-tui";
 
 /**
@@ -133,9 +133,7 @@ export async function showModelPopup(
       container.addChild(
         new DynamicBorder((s: string) => theme.fg("accent", s)),
       );
-      container.addChild(
-        new Text(theme.fg("accent", theme.bold(title)), 1, 0),
-      );
+      container.addChild(new Text(theme.fg("accent", theme.bold(title)), 1, 0));
       container.addChild(
         new Text(
           theme.fg("dim", "↑↓ navigate · enter select · esc cancel"),

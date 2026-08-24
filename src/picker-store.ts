@@ -1,4 +1,4 @@
-import { GitOperations } from "./git-operations.js";
+import type { GitOperations } from "./git-operations.js";
 
 /**
  * Narrow seam used by the commit picker to read commit history.

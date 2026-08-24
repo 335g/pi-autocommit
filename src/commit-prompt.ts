@@ -1,11 +1,19 @@
-import { completeSimple, type Api, type Model } from "@earendil-works/pi-ai/compat";
+import {
+  type Api,
+  completeSimple,
+  type Model,
+} from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { formatFullMessage, generateCommitMessage } from "./commit-message.js";
 import { COMMIT_TYPES } from "./commit-types.js";
 import type { PiAutocommitConfig } from "./config.js";
 import { resolvedLanguageName } from "./config.js";
 import { parseNameStatus } from "./git-parser.js";
-import { hasScopeMapping, injectScopeIntoMessage, resolveScope } from "./scope-resolver.js";
+import {
+  hasScopeMapping,
+  injectScopeIntoMessage,
+  resolveScope,
+} from "./scope-resolver.js";
 
 /**
  * Commit prompt module — the deep module owning prompt assembly, the LLM-call
@@ -354,7 +362,11 @@ export async function completeCommitGroups(
 
   if (scopeManaged) {
     for (const group of groups) {
-      group.message = injectScopeIntoMessage(group.message, group.files, config);
+      group.message = injectScopeIntoMessage(
+        group.message,
+        group.files,
+        config,
+      );
     }
   }
 
