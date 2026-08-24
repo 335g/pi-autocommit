@@ -242,9 +242,10 @@ describe("GitOperations.getStagedDiff", () => {
 });
 
 describe("GitOperations.findOrphanedSubmoduleHeads", () => {
-  const gitlink = "160000 aaaa1111bbbb2222cccc3333dddd4444eeee5555 0\tsub\n";
+  // `git ls-files -s -z` output: NUL-terminated records, raw paths.
+  const gitlink = "160000 aaaa1111bbbb2222cccc3333dddd4444eeee5555 0\tsub\0";
   const regular =
-    "100644 1234567890abcdef1234567890abcdef12345678 0\tfile.txt\n";
+    "100644 1234567890abcdef1234567890abcdef12345678 0\tfile.txt\0";
 
   function makePi(
     lsOutput: string,
