@@ -31,8 +31,14 @@ describe("buildCheckpointMessage", () => {
   });
 
   it("skips empty branch and empty session", () => {
-    assert.equal(buildCheckpointMessage(msg, "session-abc", ""), `${msg}\n\nCheckpoint-Session: session-abc`);
-    assert.equal(buildCheckpointMessage(msg, "", "wt/task1"), `${msg}\n\nCheckpoint-Branch: wt/task1`);
+    assert.equal(
+      buildCheckpointMessage(msg, "session-abc", ""),
+      `${msg}\n\nCheckpoint-Session: session-abc`,
+    );
+    assert.equal(
+      buildCheckpointMessage(msg, "", "wt/task1"),
+      `${msg}\n\nCheckpoint-Branch: wt/task1`,
+    );
   });
 });
 
@@ -40,9 +46,7 @@ import type { ExecResult } from "@earendil-works/pi-coding-agent";
 import type { CheckpointStore } from "./checkpoint-store.js";
 import { runCheckpointCommit } from "./pipeline.js";
 
-function fakeStore(
-  overrides: Partial<CheckpointStore> = {},
-): {
+function fakeStore(overrides: Partial<CheckpointStore> = {}): {
   store: CheckpointStore;
   commitCalls: string[];
 } {
@@ -52,10 +56,16 @@ function fakeStore(
     hasMergeConflict: async () => false,
     checkStatus: async () => ({ hasChanges: true, raw: " m sub" }),
     stageAll: async () => {},
+    stageAllIgnoringSubmodules: async () => {},
     hasStagedChanges: async () => true,
     commit: async (message: string): Promise<ExecResult> => {
       commitCalls.push(message);
-      return { code: 0, stdout: "[main abc123] wip(checkpoint)", stderr: "", killed: false };
+      return {
+        code: 0,
+        stdout: "[main abc123] wip(checkpoint)",
+        stderr: "",
+        killed: false,
+      };
     },
     getCurrentBranch: async () => "main",
     unstageAll: async () => {},
@@ -106,7 +116,23 @@ describe("runCheckpointCommit", () => {
         unstageCalls++;
       },
     });
-    await assert.rejects(() => runCheckpointCommit(store, message), /Commit failed/);
+    await assert.rejects(
+      () => runCheckpointCommit(store, message),
+      /Commit failed/,
+    );
     assert.equal(unstageCalls, 1);
+  });
+
+  it("routes staging through stageAllIgnoringSubmodules when ignoreSubmodules is set", async () => {
+    const { store } = fakeStore({});
+    let ignoredStagingUsed = false;
+    (store as CheckpointStore).stageAllIgnoringSubmodules = async () => {
+      ignoredStagingUsed = true;
+    };
+    const result = await runCheckpointCommit(store, message, undefined, {
+      ignoreSubmodules: true,
+    });
+    assert.equal(result.committed, true);
+    assert.ok(ignoredStagingUsed, "submodule-excluding staging path was used");
   });
 });

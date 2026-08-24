@@ -1,5 +1,5 @@
-import type { PipelineEvent, PipelineResult } from "./commit-events.js";
 import type { CheckpointStore } from "./checkpoint-store.js";
+import type { PipelineEvent, PipelineResult } from "./commit-events.js";
 
 /**
  * Build the checkpoint commit message body: the subject plus `Checkpoint-Session`
@@ -49,6 +49,7 @@ export async function runCheckpointCommit(
   store: CheckpointStore,
   message: string,
   sessionId?: string,
+  options?: { ignoreSubmodules?: boolean },
 ): Promise<PipelineResult> {
   const events: PipelineEvent[] = [];
   let committed = false;
@@ -78,7 +79,11 @@ export async function runCheckpointCommit(
     }
 
     // ── 4. Stage all files ──────────────────────────────
-    await store.stageAll();
+    if (options?.ignoreSubmodules) {
+      await store.stageAllIgnoringSubmodules();
+    } else {
+      await store.stageAll();
+    }
 
     // ── 5. Skip when nothing became stageable ────────────
     // `git status` can report changes that `git add -A` cannot stage —
