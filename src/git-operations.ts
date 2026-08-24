@@ -64,6 +64,38 @@ export class GitOperations {
   }
 
   /**
+   * Stage all changes except submodule-related paths (`ignoreSubmodules`).
+   *
+   * Runs `git add -A`, then unstages everything that is a submodule pin from
+   * the parent's perspective: gitlink entries (mode 160000 in the index —
+   * covering registered submodules and absorbed embedded repositories alike)
+   * and `.gitmodules`. Only paths that actually differ from HEAD after the
+   * add are unstaged.
+   */
+  async stageAllIgnoringSubmodules(): Promise<void> {
+    await this.stageAll();
+    const { stdout } = await this.pi.exec("git", ["ls-files", "-s"]);
+    // `.gitmodules` may not exist; listing it in the pathspec is harmless.
+    const candidates = [
+      ".gitmodules",
+      ...parseGitlinkPaths(stdout).map(([p]) => p),
+    ];
+    const { stdout: changed } = await this.pi.exec("git", [
+      "diff",
+      "--cached",
+      "--name-only",
+      "--",
+      ...candidates,
+    ]);
+    for (const line of changed.split("\n")) {
+      const path = line.trim();
+      if (path) {
+        await this.unstageFile(path);
+      }
+    }
+  }
+
+  /**
    * Get the stat summary of staged changes (`git diff --cached --stat`).
    */
   async getStagedStat(): Promise<string> {
@@ -185,20 +217,14 @@ export class GitOperations {
     // Enumerate gitlink entries (mode 160000) from the index. This covers
     // registered submodules and absorbed embedded git repositories alike.
     const { stdout } = await this.pi.exec("git", ["ls-files", "-s"]);
-    const gitlinks: Array<{ path: string; sha: string }> = [];
-    for (const line of stdout.split("\n")) {
-      const match = line.match(/^160000 ([0-9a-f]{40}) \d+\t(.+)$/);
-      if (match) {
-        gitlinks.push({ path: match[2], sha: match[1] });
-      }
-    }
+    const gitlinks = parseGitlinkPaths(stdout);
 
     const result: Array<{ path: string; indexSha: string; headSha: string }> =
       [];
-    for (const gitlink of gitlinks) {
+    for (const [gitlinkPath, gitlinkSha] of gitlinks) {
       const { stdout: headOut, code } = await this.pi.exec("git", [
         "-C",
-        gitlink.path,
+        gitlinkPath,
         "rev-parse",
         "HEAD",
       ]);
@@ -206,12 +232,12 @@ export class GitOperations {
         continue; // missing / uninitialised submodule
       }
       const headSha = headOut.trim();
-      if (!headSha || headSha === gitlink.sha) {
+      if (!headSha || headSha === gitlinkSha) {
         continue; // in sync with the parent gitlink
       }
       const { stdout: refs } = await this.pi.exec("git", [
         "-C",
-        gitlink.path,
+        gitlinkPath,
         "for-each-ref",
         "--contains",
         "HEAD",
@@ -220,7 +246,7 @@ export class GitOperations {
       if (refs.trim()) {
         continue; // reachable from a branch/tag → recoverable after update
       }
-      result.push({ path: gitlink.path, indexSha: gitlink.sha, headSha });
+      result.push({ path: gitlinkPath, indexSha: gitlinkSha, headSha });
     }
     return result;
   }
@@ -238,7 +264,10 @@ export class GitOperations {
    *   every consecutive subject-matching commit (backward-compatible
    *   behaviour).
    */
-  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
+  async countCheckpointCommits(
+    marker: string,
+    sessionId?: string,
+  ): Promise<number> {
     if (sessionId === undefined) {
       // Original behaviour: subject-prefix match only.
       const { stdout, code } = await this.pi.exec("git", [
@@ -442,9 +471,7 @@ export class GitOperations {
    * string (not `"NONE"`) when the key is missing — which becomes `null`
    * after `.trim() || null`.
    */
-  async findReachableCheckpoints(
-    marker: string,
-  ): Promise<
+  async findReachableCheckpoints(marker: string): Promise<
     Array<{
       sha: string;
       subject: string;
@@ -502,10 +529,10 @@ export class GitOperations {
     sha: string,
   ): Promise<{ success: boolean; error?: string }> {
     // Get the first parent of the commit.
-    const {
-      stdout: parent,
-      code: parentCode,
-    } = await this.pi.exec("git", ["rev-parse", `${sha}^`]);
+    const { stdout: parent, code: parentCode } = await this.pi.exec("git", [
+      "rev-parse",
+      `${sha}^`,
+    ]);
     if (parentCode !== 0 || !parent.trim()) {
       return { success: false, error: `No parent for commit ${sha}` };
     }
@@ -534,11 +561,7 @@ export class GitOperations {
    * Equivalent to `git reset --hard <sha>`.
    */
   async hardReset(sha: string): Promise<void> {
-    const result = await this.pi.exec("git", [
-      "reset",
-      "--hard",
-      sha,
-    ]);
+    const result = await this.pi.exec("git", ["reset", "--hard", sha]);
     if (result.code !== 0) {
       throw new Error(
         `git reset --hard ${sha} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
@@ -590,6 +613,22 @@ export class GitOperations {
     }
     return { success: true };
   }
+}
+
+/**
+ * Parse `git ls-files -s` output into `[path, sha]` pairs for gitlink
+ * entries (file mode 160000). This covers registered submodules and absorbed
+ * embedded git repositories alike.
+ */
+function parseGitlinkPaths(stdout: string): Array<[string, string]> {
+  const gitlinks: Array<[string, string]> = [];
+  for (const line of stdout.split("\n")) {
+    const match = line.match(/^160000 ([0-9a-f]{40}) \d+\t(.+)$/);
+    if (match) {
+      gitlinks.push([match[2], match[1]]);
+    }
+  }
+  return gitlinks;
 }
 
 /**

@@ -24,14 +24,21 @@ describe("GitOperations.getHead", () => {
 
   it("returns null when git rev-parse fails", async () => {
     const git = new GitOperations(
-      makePi({ code: 1, stdout: "", stderr: "fatal: not a git repository", killed: false }),
+      makePi({
+        code: 1,
+        stdout: "",
+        stderr: "fatal: not a git repository",
+        killed: false,
+      }),
     );
     const head = await git.getHead();
     assert.equal(head, null);
   });
 
   it("returns null when stdout is empty", async () => {
-    const git = new GitOperations(makePi({ code: 0, stdout: "", stderr: "", killed: false }));
+    const git = new GitOperations(
+      makePi({ code: 0, stdout: "", stderr: "", killed: false }),
+    );
     const head = await git.getHead();
     assert.equal(head, null);
   });
@@ -84,7 +91,12 @@ describe("GitOperations.resetSoft", () => {
       exec: async (_cmd: string, args?: string[]) => {
         calls.push({ args });
         if (args?.[0] === "rev-parse") {
-          return { code: 128, stdout: "", stderr: "fatal: ambiguous argument", killed: false };
+          return {
+            code: 128,
+            stdout: "",
+            stderr: "fatal: ambiguous argument",
+            killed: false,
+          };
         }
         return { code: 0, stdout: "", stderr: "", killed: false };
       },
@@ -103,7 +115,12 @@ describe("GitOperations.resetSoft", () => {
         if (args?.[0] === "rev-parse") {
           return { code: 0, stdout: "abc123", stderr: "", killed: false };
         }
-        return { code: 1, stdout: "", stderr: "fatal: something went wrong", killed: false };
+        return {
+          code: 1,
+          stdout: "",
+          stderr: "fatal: something went wrong",
+          killed: false,
+        };
       },
     } as unknown as ExtensionAPI);
 
@@ -117,9 +134,19 @@ describe("GitOperations.resetSoft", () => {
     const git = new GitOperations({
       exec: async (_cmd: string, args?: string[]) => {
         if (args?.[0] === "rev-parse") {
-          return { code: 128, stdout: "", stderr: "fatal: ambiguous argument", killed: false };
+          return {
+            code: 128,
+            stdout: "",
+            stderr: "fatal: ambiguous argument",
+            killed: false,
+          };
         }
-        return { code: 1, stdout: "", stderr: "fatal: could not update ref", killed: false };
+        return {
+          code: 1,
+          stdout: "",
+          stderr: "fatal: could not update ref",
+          killed: false,
+        };
       },
     } as unknown as ExtensionAPI);
 
@@ -169,7 +196,12 @@ describe("GitOperations.findCheckpointsSince", () => {
 
   it("returns [] when git fails", async () => {
     const git = new GitOperations({
-      exec: async () => ({ code: 128, stdout: "", stderr: "fatal", killed: false }),
+      exec: async () => ({
+        code: 128,
+        stdout: "",
+        stderr: "fatal",
+        killed: false,
+      }),
     } as unknown as ExtensionAPI);
     const found = await git.findCheckpointsSince("abc123", marker);
     assert.deepEqual(found, []);
@@ -197,7 +229,8 @@ describe("GitOperations.getStagedDiff", () => {
         assert.deepEqual(args, ["diff", "--cached", "--submodule=log"]);
         return {
           code: 0,
-          stdout: "diff --git a/sub b/sub\nSubmodule sub 1111..2222:\n  > feat: add widget\n",
+          stdout:
+            "diff --git a/sub b/sub\nSubmodule sub 1111..2222:\n  > feat: add widget\n",
           stderr: "",
           killed: false,
         };
@@ -209,9 +242,9 @@ describe("GitOperations.getStagedDiff", () => {
 });
 
 describe("GitOperations.findOrphanedSubmoduleHeads", () => {
-  const gitlink =
-    "160000 aaaa1111bbbb2222cccc3333dddd4444eeee5555 0\tsub\n";
-  const regular = "100644 1234567890abcdef1234567890abcdef12345678 0\tfile.txt\n";
+  const gitlink = "160000 aaaa1111bbbb2222cccc3333dddd4444eeee5555 0\tsub\n";
+  const regular =
+    "100644 1234567890abcdef1234567890abcdef12345678 0\tfile.txt\n";
 
   function makePi(
     lsOutput: string,
@@ -229,12 +262,27 @@ describe("GitOperations.findOrphanedSubmoduleHeads", () => {
           const state = subStates[args[1]];
           if (args[2] === "rev-parse") {
             if (!state || state.code !== undefined) {
-              return { code: state?.code ?? 128, stdout: "", stderr: "fatal", killed: false };
+              return {
+                code: state?.code ?? 128,
+                stdout: "",
+                stderr: "fatal",
+                killed: false,
+              };
             }
-            return { code: 0, stdout: state.head + "\n", stderr: "", killed: false };
+            return {
+              code: 0,
+              stdout: state.head + "\n",
+              stderr: "",
+              killed: false,
+            };
           }
           if (args[2] === "for-each-ref") {
-            return { code: 0, stdout: state?.refs ?? "", stderr: "", killed: false };
+            return {
+              code: 0,
+              stdout: state?.refs ?? "",
+              stderr: "",
+              killed: false,
+            };
           }
         }
         return { code: 0, stdout: "", stderr: "", killed: false };
@@ -249,7 +297,9 @@ describe("GitOperations.findOrphanedSubmoduleHeads", () => {
 
   it("returns [] when the submodule HEAD matches the gitlink", async () => {
     const git = new GitOperations(
-      makePi(gitlink, { sub: { head: "aaaa1111bbbb2222cccc3333dddd4444eeee5555" } }),
+      makePi(gitlink, {
+        sub: { head: "aaaa1111bbbb2222cccc3333dddd4444eeee5555" },
+      }),
     );
     assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
   });
@@ -275,9 +325,7 @@ describe("GitOperations.findOrphanedSubmoduleHeads", () => {
   });
 
   it("skips missing or uninitialised submodule directories", async () => {
-    const git = new GitOperations(
-      makePi(gitlink, { sub: { code: 128 } }),
-    );
+    const git = new GitOperations(makePi(gitlink, { sub: { code: 128 } }));
     assert.deepEqual(await git.findOrphanedSubmoduleHeads(), []);
   });
 });
@@ -300,7 +348,12 @@ describe("GitOperations.getCurrentBranch", () => {
     assert.equal(await git.getCurrentBranch(), null);
 
     const failing = new GitOperations({
-      exec: async () => ({ code: 128, stdout: "", stderr: "fatal", killed: false }),
+      exec: async () => ({
+        code: 128,
+        stdout: "",
+        stderr: "fatal",
+        killed: false,
+      }),
     } as unknown as ExtensionAPI);
     assert.equal(await failing.getCurrentBranch(), null);
   });
