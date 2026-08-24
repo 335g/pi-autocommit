@@ -1,18 +1,17 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import type { AgentEndEvent } from "@earendil-works/pi-coding-agent";
-import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import type { PiAutocommitConfig } from "./config.js";
+import type {
+  AgentEndEvent,
+  ExecResult,
+} from "@earendil-works/pi-coding-agent";
 import {
+  CHECKPOINT_COMMIT_MARKER,
   organizeCheckpointCommits,
   reorganiseCheckpointsManual,
   reorganiseSelectedRange,
-  CHECKPOINT_COMMIT_MARKER,
 } from "./commit-organizer.js";
-import {
-  completeCommitGroups,
-  type CompleteFn,
-} from "./commit-prompt.js";
+import { type CompleteFn, completeCommitGroups } from "./commit-prompt.js";
+import type { PiAutocommitConfig } from "./config.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
 /** Minimal model stub for fake adapters. */
@@ -41,6 +40,7 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     lang: "en",
     enable: true,
     commitPickerMaxCommits: 30,
+    ignoreSubmodules: false,
     ...over,
   };
 }
@@ -242,7 +242,10 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     return this.options.insideRepo ?? true;
   }
 
-  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
+  async countCheckpointCommits(
+    marker: string,
+    sessionId?: string,
+  ): Promise<number> {
     this.operations.push(
       `countCheckpointCommits:${marker}${sessionId !== undefined ? `:${sessionId}` : ""}`,
     );
@@ -287,9 +290,7 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     stat: string;
   }> {
     this.operations.push("getStagedMaterials");
-    const nameStatus = this.stagedFiles
-      .map((file) => `M\t${file}`)
-      .join("\n");
+    const nameStatus = this.stagedFiles.map((file) => `M\t${file}`).join("\n");
     return {
       diff: this.stagedFiles
         .map((file) => `diff --git a/${file} b/${file}`)
@@ -319,11 +320,22 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     this.operations.push("stageAll");
   }
 
+  async stageAllIgnoringSubmodules(): Promise<void> {
+    this.operations.push("stageAllIgnoringSubmodules");
+  }
+
   async commit(message: string): Promise<ExecResult> {
     this.operations.push(`commit:${message.split("\n")[0]}`);
     this.commits.push(message);
     this.stagedFiles = [];
-    return this.options.commitResult ?? { code: 0, stdout: "", stderr: "", killed: false };
+    return (
+      this.options.commitResult ?? {
+        code: 0,
+        stdout: "",
+        stderr: "",
+        killed: false,
+      }
+    );
   }
 
   async getRecentCommits(maxCount: number, _skip?: number): Promise<string> {
@@ -335,9 +347,7 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       .join("\n");
   }
 
-  async findReachableCheckpoints(
-    marker: string,
-  ): Promise<
+  async findReachableCheckpoints(marker: string): Promise<
     Array<{
       sha: string;
       subject: string;
@@ -409,8 +419,15 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       // the range start (index lo), ancestor is before the range (hi+1).
       const lo = parseInt(descendant.replace("sha-", ""), 10);
       const hiExclusive = parseInt(ancestor.replace("sha-", ""), 10);
-      if (Number.isFinite(lo) && Number.isFinite(hiExclusive) && lo < hiExclusive) {
-        for (const commit of this.options.checkpointCommits.slice(lo, hiExclusive)) {
+      if (
+        Number.isFinite(lo) &&
+        Number.isFinite(hiExclusive) &&
+        lo < hiExclusive
+      ) {
+        for (const commit of this.options.checkpointCommits.slice(
+          lo,
+          hiExclusive,
+        )) {
           for (const file of commit.files) {
             if (!this.stagedFiles.includes(file)) {
               this.stagedFiles.push(file);
@@ -422,7 +439,9 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     return { success: true };
   }
 
-  async cherryPick(_sha: string): Promise<{ success: boolean; error?: string }> {
+  async cherryPick(
+    _sha: string,
+  ): Promise<{ success: boolean; error?: string }> {
     this.operations.push(`cherryPick:${_sha}`);
     if (this.options.cherryPickError) {
       return { success: false, error: this.options.cherryPickError };
@@ -528,8 +547,14 @@ src/auth/types.ts
   void it("reorganises multiple checkpoint commits into multiple logical groups", async () => {
     const store = new InMemoryReorganiserStore({
       checkpointCommits: [
-        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["src/db/query.ts"] },
-        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["src/auth/login.ts"] },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
+          files: ["src/db/query.ts"],
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/auth/login.ts"],
+        },
       ],
     });
 
@@ -633,7 +658,9 @@ src/b.ts
       fakeCompleteReturning(input),
     );
 
-    const stageOps = store.operations.filter((op) => op.startsWith("stageFiles"));
+    const stageOps = store.operations.filter((op) =>
+      op.startsWith("stageFiles"),
+    );
     assert.deepStrictEqual(stageOps, [
       "stageFiles:src/a.ts",
       "stageFiles:src/b.ts",
@@ -650,7 +677,12 @@ src/b.ts
         },
       ],
       // commit fails with code 1, empty stderr, but stdout has the actual message.
-      commitResult: { code: 1, stdout: "nothing to commit, working tree clean", stderr: "", killed: false },
+      commitResult: {
+        code: 1,
+        stdout: "nothing to commit, working tree clean",
+        stderr: "",
+        killed: false,
+      },
     });
 
     const input = `
@@ -722,9 +754,13 @@ src/b.ts
 
     // Info event about the skipped group.
     const infoEvent = result.events.find(
-      (e) => e.type === "info" && e.message.startsWith("Skipped empty commit group"),
+      (e) =>
+        e.type === "info" && e.message.startsWith("Skipped empty commit group"),
     );
-    assert.ok(infoEvent, "Expected an info event about skipped empty commit group");
+    assert.ok(
+      infoEvent,
+      "Expected an info event about skipped empty commit group",
+    );
 
     // Only the second group was committed.
     assert.strictEqual(store.commits.length, 1);
@@ -919,7 +955,9 @@ src/own.ts
     assert.strictEqual(result.organised, false);
     // marker ends with `:`, sep is `:`, so double-colon is expected.
     assert.ok(
-      store.operations.includes("countCheckpointCommits:wip(checkpoint)::session-a"),
+      store.operations.includes(
+        "countCheckpointCommits:wip(checkpoint)::session-a",
+      ),
     );
   });
 
@@ -1037,7 +1075,9 @@ src/b.ts
 
     assert.strictEqual(result.organised, true);
     assert.strictEqual(store.commits.length, 1);
-    assert.ok(store.operations.includes("countCheckpointCommits:wip(checkpoint):"));
+    assert.ok(
+      store.operations.includes("countCheckpointCommits:wip(checkpoint):"),
+    );
     assert.ok(
       result.events.some(
         (e) =>
@@ -1210,7 +1250,9 @@ src/own2.ts
       result.events.some(
         (e) =>
           e.type === "info" &&
-          e.message.includes("No checkpoint commits found for session session-a"),
+          e.message.includes(
+            "No checkpoint commits found for session session-a",
+          ),
       ),
     );
   });
@@ -1245,14 +1287,16 @@ src/auth/login.ts
       makeEvent(),
       store,
       { startIndex: 0, endIndex: 1 },
-      fakeCompleteReturning(`
+      fakeCompleteReturning(
+        `
 === COMMIT 1 ===
 feat(auth): add JWT login
 === FILES ===
 a.ts
 b.ts
 === END ===
-`.trim()),
+`.trim(),
+      ),
     );
 
     assert.strictEqual(result.organised, true);
@@ -1281,7 +1325,9 @@ b.ts
 
     assert.strictEqual(result.organised, false);
     assert.ok(
-      result.events.some((e) => e.type === "error" && e.message.includes("リモート先端")),
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("リモート先端"),
+      ),
     );
     assert.ok(!store.operations.some((op) => op.startsWith("resetSoft")));
   });
@@ -1304,7 +1350,8 @@ b.ts
       makeEvent(),
       store,
       { startIndex: 1, endIndex: 3 },
-      fakeCompleteReturning(`
+      fakeCompleteReturning(
+        `
 === COMMIT 1 ===
 feat(auth): add JWT login
 === FILES ===
@@ -1312,7 +1359,8 @@ a.ts
 b.ts
 below.ts
 === END ===
-`.trim()),
+`.trim(),
+      ),
     );
 
     assert.strictEqual(result.organised, true);
@@ -1346,7 +1394,9 @@ below.ts
 
     assert.strictEqual(result.organised, false);
     assert.ok(
-      result.events.some((e) => e.type === "error" && e.message.includes("リモート先端")),
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("リモート先端"),
+      ),
     );
     assert.ok(!store.operations.some((op) => op.startsWith("hardReset")));
   });
@@ -1374,7 +1424,9 @@ below.ts
 
     assert.strictEqual(result.organised, false);
     assert.ok(
-      result.events.some((e) => e.type === "error" && e.message.includes("未コミットの変更")),
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("未コミットの変更"),
+      ),
     );
     assert.ok(!store.operations.some((op) => op.startsWith("hardReset")));
   });
@@ -1398,7 +1450,8 @@ below.ts
       makeEvent(),
       store,
       { startIndex: 1, endIndex: 3 },
-      fakeCompleteReturning(`
+      fakeCompleteReturning(
+        `
 === COMMIT 1 ===
 feat(auth): add JWT login
 === FILES ===
@@ -1406,13 +1459,15 @@ a.ts
 b.ts
 below.ts
 === END ===
-`.trim()),
+`.trim(),
+      ),
     );
 
     assert.strictEqual(result.organised, false);
     assert.ok(
       result.events.some(
-        (e) => e.type === "error" && e.message.includes("操作前の状態に復元済み"),
+        (e) =>
+          e.type === "error" && e.message.includes("操作前の状態に復元済み"),
       ),
     );
     // Final hardReset targets the original HEAD (sha-0) — full restore.

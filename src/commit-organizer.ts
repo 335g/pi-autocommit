@@ -3,15 +3,31 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type { OrganizerResult, PipelineEvent } from "./commit-events.js";
-import type { PiAutocommitConfig } from "./config.js";
 import {
-  completeCommitGroups,
-  extractAssistantContext,
   type CommitGroup,
   type CompleteFn,
+  completeCommitGroups,
+  extractAssistantContext,
 } from "./commit-prompt.js";
+import type { PiAutocommitConfig } from "./config.js";
 import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
+
+/**
+ * Stage everything for the reorganiser's fallback commit.
+ *
+ * With `ignoreSubmodules`, gitlink updates and `.gitmodules` are left out so
+ * submodule pins never enter a reorganised commit either.
+ */
+function stageForFallback(
+  store: ReorganiserStore,
+  config: PiAutocommitConfig,
+): Promise<void> {
+  return config.ignoreSubmodules
+    ? store.stageAllIgnoringSubmodules()
+    : store.stageAll();
+}
+
 import { detectLanguage, languageName, userMessageTexts } from "./language.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
@@ -59,7 +75,10 @@ export async function organizeCheckpointCommits(
     return { events, organised: false };
   }
 
-  const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER, targetSessionId);
+  const checkpointCount = await store.countCheckpointCommits(
+    CHECKPOINT_COMMIT_MARKER,
+    targetSessionId,
+  );
   if (checkpointCount === 0) {
     events.push({
       type: "stage-changed",
@@ -77,7 +96,13 @@ export async function organizeCheckpointCommits(
   resolveLanguageFromMessages(config, event.messages);
 
   try {
-    const groups = await proposeCommitGroups(ctx, config, event, store, complete);
+    const groups = await proposeCommitGroups(
+      ctx,
+      config,
+      event,
+      store,
+      complete,
+    );
     if (groups.length === 0) {
       // No logical groups: fall back to one commit.
       await fallbackSingleCommit(ctx, config, store, events, complete);
@@ -106,7 +131,7 @@ export async function organizeCheckpointCommits(
   } catch (error) {
     // Fall back to a single commit so checkpoint commits are not left half-organised.
     try {
-      await store.stageAll();
+      await stageForFallback(store, config);
       await fallbackSingleCommit(ctx, config, store, events, complete);
       organised = true;
     } catch {
@@ -142,13 +167,14 @@ export async function reorganiseCheckpointsManual(
   complete?: CompleteFn,
 ): Promise<OrganizerResult> {
   const events: PipelineEvent[] = [];
-  let organised = false;
 
   if (!(await store.isInsideGitRepo())) {
     return { events, organised: false };
   }
 
-  const reachableCheckpoints = await store.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
+  const reachableCheckpoints = await store.findReachableCheckpoints(
+    CHECKPOINT_COMMIT_MARKER,
+  );
   if (reachableCheckpoints.length === 0) {
     events.push({
       type: "info",
@@ -163,14 +189,24 @@ export async function reorganiseCheckpointsManual(
 
   // ── No target session: reorganise ALL reachable checkpoint commits ──
   if (targetSessionId === undefined) {
-    const checkpointCount = await store.countCheckpointCommits(CHECKPOINT_COMMIT_MARKER);
+    const checkpointCount = await store.countCheckpointCommits(
+      CHECKPOINT_COMMIT_MARKER,
+    );
     if (checkpointCount > 0) {
       // Consecutive at HEAD: fast path with resetSoft.
       if (await crossesRemoteTip(store, checkpointCount, events)) {
         return { events, organised: false };
       }
       await store.resetSoft(checkpointCount);
-      return assembleAndCommit(ctx, config, store, checkpointCount, events, "", complete);
+      return assembleAndCommit(
+        ctx,
+        config,
+        store,
+        checkpointCount,
+        events,
+        "",
+        complete,
+      );
     }
 
     // Non-consecutive (scattered): reorganise only checkpoint commits that
@@ -181,7 +217,8 @@ export async function reorganiseCheckpointsManual(
     if (trailered.length === 0) {
       events.push({
         type: "info",
-        message: "No reorganisable checkpoint commits found. Scattered historical " +
+        message:
+          "No reorganisable checkpoint commits found. Scattered historical " +
           "checkpoints without a session trailer are already part of the regular history.",
       });
       events.push({
@@ -204,11 +241,21 @@ export async function reorganiseCheckpointsManual(
         return { events, organised: false };
       }
     }
-    return assembleAndCommit(ctx, config, store, trailered.length, events, "", complete);
+    return assembleAndCommit(
+      ctx,
+      config,
+      store,
+      trailered.length,
+      events,
+      "",
+      complete,
+    );
   }
 
   // ── Target session: check contiguity ────────────────────────────────
-  const targetCheckpoints = reachableCheckpoints.filter((w) => w.session === targetSessionId);
+  const targetCheckpoints = reachableCheckpoints.filter(
+    (w) => w.session === targetSessionId,
+  );
   if (targetCheckpoints.length === 0) {
     events.push({
       type: "info",
@@ -321,12 +368,11 @@ async function assembleAndCommit(
     return { events, organised };
   } catch (error) {
     try {
-      await store.stageAll();
+      await stageForFallback(store, config);
       await fallbackSingleCommit(ctx, config, store, events);
       organised = true;
     } catch {
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       events.push({
         type: "error",
         message: `pi-autocommit: reorganisation failed — ${message}`,
@@ -354,8 +400,7 @@ async function crossesRemoteTip(
   if (aheadCount === null || commitCount <= aheadCount) {
     return false;
   }
-  const remoteTipLabel =
-    aheadCount === 0 ? "現在のHEAD" : `HEAD~${aheadCount}`;
+  const remoteTipLabel = aheadCount === 0 ? "現在のHEAD" : `HEAD~${aheadCount}`;
   events.push({
     type: "error",
     message:
@@ -533,7 +578,7 @@ export async function reorganiseSelectedRange(
       }
     } catch (error) {
       try {
-        await store.stageAll();
+        await stageForFallback(store, config);
         await fallbackSingleCommit(ctx, config, store, events, complete);
         events.push({
           type: "organised",
@@ -582,8 +627,7 @@ export async function reorganiseSelectedRange(
   if (allSHAs.length <= hi + 1) {
     events.push({
       type: "error",
-      message:
-        "pi-autocommit: 選択範囲のコミット情報が取得できませんでした",
+      message: "pi-autocommit: 選択範囲のコミット情報が取得できませんでした",
     });
     events.push({
       type: "stage-changed",
@@ -674,8 +718,7 @@ export async function reorganiseSelectedRange(
     const message = error instanceof Error ? error.message : String(error);
     events.push({
       type: "error",
-      message:
-        `pi-autocommit: 範囲の再編成に失敗しました（操作前の状態に復元済み）— ${message}`,
+      message: `pi-autocommit: 範囲の再編成に失敗しました（操作前の状態に復元済み）— ${message}`,
     });
     events.push({
       type: "stage-changed",
