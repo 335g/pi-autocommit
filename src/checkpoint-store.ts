@@ -1,5 +1,5 @@
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { GitOperations, type GitStatus } from "./git-operations.js";
+import type { GitOperations, GitStatus } from "./git-operations.js";
 
 /**
  * Narrow seam used by the checkpoint pipeline to interact with the underlying
@@ -26,6 +26,12 @@ export interface CheckpointStore {
 
   /** Stage all changes (`git add -A`). */
   stageAll(): Promise<void>;
+
+  /**
+   * Stage all changes except submodule-related paths (gitlink updates and
+   * `.gitmodules`). Used when `ignoreSubmodules` is enabled.
+   */
+  stageAllIgnoringSubmodules(): Promise<void>;
 
   /** Execute `git commit -m <message>`. */
   commit(message: string): Promise<ExecResult>;
@@ -62,6 +68,10 @@ export class GitCheckpointStore implements CheckpointStore {
 
   async stageAll(): Promise<void> {
     return this.git.stageAll();
+  }
+
+  async stageAllIgnoringSubmodules(): Promise<void> {
+    return this.git.stageAllIgnoringSubmodules();
   }
 
   async commit(message: string): Promise<ExecResult> {

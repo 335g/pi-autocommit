@@ -1,5 +1,5 @@
 import type { ExecResult } from "@earendil-works/pi-coding-agent";
-import { GitOperations } from "./git-operations.js";
+import type { GitOperations } from "./git-operations.js";
 
 /**
  * Narrow seam used by the commit reorganiser to interact with the underlying
@@ -66,6 +66,12 @@ export interface CommitStore {
   /** Stage all changes. */
   stageAll(): Promise<void>;
 
+  /**
+   * Stage all changes except submodule-related paths (gitlink updates and
+   * `.gitmodules`). Used when `ignoreSubmodules` is enabled.
+   */
+  stageAllIgnoringSubmodules(): Promise<void>;
+
   /** Execute a commit with the given message. */
   commit(message: string): Promise<ExecResult>;
 
@@ -84,9 +90,7 @@ export interface CommitStore {
    */
   findReachableCheckpoints(
     marker: string,
-  ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
-  >;
+  ): Promise<Array<{ sha: string; subject: string; session: string | null }>>;
 
   /**
    * Extract the diff of a single commit (relative to its first parent) and
@@ -144,7 +148,10 @@ export class GitCommitStore implements CommitStore {
     return this.git.getHead();
   }
 
-  async countCheckpointCommits(marker: string, sessionId?: string): Promise<number> {
+  async countCheckpointCommits(
+    marker: string,
+    sessionId?: string,
+  ): Promise<number> {
     return this.git.countCheckpointCommits(marker, sessionId);
   }
 
@@ -185,6 +192,10 @@ export class GitCommitStore implements CommitStore {
     return this.git.stageAll();
   }
 
+  async stageAllIgnoringSubmodules(): Promise<void> {
+    return this.git.stageAllIgnoringSubmodules();
+  }
+
   async commit(message: string): Promise<ExecResult> {
     return this.git.commit(message);
   }
@@ -195,9 +206,7 @@ export class GitCommitStore implements CommitStore {
 
   async findReachableCheckpoints(
     marker: string,
-  ): Promise<
-    Array<{ sha: string; subject: string; session: string | null }>
-  > {
+  ): Promise<Array<{ sha: string; subject: string; session: string | null }>> {
     return this.git.findReachableCheckpoints(marker);
   }
 
