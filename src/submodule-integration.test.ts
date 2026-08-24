@@ -1,12 +1,12 @@
-import { execFileSync, type ExecFileSyncOptions } from "node:child_process";
+import assert from "node:assert/strict";
+import { type ExecFileSyncOptions, execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ExtensionAPI, ExecResult } from "@earendil-works/pi-coding-agent";
-import { GitOperations } from "./git-operations.js";
+import type { ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { GitCheckpointStore } from "./checkpoint-store.js";
+import { GitOperations } from "./git-operations.js";
 import { runCheckpointCommit } from "./pipeline.js";
 
 /**
@@ -54,8 +54,12 @@ function git(
 
 function makePi(cwd: string): ExtensionAPI {
   return {
-    exec: async (command: string, args?: string[]): Promise<ExecResult> => {
-      const result = git(cwd, ["-c", "protocol.file.allow=always", ...(args ?? [])]);
+    exec: async (_command: string, args?: string[]): Promise<ExecResult> => {
+      const result = git(cwd, [
+        "-c",
+        "protocol.file.allow=always",
+        ...(args ?? []),
+      ]);
       return {
         code: result.code,
         stdout: result.stdout,
@@ -111,14 +115,20 @@ describe("submodule integration (real git)", () => {
       // Dirty tracked file inside the submodule; the parent gitlink is unchanged.
       writeFileSync(join(fixture.subDir, "file.txt"), "hello\nmodified\n");
 
-      const store = new GitCheckpointStore(new GitOperations(makePi(fixture.root)));
+      const store = new GitCheckpointStore(
+        new GitOperations(makePi(fixture.root)),
+      );
       const result = await runCheckpointCommit(
         store,
         "wip(checkpoint): auto-commit at turn 1",
         "session-1",
       );
 
-      assert.equal(result.committed, false, "must not commit submodule-only dirt");
+      assert.equal(
+        result.committed,
+        false,
+        "must not commit submodule-only dirt",
+      );
       assert.ok(
         result.events.some(
           (e) => e.type === "info" && /no stageable changes/i.test(e.message),
@@ -213,7 +223,81 @@ describe("submodule integration (real git)", () => {
       const diff = await ops.getStagedDiff();
 
       assert.match(diff, /Submodule sub .+\.\./);
-      assert.match(diff, /add the widget/, "child commit subject reaches the LLM");
+      assert.match(
+        diff,
+        /add the widget/,
+        "child commit subject reaches the LLM",
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  });
+
+  it("ignoreSubmodules: a submodule-side commit does not create a parent checkpoint", async () => {
+    const fixture = setup();
+    try {
+      // Commits pile up inside the submodule (on a branch, so nothing is lost).
+      git(fixture.subDir, ["checkout", "-q", "-b", "feature/x"]);
+      writeFileSync(join(fixture.subDir, "work.txt"), "work\n");
+      git(fixture.subDir, ["add", "work.txt"]);
+      git(fixture.subDir, ["commit", "-q", "-m", "feat: work"]);
+
+      const store = new GitCheckpointStore(
+        new GitOperations(makePi(fixture.root)),
+      );
+      const result = await runCheckpointCommit(
+        store,
+        "wip(checkpoint): auto-commit at turn 1",
+        "session-1",
+        { ignoreSubmodules: true },
+      );
+
+      assert.equal(
+        result.committed,
+        false,
+        "no parent commit for pin drift only",
+      );
+      const count = git(fixture.root, ["rev-list", "--count", "HEAD"]).stdout;
+      assert.equal(count, "2", "parent history unchanged");
+      // The pin drift stays visible in the working tree instead of being swept in.
+      assert.match(
+        git(fixture.root, ["status", "--short"]).stdout,
+        /^ ?M sub/m,
+      );
+    } finally {
+      cleanup(fixture);
+    }
+  });
+
+  it("ignoreSubmodules: parent files are committed while the gitlink bump is left out", async () => {
+    const fixture = setup();
+    try {
+      git(fixture.subDir, ["checkout", "-q", "-b", "feature/x"]);
+      writeFileSync(join(fixture.subDir, "work.txt"), "work\n");
+      git(fixture.subDir, ["add", "work.txt"]);
+      git(fixture.subDir, ["commit", "-q", "-m", "feat: work"]);
+      writeFileSync(join(fixture.root, "top.txt"), "changed\n");
+
+      const store = new GitCheckpointStore(
+        new GitOperations(makePi(fixture.root)),
+      );
+      const result = await runCheckpointCommit(
+        store,
+        "wip(checkpoint): auto-commit at turn 1",
+        "session-1",
+        { ignoreSubmodules: true },
+      );
+
+      assert.equal(result.committed, true, "parent file change is committed");
+      const committed = git(fixture.root, [
+        "show",
+        "--name-only",
+        "--format=",
+        "HEAD",
+      ]).stdout;
+      assert.match(committed, /top\.txt/);
+      assert.doesNotMatch(committed, /^sub$/m, "gitlink not recorded");
+      assert.doesNotMatch(committed, /\.gitmodules/);
     } finally {
       cleanup(fixture);
     }
