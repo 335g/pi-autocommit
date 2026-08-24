@@ -306,10 +306,20 @@ describe("submodule integration (real git)", () => {
   it("ignoreSubmodules: non-ASCII submodule path is unstaged (core.quotePath regression)", async () => {
     const fixture = setup("ニホンゴサブ");
     try {
-      git(join(fixture.root, "ニホンゴサブ"), ["checkout", "-q", "-b", "feature/x"]);
+      git(join(fixture.root, "ニホンゴサブ"), [
+        "checkout",
+        "-q",
+        "-b",
+        "feature/x",
+      ]);
       writeFileSync(join(fixture.root, "ニホンゴサブ", "work.txt"), "work\n");
       git(join(fixture.root, "ニホンゴサブ"), ["add", "work.txt"]);
-      git(join(fixture.root, "ニホンゴサブ"), ["commit", "-q", "-m", "feat: work"]);
+      git(join(fixture.root, "ニホンゴサブ"), [
+        "commit",
+        "-q",
+        "-m",
+        "feat: work",
+      ]);
 
       const store = new GitCheckpointStore(
         new GitOperations(makePi(fixture.root)),
@@ -321,9 +331,22 @@ describe("submodule integration (real git)", () => {
         { ignoreSubmodules: true },
       );
 
-      assert.equal(result.committed, false, "quoted gitlink path must not sneak into a commit");
-      const status = git(fixture.root, ["-c", "core.quotePath=false", "status", "--short"]).stdout;
-      assert.match(status, /ニホンゴサブ/, "pin drift stays visible in the working tree");
+      assert.equal(
+        result.committed,
+        false,
+        "quoted gitlink path must not sneak into a commit",
+      );
+      const status = git(fixture.root, [
+        "-c",
+        "core.quotePath=false",
+        "status",
+        "--short",
+      ]).stdout;
+      assert.match(
+        status,
+        /ニホンゴサブ/,
+        "pin drift stays visible in the working tree",
+      );
     } finally {
       cleanup(fixture);
     }
