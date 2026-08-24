@@ -74,7 +74,8 @@ export class GitOperations {
    */
   async stageAllIgnoringSubmodules(): Promise<void> {
     await this.stageAll();
-    const { stdout } = await this.pi.exec("git", ["ls-files", "-s"]);
+    // `-z` keeps paths raw (no core.quotePath quoting, no newline splitting).
+    const { stdout } = await this.pi.exec("git", ["ls-files", "-s", "-z"]);
     // `.gitmodules` may not exist; listing it in the pathspec is harmless.
     const candidates = [
       ".gitmodules",
@@ -84,11 +85,12 @@ export class GitOperations {
       "diff",
       "--cached",
       "--name-only",
+      "-z",
       "--",
       ...candidates,
     ]);
-    for (const line of changed.split("\n")) {
-      const path = line.trim();
+    for (const path of changed.split("\0")) {
+      // No trim: leading/trailing spaces are legal filename characters.
       if (path) {
         await this.unstageFile(path);
       }
@@ -216,7 +218,8 @@ export class GitOperations {
   > {
     // Enumerate gitlink entries (mode 160000) from the index. This covers
     // registered submodules and absorbed embedded git repositories alike.
-    const { stdout } = await this.pi.exec("git", ["ls-files", "-s"]);
+    // `-z` keeps paths raw so non-ASCII names survive intact.
+    const { stdout } = await this.pi.exec("git", ["ls-files", "-s", "-z"]);
     const gitlinks = parseGitlinkPaths(stdout);
 
     const result: Array<{ path: string; indexSha: string; headSha: string }> =
@@ -616,14 +619,15 @@ export class GitOperations {
 }
 
 /**
- * Parse `git ls-files -s` output into `[path, sha]` pairs for gitlink
- * entries (file mode 160000). This covers registered submodules and absorbed
- * embedded git repositories alike.
+ * Parse NUL-separated `git ls-files -s -z` output into `[path, sha]` pairs
+ * for gitlink entries (file mode 160000). This covers registered submodules
+ * and absorbed embedded git repositories alike, with any path spelling
+ * (spaces, quotes, non-ASCII) since `-z` output is never quoted.
  */
 function parseGitlinkPaths(stdout: string): Array<[string, string]> {
   const gitlinks: Array<[string, string]> = [];
-  for (const line of stdout.split("\n")) {
-    const match = line.match(/^160000 ([0-9a-f]{40}) \d+\t(.+)$/);
+  for (const entry of stdout.split("\0")) {
+    const match = entry.match(/^160000 ([0-9a-f]{40}) \d+\t(.+)$/s);
     if (match) {
       gitlinks.push([match[2], match[1]]);
     }
