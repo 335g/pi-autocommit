@@ -4,31 +4,30 @@ import {
   type ExtensionContext,
   isToolCallEventType,
 } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { GitCheckpointStore } from "./checkpoint-store.js";
+import type { PipelineEvent } from "./commit-events.js";
 import {
-  type AutocompleteItem,
-} from "@earendil-works/pi-tui";
+  CHECKPOINT_COMMIT_MARKER,
+  organizeCheckpointCommits,
+  reorganiseCheckpointsManual,
+  reorganiseSelectedRange,
+} from "./commit-organizer.js";
+import {
+  buildCommitItems,
+  type CommitItem,
+  showCommitPicker,
+} from "./commit-picker.js";
 import {
   blockedInterleavingVerb,
   buildBlockReason,
   interleavingAllowedWithoutCheckpoints,
-  shouldCreateCheckpointCommit,
   shouldBlockGitCommit,
   shouldBlockGitHardReset,
   shouldBlockGitPush,
+  shouldCreateCheckpointCommit,
   shouldSkipReorganisation,
 } from "./commit-policy.js";
-import type { PipelineEvent } from "./commit-events.js";
-import {
-  organizeCheckpointCommits,
-  reorganiseCheckpointsManual,
-  reorganiseSelectedRange,
-  CHECKPOINT_COMMIT_MARKER,
-} from "./commit-organizer.js";
-import {
-  buildCommitItems,
-  showCommitPicker,
-  type CommitItem,
-} from "./commit-picker.js";
 import {
   isJapanese,
   loadConfig,
@@ -36,13 +35,15 @@ import {
   saveEnable,
   saveModel,
 } from "./config.js";
-import { GitCheckpointStore } from "./checkpoint-store.js";
-import { GitPickerStore, type PickerStore } from "./picker-store.js";
-import { GitReorganiserStore, type ReorganiserStore } from "./reorganiser-store.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
 import { CLEAR_VALUE, showModelPopup } from "./model-popup.js";
+import { GitPickerStore, type PickerStore } from "./picker-store.js";
 import { runCheckpointCommit } from "./pipeline.js";
+import {
+  GitReorganiserStore,
+  type ReorganiserStore,
+} from "./reorganiser-store.js";
 import { StatusIndicator } from "./status-indicator.js";
 
 /**
@@ -147,7 +148,8 @@ async function maybeRunInteractiveReorganise(
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
-        () => reorganiseSelectedRange(ctx, config, event, reorganiserStore, range),
+        () =>
+          reorganiseSelectedRange(ctx, config, event, reorganiserStore, range),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
@@ -189,11 +191,16 @@ const warnedSubmoduleOrphans = new Set<string>();
  * branch and not referenced by the parent gitlink — running
  * `git submodule update` would discard them. Best-effort: never breaks the
  * agent loop on detection errors.
+ *
+ * When `ignoringSubmodules` is true (the `ignoreSubmodules` flag is on), the
+ * notice uses an informational tone (pin drift is expected, not an error)
+ * and callers show it at `session_start` only.
  */
 async function warnOrphanedSubmoduleHeads(
   ctx: ExtensionContext,
   git: GitOperations,
   japanese: boolean,
+  ignoringSubmodules = false,
 ): Promise<void> {
   try {
     const orphans = await git.findOrphanedSubmoduleHeads();
@@ -204,11 +211,21 @@ async function warnOrphanedSubmoduleHeads(
       }
       warnedSubmoduleOrphans.add(key);
       const message = japanese
-        ? `pi-autocommit: submodule "${orphan.path}" の HEAD が親の gitlink と乖離し、どのブランチからも到達不能なコミットを指しています。\n` +
-          `git submodule update を実行するとこのコミットは消失します。親の gitlink を更新するか、submodule 内でブランチにコミットを置いてください。`
-        : `pi-autocommit: submodule "${orphan.path}" HEAD points at commits unreachable from any branch and not referenced by the parent gitlink.\n` +
-          `Running git submodule update would discard them. Bump the parent gitlink or move the commits onto a branch in the submodule.`;
-      ctx.ui.notify(message, "warning");
+        ? ignoringSubmodules
+          ? `pi-autocommit: submodule "${orphan.path}" のコミットが親の gitlink より進んでいます（ignoreSubmodules が有効のため親には記録されません）。
+` +
+            `ただし HEAD がどのブランチからも到達不能です。git submodule update を実行するとこれらのコミットは消失するので、submodule 内でブランチにコミットを置いてください。`
+          : `pi-autocommit: submodule "${orphan.path}" の HEAD が親の gitlink と乖離し、どのブランチからも到達不能なコミットを指しています。
+` +
+            `git submodule update を実行するとこのコミットは消失します。親の gitlink を更新するか、submodule 内でブランチにコミットを置いてください。`
+        : ignoringSubmodules
+          ? `pi-autocommit: submodule "${orphan.path}" has commits ahead of the parent gitlink (not recorded in the parent because ignoreSubmodules is enabled).
+` +
+            `Its HEAD is unreachable from any branch though; running git submodule update would discard those commits. Move them onto a branch in the submodule.`
+          : `pi-autocommit: submodule "${orphan.path}" HEAD points at commits unreachable from any branch and not referenced by the parent gitlink.
+` +
+            `Running git submodule update would discard them. Bump the parent gitlink or move the commits onto a branch in the submodule.`;
+      ctx.ui.notify(message, ignoringSubmodules ? "info" : "warning");
     }
   } catch {
     // Best-effort: ignore detection errors.
@@ -379,10 +396,7 @@ export default function (pi: ExtensionAPI) {
       "With a session filter, reorganise only that session's checkpoints " +
       "(including scattered ones).",
     handler: async (args, ctx) => {
-      const statusIndicator = new StatusIndicator(
-        git,
-        ctx,
-      );
+      const statusIndicator = new StatusIndicator(git, ctx);
       const config = loadConfig(ctx.cwd);
       const trimmed = args?.trim();
 
@@ -409,7 +423,8 @@ export default function (pi: ExtensionAPI) {
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
-        () => reorganiseCheckpointsManual(ctx, config, reorganiserStore, trimmed),
+        () =>
+          reorganiseCheckpointsManual(ctx, config, reorganiserStore, trimmed),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
       await statusIndicator.updateFooter();
@@ -418,9 +433,15 @@ export default function (pi: ExtensionAPI) {
       _argumentPrefix: string,
     ): Promise<AutocompleteItem[] | null> => {
       try {
-        const commits = await git.findReachableCheckpoints(CHECKPOINT_COMMIT_MARKER);
+        const commits = await git.findReachableCheckpoints(
+          CHECKPOINT_COMMIT_MARKER,
+        );
         const sessions = [
-          ...new Set(commits.map((w) => w.session).filter((s): s is string => s !== null)),
+          ...new Set(
+            commits
+              .map((w) => w.session)
+              .filter((s): s is string => s !== null),
+          ),
         ];
         return sessions.map((s) => {
           // Label the origin branch when the session's checkpoints carry one
@@ -454,7 +475,12 @@ export default function (pi: ExtensionAPI) {
 
       // Submodule warning: catches detached-orphan submodule commits that
       // appeared while no pi session was watching (another terminal).
-      await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+      await warnOrphanedSubmoduleHeads(
+        ctx,
+        git,
+        isJapanese(config),
+        config.ignoreSubmodules,
+      );
 
       // Own-session crash leftovers at HEAD (session-aware so a resumed
       // session only claims its own checkpoints). These are reorganisable
@@ -576,7 +602,11 @@ export default function (pi: ExtensionAPI) {
 
     // Submodule warning: surfaces detached-orphan submodule commits
     // (see B3) as soon as they exist, before an update can discard them.
-    await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+    // With `ignoreSubmodules`, pin drift is expected — the informational
+    // variant is shown at session_start only, not every turn.
+    if (!config.ignoreSubmodules) {
+      await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+    }
 
     if (!shouldCreateCheckpointCommit(event.toolResults)) {
       return;
@@ -598,6 +628,7 @@ export default function (pi: ExtensionAPI) {
         checkpointStore,
         `wip(checkpoint): auto-commit at turn ${event.turnIndex + 1}`,
         sessionId,
+        { ignoreSubmodules: config.ignoreSubmodules },
       );
 
       await handlePipelineEvents(ctx, statusIndicator, result.events);
@@ -682,8 +713,11 @@ export default function (pi: ExtensionAPI) {
 
       // Submodule warning: detached-orphan submodule commits that arrived
       // during this run (e.g. via a delegated worktree or another
-      // terminal) are surfaced before the session ends.
-      await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+      // terminal) are surfaced before the session ends. With
+      // `ignoreSubmodules`, shown at session_start only.
+      if (!config.ignoreSubmodules) {
+        await warnOrphanedSubmoduleHeads(ctx, git, isJapanese(config));
+      }
 
       await statusIndicator.updateFooter();
     } catch (error) {
