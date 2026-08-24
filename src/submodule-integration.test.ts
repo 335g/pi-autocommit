@@ -75,10 +75,10 @@ interface Fixture {
   subDir: string;
 }
 
-function setup(): Fixture {
+function setup(subName = "sub"): Fixture {
   const root = mkdtempSync(join(tmpdir(), "pi-autocommit-sub-"));
   const subSrc = mkdtempSync(join(tmpdir(), "pi-autocommit-subsrc-"));
-  const subDir = join(root, "sub");
+  const subDir = join(root, subName);
 
   git(subSrc, ["init", "-q", "-b", "main"]);
   writeFileSync(join(subSrc, "file.txt"), "hello\n");
@@ -96,7 +96,7 @@ function setup(): Fixture {
     "add",
     "-q",
     subSrc,
-    "sub",
+    subName,
   ]);
   assert.equal(added.code, 0, `submodule add failed: ${added.stderr}`);
   git(root, ["add", "-A"]);
@@ -298,6 +298,32 @@ describe("submodule integration (real git)", () => {
       assert.match(committed, /top\.txt/);
       assert.doesNotMatch(committed, /^sub$/m, "gitlink not recorded");
       assert.doesNotMatch(committed, /\.gitmodules/);
+    } finally {
+      cleanup(fixture);
+    }
+  });
+
+  it("ignoreSubmodules: non-ASCII submodule path is unstaged (core.quotePath regression)", async () => {
+    const fixture = setup("ニホンゴサブ");
+    try {
+      git(join(fixture.root, "ニホンゴサブ"), ["checkout", "-q", "-b", "feature/x"]);
+      writeFileSync(join(fixture.root, "ニホンゴサブ", "work.txt"), "work\n");
+      git(join(fixture.root, "ニホンゴサブ"), ["add", "work.txt"]);
+      git(join(fixture.root, "ニホンゴサブ"), ["commit", "-q", "-m", "feat: work"]);
+
+      const store = new GitCheckpointStore(
+        new GitOperations(makePi(fixture.root)),
+      );
+      const result = await runCheckpointCommit(
+        store,
+        "wip(checkpoint): auto-commit at turn 1",
+        "session-1",
+        { ignoreSubmodules: true },
+      );
+
+      assert.equal(result.committed, false, "quoted gitlink path must not sneak into a commit");
+      const status = git(fixture.root, ["-c", "core.quotePath=false", "status", "--short"]).stdout;
+      assert.match(status, /ニホンゴサブ/, "pin drift stays visible in the working tree");
     } finally {
       cleanup(fixture);
     }
