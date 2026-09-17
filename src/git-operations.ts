@@ -155,7 +155,16 @@ export class GitOperations {
    * Returns the raw stdout output of `git commit`.
    */
   async commit(message: string): Promise<ExecResult> {
-    return await this.pi.exec("git", ["commit", "-m", message]);
+    // Disable GPG signing for checkpoint commits: they are temporary and
+    // will be reorganised later, so signing adds no value and fails when
+    // gpg is not installed.
+    return await this.pi.exec("git", [
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      message,
+    ]);
   }
 
   /**
