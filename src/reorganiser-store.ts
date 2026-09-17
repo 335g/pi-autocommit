@@ -37,12 +37,6 @@ export interface ReorganiserStore {
   resetSoft(commitCount: number): Promise<void>;
 
   /**
-   * Move HEAD back to `sha` without touching the index or working tree.
-   * Undoes a {@link resetSoft} when the caller changes its mind.
-   */
-  resetSoftTo(sha: string): Promise<void>;
-
-  /**
    * Read the staged materials needed for commit-message generation:
    * full diff, name-status, and stat summary.
    */
@@ -180,10 +174,6 @@ export class GitReorganiserStore implements ReorganiserStore {
 
   async resetSoft(commitCount: number): Promise<void> {
     return this.git.resetSoft(commitCount);
-  }
-
-  async resetSoftTo(sha: string): Promise<void> {
-    return this.git.resetSoftTo(sha);
   }
 
   async getStagedMaterials(): Promise<{

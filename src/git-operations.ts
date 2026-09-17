@@ -569,20 +569,6 @@ export class GitOperations {
   }
 
   /**
-   * Move HEAD to a specific commit without touching the index or the working
-   * tree (`git reset --soft <sha>`). Undoes a {@link resetSoft} without
-   * un-staging anything.
-   */
-  async resetSoftTo(sha: string): Promise<void> {
-    const result = await this.pi.exec("git", ["reset", "--soft", sha]);
-    if (result.code !== 0) {
-      throw new Error(
-        `git reset --soft ${sha} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
-      );
-    }
-  }
-
-  /**
    * Hard reset HEAD, index, and working tree to a specific commit.
    * Equivalent to `git reset --hard <sha>`.
    */

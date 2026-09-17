@@ -211,9 +211,6 @@ class InMemoryReorganiserStore implements ReorganiserStore {
   public stagedFiles: string[] = [];
   public operations: string[] = [];
 
-  /** Commits detached by `resetSoft`, so `resetSoftTo` can put them back. */
-  private readonly removedByReset: CheckpointCommit[] = [];
-
   constructor(
     private readonly options: {
       insideRepo?: boolean;
@@ -287,7 +284,6 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     this.operations.push(`resetSoft:${commitCount}`);
     const commits = this.options.checkpointCommits ?? [];
     const removed = commits.splice(0, commitCount);
-    this.removedByReset.push(...removed);
     for (const commit of removed) {
       for (const file of commit.files) {
         if (!this.stagedFiles.includes(file)) {
@@ -295,17 +291,6 @@ class InMemoryReorganiserStore implements ReorganiserStore {
         }
       }
     }
-  }
-
-  async resetSoftTo(sha: string): Promise<void> {
-    this.operations.push(`resetSoftTo:${sha}`);
-    // Undo resetSoft: the commits go back at HEAD and their files are no
-    // longer staged.
-    const commits = this.options.checkpointCommits ?? [];
-    const restored = this.removedByReset.splice(0);
-    commits.unshift(...restored);
-    const restoredFiles = new Set(restored.flatMap((c) => c.files));
-    this.stagedFiles = this.stagedFiles.filter((f) => !restoredFiles.has(f));
   }
 
   async getStagedMaterials(): Promise<{
@@ -594,9 +579,10 @@ src/auth/types.ts
     assert.strictEqual(result.organised, false);
     assert.strictEqual(llmCalls, 0);
     assert.deepStrictEqual(store.commits, []);
-    // The checkpoint commit is back at HEAD and nothing is left staged.
-    assert.ok(store.operations.includes("resetSoftTo:sha-0"));
-    assert.deepStrictEqual(store.stagedFiles, []);
+    // The soft reset stays: the checkpoint changes are left staged for the
+    // user to commit by hand.
+    assert.deepStrictEqual(store.stagedFiles, ["src/a.ts"]);
+    assert.ok(!store.operations.includes("unstageAll"));
     assert.ok(
       result.events.some(
         (e) => e.type === "error" && e.message.includes("大きすぎる"),
@@ -1104,8 +1090,10 @@ void describe("reorganiseCheckpointsManual", () => {
 
     assert.strictEqual(result.organised, false);
     assert.deepStrictEqual(store.commits, []);
-    // Scattered path never moved HEAD: un-staging is the full restore.
-    assert.ok(store.operations.includes("unstageAll"));
+    // Scattered path never moved HEAD: the applied checkpoints stay staged
+    // (oldest applied first, so src/a.ts precedes src/b.ts).
+    assert.deepStrictEqual(store.stagedFiles, ["src/a.ts", "src/b.ts"]);
+    assert.ok(!store.operations.includes("unstageAll"));
     assert.ok(
       result.events.some(
         (e) => e.type === "error" && e.message.includes("大きすぎる"),
@@ -1395,7 +1383,7 @@ src/auth/login.ts
     assert.strictEqual(result.organised, false);
     assert.deepStrictEqual(store.commits, []);
     assert.ok(store.operations.includes("resetSoft:2"));
-    assert.ok(store.operations.includes("resetSoftTo:sha-0"));
+    assert.deepStrictEqual(store.stagedFiles, ["a.ts", "b.ts"]);
   });
 
   void it("slow path: aborts without committing when the staged diff is too large", async () => {
