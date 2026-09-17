@@ -10,7 +10,11 @@ import {
   reorganiseCheckpointsManual,
   reorganiseSelectedRange,
 } from "./commit-organizer.js";
-import { type CompleteFn, completeCommitGroups } from "./commit-prompt.js";
+import {
+  type CompleteFn,
+  completeCommitGroups,
+  MAX_LLM_DIFF_CHARS,
+} from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
@@ -207,6 +211,9 @@ class InMemoryReorganiserStore implements ReorganiserStore {
   public stagedFiles: string[] = [];
   public operations: string[] = [];
 
+  /** Commits detached by `resetSoft`, so `resetSoftTo` can put them back. */
+  private readonly removedByReset: CheckpointCommit[] = [];
+
   constructor(
     private readonly options: {
       insideRepo?: boolean;
@@ -229,6 +236,11 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       upstreamAheadCount?: number | null;
       /** When set, `cherryPick()` returns this failure. */
       cherryPickError?: string;
+      /**
+       * When true, `getStagedMaterials()` returns a diff above the LLM size
+       * cap so the reorganisation must abort without committing.
+       */
+      oversizedDiff?: boolean;
     } = {},
   ) {
     // Normalise session to null when absent.
@@ -275,6 +287,7 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     this.operations.push(`resetSoft:${commitCount}`);
     const commits = this.options.checkpointCommits ?? [];
     const removed = commits.splice(0, commitCount);
+    this.removedByReset.push(...removed);
     for (const commit of removed) {
       for (const file of commit.files) {
         if (!this.stagedFiles.includes(file)) {
@@ -282,6 +295,17 @@ class InMemoryReorganiserStore implements ReorganiserStore {
         }
       }
     }
+  }
+
+  async resetSoftTo(sha: string): Promise<void> {
+    this.operations.push(`resetSoftTo:${sha}`);
+    // Undo resetSoft: the commits go back at HEAD and their files are no
+    // longer staged.
+    const commits = this.options.checkpointCommits ?? [];
+    const restored = this.removedByReset.splice(0);
+    commits.unshift(...restored);
+    const restoredFiles = new Set(restored.flatMap((c) => c.files));
+    this.stagedFiles = this.stagedFiles.filter((f) => !restoredFiles.has(f));
   }
 
   async getStagedMaterials(): Promise<{
@@ -292,9 +316,11 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     this.operations.push("getStagedMaterials");
     const nameStatus = this.stagedFiles.map((file) => `M\t${file}`).join("\n");
     return {
-      diff: this.stagedFiles
-        .map((file) => `diff --git a/${file} b/${file}`)
-        .join("\n"),
+      diff: this.options.oversizedDiff
+        ? "x".repeat(MAX_LLM_DIFF_CHARS + 1)
+        : this.stagedFiles
+            .map((file) => `diff --git a/${file} b/${file}`)
+            .join("\n"),
       nameStatus,
       stat: this.stagedFiles.map((file) => `${file} | 1 +`).join("\n"),
     };
@@ -542,6 +568,40 @@ src/auth/types.ts
     assert.strictEqual(store.commits.length, 1);
     assert.ok(store.commits[0]?.startsWith("feat(auth):"));
     assert.deepStrictEqual(store.stagedFiles, []);
+  });
+
+  void it("aborts without committing when the staged diff is too large for the LLM", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["src/a.ts"] },
+      ],
+      oversizedDiff: true,
+    });
+    let llmCalls = 0;
+    const complete: CompleteFn = async () => {
+      llmCalls++;
+      throw new Error("must not be called");
+    };
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      complete,
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.strictEqual(llmCalls, 0);
+    assert.deepStrictEqual(store.commits, []);
+    // The checkpoint commit is back at HEAD and nothing is left staged.
+    assert.ok(store.operations.includes("resetSoftTo:sha-0"));
+    assert.deepStrictEqual(store.stagedFiles, []);
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("大きすぎる"),
+      ),
+    );
   });
 
   void it("reorganises multiple checkpoint commits into multiple logical groups", async () => {
@@ -1012,6 +1072,47 @@ src/a.ts
 // ── reorganiseCheckpointsManual ───────────────────────────────────
 
 void describe("reorganiseCheckpointsManual", () => {
+  void it("aborts without committing when the staged diff is too large (scattered path)", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [
+        {
+          message: "feat: regular commit on top",
+          files: ["src/top.ts"],
+          session: null,
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 2`,
+          files: ["src/b.ts"],
+          session: "session-a",
+        },
+        {
+          message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+          files: ["src/a.ts"],
+          session: "session-a",
+        },
+      ],
+      oversizedDiff: true,
+    });
+
+    const result = await reorganiseCheckpointsManual(
+      makeCtx(stubModel),
+      config(),
+      store,
+      undefined,
+      fakeCompleteReturning("ignored"),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.deepStrictEqual(store.commits, []);
+    // Scattered path never moved HEAD: un-staging is the full restore.
+    assert.ok(store.operations.includes("unstageAll"));
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "error" && e.message.includes("大きすぎる"),
+      ),
+    );
+  });
+
   void it("returns no-op when not inside a git repo", async () => {
     const store = new InMemoryReorganiserStore({ insideRepo: false });
 
@@ -1270,6 +1371,62 @@ Implement login with JWT.
 src/auth/login.ts
 === END ===
 `.trim();
+
+  void it("fast path: aborts without committing when the staged diff is too large", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] },
+        { message: "feat: X", files: ["c.ts"] },
+      ],
+      oversizedDiff: true,
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 1 },
+      fakeCompleteReturning("ignored"),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.deepStrictEqual(store.commits, []);
+    assert.ok(store.operations.includes("resetSoft:2"));
+    assert.ok(store.operations.includes("resetSoftTo:sha-0"));
+  });
+
+  void it("slow path: aborts without committing when the staged diff is too large", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 9,
+      checkpointCommits: [
+        { message: "feat: top", files: ["top.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["b.ts"] },
+        { message: "feat: base", files: ["base.ts"] },
+      ],
+      oversizedDiff: true,
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 1, endIndex: 2 },
+      fakeCompleteReturning("ignored"),
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.deepStrictEqual(store.commits, []);
+    // Restored to the original HEAD (sha-0): nothing left dismantled.
+    const resets = store.operations.filter((op) =>
+      op.startsWith("hardReset:"),
+    );
+    assert.strictEqual(resets[resets.length - 1], "hardReset:sha-0");
+  });
 
   void it("fast path: reorganises the selected range from HEAD", async () => {
     const store = new InMemoryReorganiserStore({

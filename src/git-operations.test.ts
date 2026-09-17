@@ -44,6 +44,35 @@ describe("GitOperations.getHead", () => {
   });
 });
 
+describe("GitOperations.resetSoftTo", () => {
+  it("moves HEAD with git reset --soft <sha>", async () => {
+    const calls: Array<{ args?: string[] }> = [];
+    const git = new GitOperations({
+      exec: async (_cmd: string, args?: string[]) => {
+        calls.push({ args });
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    } as unknown as ExtensionAPI);
+
+    await git.resetSoftTo("abc123");
+
+    assert.deepEqual(calls, [{ args: ["reset", "--soft", "abc123"] }]);
+  });
+
+  it("throws when git reset fails", async () => {
+    const git = new GitOperations({
+      exec: async () => ({
+        code: 128,
+        stdout: "",
+        stderr: "fatal: bad revision",
+        killed: false,
+      }),
+    } as unknown as ExtensionAPI);
+
+    await assert.rejects(() => git.resetSoftTo("abc123"), /bad revision/);
+  });
+});
+
 describe("GitOperations.resetSoft", () => {
   it("does nothing when commitCount is 0", async () => {
     let called = false;

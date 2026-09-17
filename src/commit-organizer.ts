@@ -7,7 +7,9 @@ import {
   type CommitGroup,
   type CompleteFn,
   completeCommitGroups,
+  diffExceedsLlmLimit,
   extractAssistantContext,
+  MAX_LLM_DIFF_CHARS,
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
@@ -33,6 +35,49 @@ import { detectLanguage, languageName, userMessageTexts } from "./language.js";
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const CHECKPOINT_COMMIT_MARKER = "wip(checkpoint):";
 
+/** HEAD SHA from the store's commit log, or `""` when it cannot be read. */
+async function headSha(store: ReorganiserStore): Promise<string> {
+  return (await store.getRecentCommits(1)).split("\0")[0] ?? "";
+}
+
+/**
+ * Abort a reorganisation whose staged diff is too large for the LLM.
+ *
+ * Nothing is committed: `restore` puts the repository back to the
+ * pre-reorganisation state (a soft reset to the checkpoint tip, or
+ * `unstageAll` for the paths that never moved HEAD), so the checkpoint
+ * commits survive intact and the user can fix the cause and re-run.
+ *
+ * Callers must have the diff staged already — the size check needs it — so
+ * this runs after the assembly step and relies on `restore` to undo it.
+ *
+ * @returns true when the caller must abort without committing.
+ */
+async function abortOnOversizedDiff(
+  store: ReorganiserStore,
+  events: PipelineEvent[],
+  restore: () => Promise<void>,
+): Promise<boolean> {
+  const { diff } = await store.getStagedMaterials();
+  if (!diffExceedsLlmLimit(diff)) {
+    return false;
+  }
+
+  await restore();
+  events.push({
+    type: "error",
+    message:
+      `pi-autocommit: ステージされた差分が大きすぎるため整理を中止しました（${diff.length} 文字 > ${MAX_LLM_DIFF_CHARS}）。` +
+      "コミットは作成しておらず、チェックポイントコミットは元のまま残っています。" +
+      "node_modules やビルド成果物などの混入を確認し、.gitignore を直してから /autocommit-organise を実行してください。",
+  });
+  events.push({
+    type: "stage-changed",
+    hasChanges: await store.checkUncommittedChanges(),
+  });
+  return true;
+}
+
 /**
  * Result of checking whether matching checkpoints are contiguous at HEAD.
  */
@@ -54,6 +99,10 @@ interface ContiguityCheck {
  * assistant's own explanations (from `event.messages`) to decide how to split
  * the changes. If the LLM call fails or the response cannot be parsed, it
  * falls back to a single Conventional Commit containing all changes.
+ *
+ * When the staged diff is too large to send to the LLM (see
+ * {@link MAX_LLM_DIFF_CHARS}) nothing is committed: the checkpoints are put
+ * back where they were and a warning explains what to fix.
  *
  * @param targetSessionId When provided, only reorganise checkpoint commits
  *   whose `Checkpoint-Session` trailer matches. Scattered (non-consecutive)
@@ -87,8 +136,19 @@ export async function organizeCheckpointCommits(
     return { events, organised: false };
   }
 
-  // Undo the checkpoint commits but keep all their changes staged.
+  // Undo the checkpoint commits but keep all their changes staged. The HEAD
+  // captured first lets an oversized diff put the checkpoint tip back without
+  // losing anything.
+  const preResetHead = await headSha(store);
   await store.resetSoft(checkpointCount);
+
+  if (
+    await abortOnOversizedDiff(store, events, () =>
+      store.resetSoftTo(preResetHead),
+    )
+  ) {
+    return { events, organised: false };
+  }
 
   // Resolve the commit message language from the conversation when `lang`
   // is unset (auto-detect). Detection needs user messages, so the manual
@@ -197,6 +257,7 @@ export async function reorganiseCheckpointsManual(
       if (await crossesRemoteTip(store, checkpointCount, events)) {
         return { events, organised: false };
       }
+      const preResetHead = await headSha(store);
       await store.resetSoft(checkpointCount);
       return assembleAndCommit(
         ctx,
@@ -205,6 +266,7 @@ export async function reorganiseCheckpointsManual(
         checkpointCount,
         events,
         "",
+        () => store.resetSoftTo(preResetHead),
         complete,
       );
     }
@@ -248,6 +310,7 @@ export async function reorganiseCheckpointsManual(
       trailered.length,
       events,
       "",
+      () => store.unstageAll(),
       complete,
     );
   }
@@ -275,6 +338,7 @@ export async function reorganiseCheckpointsManual(
     if (await crossesRemoteTip(store, contiguity.matchCount, events)) {
       return { events, organised: false };
     }
+    const preResetHead = await headSha(store);
     await store.resetSoft(contiguity.matchCount);
     return assembleAndCommit(
       ctx,
@@ -283,6 +347,7 @@ export async function reorganiseCheckpointsManual(
       contiguity.matchCount,
       events,
       "",
+      () => store.resetSoftTo(preResetHead),
       complete,
     );
   }
@@ -308,6 +373,7 @@ export async function reorganiseCheckpointsManual(
     targetCheckpoints.length,
     events,
     "",
+    () => store.unstageAll(),
     complete,
   );
 }
@@ -321,6 +387,9 @@ export async function reorganiseCheckpointsManual(
  *
  * @param reasoning Assistant reasoning text (empty string for manual
  *   commands).
+ * @param restore Puts the index/HEAD back to the pre-reorganisation state
+ *   when the staged diff turns out to be too large (see
+ *   {@link abortOnOversizedDiff}).
  * @param complete Optional LLM adapter for tests.
  */
 async function assembleAndCommit(
@@ -330,9 +399,14 @@ async function assembleAndCommit(
   checkpointCount: number,
   events: PipelineEvent[],
   reasoning: string,
+  restore: () => Promise<void>,
   complete?: CompleteFn,
 ): Promise<OrganizerResult> {
   let organised = false;
+
+  if (await abortOnOversizedDiff(store, events, restore)) {
+    return { events, organised: false };
+  }
 
   try {
     const groups = await proposeCommitGroupsFromReasoning(
@@ -551,9 +625,18 @@ export async function reorganiseSelectedRange(
     // Fast path: range starts at HEAD — use resetSoft directly.
     // ════════════════════════════════════════════════════════════
     const resetCount = hi + 1;
+    const preResetHead = await headSha(store);
     await store.resetSoft(resetCount);
 
     try {
+      if (
+        await abortOnOversizedDiff(store, events, () =>
+          store.resetSoftTo(preResetHead),
+        )
+      ) {
+        return { events, organised: false };
+      }
+
       const groups = await proposeCommitGroups(
         ctx,
         config,
@@ -669,6 +752,16 @@ export async function reorganiseSelectedRange(
     if (!applyResult.success) {
       throw new Error(
         `範囲の差分適用に失敗しました — ${applyResult.error || "不明なエラー"}`,
+      );
+    }
+
+    // Step 3b: refuse to feed an oversized diff to the LLM. Throwing routes
+    // into the catch below, which restores the original HEAD — nothing is
+    // committed and no checkpoint is left dismantled.
+    const { diff: rangeDiff } = await store.getStagedMaterials();
+    if (diffExceedsLlmLimit(rangeDiff)) {
+      throw new Error(
+        `ステージされた差分が大きすぎます（${rangeDiff.length} 文字 > ${MAX_LLM_DIFF_CHARS}）`,
       );
     }
 
