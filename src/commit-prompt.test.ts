@@ -5,6 +5,7 @@ import {
   completeCommitGroups,
   completeSingleMessage,
   extractAssistantContext,
+  MAX_LLM_DIFF_CHARS,
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 
@@ -161,6 +162,29 @@ void describe("completeSingleMessage", () => {
     // Docs-only diff → `docs` type, scope `docs`.
     assert.match(message, /^docs\(docs\): update documentation/);
   });
+
+  void it("skips the LLM and uses the heuristic when the diff is too large", async () => {
+    const cfg = config();
+    let called = false;
+    const complete: CompleteFn = async () => {
+      called = true;
+      throw new Error("must not be reached");
+    };
+
+    const message = await completeSingleMessage(
+      makeCtx(stubModel),
+      cfg,
+      {
+        diff: "x".repeat(MAX_LLM_DIFF_CHARS + 1),
+        nameStatus: "A\tsrc/a.ts\n",
+        stat: "1 file changed",
+      },
+      complete,
+    );
+
+    assert.strictEqual(called, false);
+    assert.match(message, /^feat\(src\): add new functionality/);
+  });
 });
 
 void describe("completeCommitGroups", () => {
@@ -209,6 +233,25 @@ void describe("completeCommitGroups", () => {
         files: ["packages/backend/query.ts"],
       },
     ]);
+  });
+
+  void it("returns no groups without calling the LLM when the diff is too large", async () => {
+    const cfg = config();
+    let called = false;
+    const complete: CompleteFn = async () => {
+      called = true;
+      throw new Error("must not be reached");
+    };
+
+    const groups = await completeCommitGroups(
+      makeCtx(stubModel),
+      cfg,
+      { diff: "x".repeat(MAX_LLM_DIFF_CHARS + 1), reasoning: "reasoning" },
+      complete,
+    );
+
+    assert.strictEqual(called, false);
+    assert.deepStrictEqual(groups, []);
   });
 
   void it("throws when the LLM returns empty text", async () => {

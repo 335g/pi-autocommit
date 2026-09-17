@@ -1,7 +1,12 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PipelineEvent } from "./commit-events.js";
 import type { CommitGroup } from "./commit-prompt.js";
-import { type CompleteFn, completeSingleMessage } from "./commit-prompt.js";
+import {
+  type CompleteFn,
+  completeSingleMessage,
+  diffExceedsLlmLimit,
+  MAX_LLM_DIFF_CHARS,
+} from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
@@ -87,7 +92,9 @@ function parseNameStatusPaths(nameStatus: string): string[] {
  *
  * One call to {@link completeSingleMessage} absorbs the LLM path and the
  * heuristic path alike — so the reorganiser's fallback no longer triggers a
- * second silent LLM roundtrip.
+ * second silent LLM roundtrip. When the staged diff is too large for the LLM
+ * (see {@link MAX_LLM_DIFF_CHARS}) the emitted warning says so, since the
+ * lost split quality is otherwise unexplained.
  */
 export async function fallbackSingleCommit(
   ctx: ExtensionContext,
@@ -112,8 +119,12 @@ export async function fallbackSingleCommit(
     throw new Error(`Fallback commit failed (code ${result.code}): ${detail}`);
   }
 
+  const subject = message.split("\n")[0];
   events.push({
     type: "fallback",
-    message: `Reorganisation fell back to a single commit:\n${message.split("\n")[0]}`,
+    message: diffExceedsLlmLimit(diff)
+      ? `Staged diff is too large for the LLM split (${diff.length} chars > ${MAX_LLM_DIFF_CHARS}). ` +
+        `Fell back to a single commit:\n${subject}`
+      : `Reorganisation fell back to a single commit:\n${subject}`,
   });
 }

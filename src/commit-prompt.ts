@@ -53,6 +53,25 @@ export type CompleteFn = (
 /** Statically imported production adapter. */
 const defaultComplete: CompleteFn = completeSimple as unknown as CompleteFn;
 
+// ── Diff size limit ───────────────────────────────────────
+
+/**
+ * Largest staged diff (in characters) handed to the LLM.
+ *
+ * A diff above this is not a commit-sized change — vendored dependencies,
+ * build artifacts, data dumps. Building a request body around it makes the
+ * SDK's `JSON.stringify` allocate hundreds of MB and V8 aborts the whole
+ * process (`Zone Allocation failed`) before any error handling can run, so
+ * over the limit the LLM is skipped and the single-commit/heuristic path
+ * takes over instead.
+ */
+export const MAX_LLM_DIFF_CHARS = 200_000;
+
+/** True when the staged diff is too large to send to the LLM. */
+export function diffExceedsLlmLimit(diff: string): boolean {
+  return diff.length > MAX_LLM_DIFF_CHARS;
+}
+
 // ── Input types ───────────────────────────────────────────
 
 /** Raw git materials for the single-commit path (the high-frequency caller). */
@@ -321,6 +340,8 @@ function buildGroupsUserContent(diff: string, reasoning: string): string {
  * Invariants:
  * - Returns `CommitGroup[]` (maybe empty). Never null/undefined.
  * - Group count is decided by the LLM (no heuristic for groups).
+ * - Staged diffs above {@link MAX_LLM_DIFF_CHARS} return `[]` without an LLM
+ *   call, so the caller falls back to a single commit.
  * - When a scope mapping is configured (ADR-0003), each group's message has
  *   the scope injected deterministically from that group's files.
  * - `complete` omitted → lazily imports `completeSimple` for production.
@@ -336,6 +357,12 @@ export async function completeCommitGroups(
   input: GroupsInput,
   complete?: CompleteFn,
 ): Promise<CommitGroup[]> {
+  // Too large to split: return no groups so the caller commits the whole
+  // change set as one commit (see MAX_LLM_DIFF_CHARS).
+  if (diffExceedsLlmLimit(input.diff)) {
+    return [];
+  }
+
   const scopeManaged = hasScopeMapping(config);
   const systemPrompt = buildGroupsSystemPrompt(config);
   const userContent = buildGroupsUserContent(input.diff, input.reasoning);
@@ -443,6 +470,8 @@ function heuristicSingleMessage(
  * Invariants:
  * - Always returns a non-empty string — never throws on LLM failure.
  * - LLM unavailable or empty response → heuristic fallback.
+ * - Staged diffs above {@link MAX_LLM_DIFF_CHARS} go straight to the
+ *   heuristic (no LLM call).
  * - When a scope mapping is configured (ADR-0003), the scope is injected
  *   deterministically from the changed paths after the LLM responds.
  * - `complete` omitted → lazily imports `completeSimple` for production.
@@ -456,6 +485,11 @@ export async function completeSingleMessage(
   input: SingleCommitInput,
   complete?: CompleteFn,
 ): Promise<string> {
+  // Too large to send: skip the LLM roundtrip entirely.
+  if (diffExceedsLlmLimit(input.diff)) {
+    return heuristicSingleMessage(input, config);
+  }
+
   const scopeManaged = hasScopeMapping(config);
   const systemPrompt = buildSingleSystemPrompt(config);
   const userContent = buildSingleUserContent(input.diff);
