@@ -23,14 +23,17 @@ function fakeCompleteReturning(text: string): CompleteFn {
     }) as never;
 }
 
-/** Minimal ctx stub: only `model` and `modelRegistry` touched by resolveModel. */
-function makeCtx(model: unknown) {
+/** Minimal ctx stub: only what the LLM call path touches. */
+function makeCtx(model: unknown, over: Record<string, unknown> = {}) {
   return {
     model,
     modelRegistry: {
       find: () => undefined,
       hasConfiguredAuth: () => true,
+      getApiKeyAndHeaders: async () => ({ ok: false, error: "not configured" }),
     },
+    sessionManager: { getSessionId: () => "sess-test" },
+    ...over,
   } as never;
 }
 
@@ -265,7 +268,7 @@ void describe("completeCommitGroups", () => {
         { diff: "diff", reasoning: "reasoning" },
         complete,
       ),
-      /Empty reorganiser response/,
+      /Empty LLM response/,
     );
   });
 
@@ -415,5 +418,108 @@ void describe("ADR-0003 scope injection", () => {
     );
 
     assert.strictEqual(message, "feat(auth): add login\n\nBody.");
+  });
+});
+
+void describe("provider request options", () => {
+  /** opencode models need the session attribution headers pi core attaches. */
+  const opencodeModel = {
+    id: "kimi-k2.7-code",
+    provider: "opencode-go",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+  };
+
+  /** Adapter capturing the options it was called with. */
+  function captureOptions(into: { seen?: unknown }): CompleteFn {
+    return async (_model, _context, options) => {
+      into.seen = options;
+      return { content: [{ type: "string", text: "feat: x" }] };
+    };
+  }
+
+  void it("passes the resolved api key and session headers for opencode models", async () => {
+    const ctx = makeCtx(opencodeModel, {
+      modelRegistry: {
+        find: () => undefined,
+        hasConfiguredAuth: () => true,
+        getApiKeyAndHeaders: async () => ({
+          ok: true,
+          apiKey: "resolved-key",
+          headers: { "x-extra": "1" },
+        }),
+      },
+      sessionManager: { getSessionId: () => "sess-42" },
+    });
+    const captured: { seen?: unknown } = {};
+
+    await completeSingleMessage(
+      ctx,
+      config(),
+      { diff: "diff", nameStatus: "A\tsrc/a.ts\n", stat: "1 file changed" },
+      captureOptions(captured),
+    );
+
+    assert.deepStrictEqual(captured.seen, {
+      apiKey: "resolved-key",
+      headers: {
+        "x-extra": "1",
+        "x-opencode-session": "sess-42",
+        "x-opencode-client": "pi",
+      },
+    });
+  });
+
+  void it("adds no session headers for other providers", async () => {
+    const captured: { seen?: unknown } = {};
+
+    await completeSingleMessage(
+      makeCtx(stubModel),
+      config(),
+      { diff: "diff", nameStatus: "A\tsrc/a.ts\n", stat: "1 file changed" },
+      captureOptions(captured),
+    );
+
+    assert.deepStrictEqual(captured.seen, {});
+  });
+
+  void it("treats a provider error stop reason as a failure (single path)", async () => {
+    const complete: CompleteFn = async () => ({
+      content: [],
+      stopReason: "error",
+      errorMessage: "400: MissingSessionID",
+    });
+    let reason: string | undefined;
+
+    const message = await completeSingleMessage(
+      makeCtx(stubModel),
+      config(),
+      { diff: "diff", nameStatus: "A\tsrc/a.ts\n", stat: "1 file changed" },
+      complete,
+      (r) => {
+        reason = r;
+      },
+    );
+
+    // Heuristic, and the caller learns why the LLM path was skipped.
+    assert.match(message, /^feat\(src\): add new functionality/);
+    assert.match(reason ?? "", /400: MissingSessionID/);
+  });
+
+  void it("treats a provider error stop reason as a failure (groups path)", async () => {
+    const complete: CompleteFn = async () => ({
+      content: [],
+      stopReason: "error",
+      errorMessage: "400: MissingSessionID",
+    });
+
+    await assert.rejects(
+      completeCommitGroups(
+        makeCtx(stubModel),
+        config(),
+        { diff: "diff", reasoning: "reasoning" },
+        complete,
+      ),
+      /LLM request failed: 400: MissingSessionID/,
+    );
   });
 });

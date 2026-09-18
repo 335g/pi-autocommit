@@ -105,11 +105,15 @@ export async function fallbackSingleCommit(
 ): Promise<void> {
   const { diff, nameStatus, stat } = await store.getStagedMaterials();
 
+  let llmFailure: string | undefined;
   const message = await completeSingleMessage(
     ctx,
     config,
     { diff, nameStatus, stat },
     complete,
+    (reason) => {
+      llmFailure = reason;
+    },
   );
 
   const result = await store.commit(message);
@@ -125,6 +129,8 @@ export async function fallbackSingleCommit(
     message: diffExceedsLlmLimit(diff)
       ? `Staged diff is too large for the LLM split (${diff.length} chars > ${MAX_LLM_DIFF_CHARS}). ` +
         `Fell back to a single commit:\n${subject}`
-      : `Reorganisation fell back to a single commit:\n${subject}`,
+      : `Reorganisation fell back to a single commit${
+          llmFailure ? ` (LLM call failed — ${llmFailure})` : ""
+        }:\n${subject}`,
   });
 }

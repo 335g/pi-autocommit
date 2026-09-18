@@ -59,7 +59,7 @@ void describe("completeCommitGroups parsing", () => {
         { diff: "diff", reasoning: "" },
         complete,
       ),
-      /Empty reorganiser response/,
+      /Empty LLM response/,
     );
   });
 

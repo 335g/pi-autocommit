@@ -48,7 +48,18 @@ export type CompleteFn = (
     systemPrompt: string;
     messages: { role: "user"; content: string; timestamp: number }[];
   },
-) => Promise<{ content: Array<{ type: "string"; text?: string }> }>;
+  options?: CompleteOptions,
+) => Promise<{
+  content: Array<{ type: "string"; text?: string }>;
+  stopReason?: string;
+  errorMessage?: string;
+}>;
+
+/** Request options handed to the adapter: resolved auth plus attribution headers. */
+export interface CompleteOptions {
+  apiKey?: string;
+  headers?: Record<string, string | null>;
+}
 
 /** Statically imported production adapter. */
 const defaultComplete: CompleteFn = completeSimple as unknown as CompleteFn;
@@ -190,6 +201,83 @@ function cleanupResponse(raw: string): string {
   text = text.replace(/\n{3,}/g, "\n\n");
 
   return text.trim();
+}
+
+/**
+ * Build the adapter's request options: the registry-resolved API key plus the
+ * provider attribution headers pi normally attaches from its session runtime.
+ *
+ * pi runs its own model calls through `ModelRuntime.streamSimple` with a
+ * session id and a `transformHeaders` hook that adds `x-opencode-session` and
+ * `x-opencode-client: pi`. The legacy global `completeSimple` an extension can
+ * reach has neither, and opencode / opencode-go answer such requests with
+ * `400 MissingSessionID` — every call failing silently into the heuristic
+ * fallback. Mirrors `getSessionHeaders` in the coding agent's
+ * `provider-attribution`.
+ *
+ * `modelRegistry`/`sessionManager` are read defensively: test doubles may
+ * provide neither.
+ */
+async function buildCompleteOptions(
+  ctx: ExtensionContext,
+  model: Model<Api>,
+): Promise<CompleteOptions> {
+  const auth = await ctx.modelRegistry?.getApiKeyAndHeaders?.(model);
+  const headers: Record<string, string | null> = auth?.ok ? { ...auth.headers } : {};
+
+  const isOpencode =
+    model.provider === "opencode" ||
+    model.provider === "opencode-go" ||
+    (model.baseUrl ?? "").includes("opencode.ai");
+  const sessionId = ctx.sessionManager?.getSessionId?.();
+  if (isOpencode && sessionId) {
+    headers["x-opencode-session"] = sessionId;
+    headers["x-opencode-client"] = "pi";
+  }
+
+  return {
+    ...(auth?.ok && auth.apiKey ? { apiKey: auth.apiKey } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+  };
+}
+
+/**
+ * Shared adapter call: send `systemPrompt` + `userContent` with the request
+ * options above and return the response text.
+ *
+ * `completeSimple` resolves with `stopReason: "error"` instead of rejecting on
+ * a provider error, so the stop reason must be checked explicitly — otherwise a
+ * failed request looks like a successful empty answer and the caller silently
+ * degrades to the heuristic.
+ */
+async function callLlm(
+  ctx: ExtensionContext,
+  model: Model<Api>,
+  adapter: CompleteFn,
+  systemPrompt: string,
+  userContent: string,
+): Promise<string> {
+  const options = await buildCompleteOptions(ctx, model);
+  const result = await adapter(
+    model,
+    {
+      systemPrompt,
+      messages: [{ role: "user", content: userContent, timestamp: Date.now() }],
+    },
+    options,
+  );
+
+  if (result.stopReason === "error") {
+    throw new Error(
+      `LLM request failed: ${result.errorMessage || "unknown error"}`,
+    );
+  }
+
+  const text = extractText(result);
+  if (!text) {
+    throw new Error("Empty LLM response");
+  }
+  return text;
 }
 
 // ── Public helper ─────────────────────────────────────────
@@ -374,15 +462,7 @@ export async function completeCommitGroups(
     throw new Error("No model available");
   }
 
-  const result = await adapter(model, {
-    systemPrompt,
-    messages: [{ role: "user", content: userContent, timestamp: Date.now() }],
-  });
-
-  const text = extractText(result);
-  if (!text) {
-    throw new Error("Empty reorganiser response");
-  }
+  const text = await callLlm(ctx, model, adapter, systemPrompt, userContent);
 
   const cleaned = cleanupResponse(text);
   const groups = parseCommitGroups(cleaned);
@@ -484,6 +564,7 @@ export async function completeSingleMessage(
   config: PiAutocommitConfig,
   input: SingleCommitInput,
   complete?: CompleteFn,
+  onLlmFailure?: (reason: string) => void,
 ): Promise<string> {
   // Too large to send: skip the LLM roundtrip entirely.
   if (diffExceedsLlmLimit(input.diff)) {
@@ -502,15 +583,7 @@ export async function completeSingleMessage(
       throw new Error("No model available");
     }
 
-    const result = await adapter(model, {
-      systemPrompt,
-      messages: [{ role: "user", content: userContent, timestamp: Date.now() }],
-    });
-
-    const text = extractText(result);
-    if (!text) {
-      throw new Error("Empty response");
-    }
+    const text = await callLlm(ctx, model, adapter, systemPrompt, userContent);
 
     const cleaned = cleanupResponse(text);
     if (scopeManaged) {
@@ -518,8 +591,13 @@ export async function completeSingleMessage(
       return injectScopeIntoMessage(cleaned, paths, config);
     }
     return cleaned;
-  } catch {
-    // LLM path failed — fall through to heuristic.
+  } catch (error) {
+    // LLM path failed — fall through to heuristic, reporting why.
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[pi-autocommit] commit message LLM call failed (${reason}). Using the heuristic fallback.`,
+    );
+    onLlmFailure?.(reason);
     return heuristicSingleMessage(input, config);
   }
 }
