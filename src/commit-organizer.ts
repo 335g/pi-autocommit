@@ -12,7 +12,6 @@ import {
   MAX_LLM_DIFF_CHARS,
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
-import { parseNameStatus } from "./git-parser.js";
 import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
@@ -70,110 +69,93 @@ function sameFileSet(a: readonly string[], b: readonly string[]): boolean {
   return a.every((path) => set.has(path));
 }
 
-/** Derive changed-file paths from `git --name-status` output. */
-function nameStatusPaths(nameStatus: string): string[] {
-  return parseNameStatus(nameStatus).map((entry) => entry.path);
+/** Seconds of committer-time gap that still counts as one previous commit group. */
+export const PREVIOUS_GROUP_MAX_GAP_SECONDS = 10;
+/** Upper bound on how many commits one previous group may absorb. */
+export const PREVIOUS_GROUP_MAX_SIZE = 20;
+
+/** One commit in the previous commit group, with the data needed to match it. */
+interface PreviousGroupMember {
+  subject: string;
+  files: string[];
+  typeScope: TypeScope | null;
 }
 
-/**
- * The commit directly below the checkpoint run, when it can be merged into:
- * a Conventional Commit with a parseable type/scope, plus whether it is
- * already on the remote.
- */
-interface MergeCandidate {
-  typeScope: TypeScope;
-  files: string[];
-  /** True when the commit exists on the upstream branch (must not rewrite). */
+/** The contiguous run of commits directly below the checkpoint run. */
+interface PreviousGroup {
+  /** Newest first: `HEAD~checkpointCount`, `HEAD~(checkpointCount+1)`, … */
+  members: PreviousGroupMember[];
+  /** True when any member already exists on the upstream branch. */
   pushed: boolean;
 }
 
 /**
- * Resolve `HEAD~checkpointCount` and decide whether it is a merge candidate.
- * Returns `null` when the commit does not exist or its subject is not a
- * Conventional Commit (nothing to compare type/scope against).
+ * Walk from `HEAD~checkpointCount` downwards while consecutive commits are no
+ * more than {@link PREVIOUS_GROUP_MAX_GAP_SECONDS} apart in committer time,
+ * so the commits one `agent_end` produced as a batch are treated as a single
+ * group. Returns `null` when there is no commit below the run.
  */
-async function findMergeCandidate(
+async function findPreviousGroup(
   store: ReorganiserStore,
   checkpointCount: number,
-): Promise<MergeCandidate | null> {
-  if (checkpointCount <= 0) return null;
-  const summary = await store.getCommitSummary(`HEAD~${checkpointCount}`);
-  if (!summary) return null;
-  const typeScope = parseTypeScope(summary.subject);
-  if (!typeScope) return null;
+): Promise<PreviousGroup | null> {
+  const members: PreviousGroupMember[] = [];
+  let previousTime: number | null = null;
 
-  // The commit sits at index `checkpointCount` from HEAD; it is on the
-  // remote when that index has reached the upstream tip.
+  for (
+    let index = checkpointCount;
+    index < checkpointCount + PREVIOUS_GROUP_MAX_SIZE;
+    index++
+  ) {
+    const summary = await store.getCommitSummary(`HEAD~${index}`);
+    if (!summary) break;
+    if (
+      previousTime !== null &&
+      Math.abs(previousTime - summary.committerTime) >
+        PREVIOUS_GROUP_MAX_GAP_SECONDS
+    ) {
+      break;
+    }
+    members.push({
+      subject: summary.subject,
+      files: summary.files,
+      typeScope: parseTypeScope(summary.subject),
+    });
+    previousTime = summary.committerTime;
+  }
+
+  if (members.length === 0) return null;
+
+  // Index of the oldest member from HEAD; the group is on the remote when
+  // that index has reached the upstream tip.
   const aheadCount = await store.getUpstreamAheadCount();
-  const pushed = aheadCount !== null && checkpointCount >= aheadCount;
-  return { typeScope, files: summary.files, pushed };
+  const oldestIndex = checkpointCount + members.length - 1;
+  const pushed = aheadCount !== null && oldestIndex >= aheadCount;
+  return { members, pushed };
 }
 
 /**
- * Fold the reorganised checkpoint changes into the similar previous commit
- * with `git commit --amend`, instead of committing them separately.
- *
- * Only runs when the checkpoint run covers exactly the same files as the
- * previous commit and yields exactly one group whose type/scope matches it —
- * so the amend cannot swallow unrelated groups or unrelated files. When the
- * previous commit is already pushed it is left untouched and a notice is
- * emitted; the caller then proceeds with the normal commit path.
- *
- * @returns true when the amend happened and the caller must stop.
+ * Whether any proposed checkpoint group matches a member of the previous
+ * group: an exact changed-file set and a matching Conventional `type(scope)`.
  */
-async function tryMergeIntoPreviousCommit(
-  store: ReorganiserStore,
-  candidate: MergeCandidate,
+function hasMatchingPreviousCommit(
   groups: CommitGroup[],
-  checkpointCount: number,
-  events: PipelineEvent[],
-): Promise<boolean> {
-  const { nameStatus } = await store.getStagedMaterials();
-  const stagedFiles = nameStatusPaths(nameStatus);
-  if (!sameFileSet(stagedFiles, candidate.files)) {
-    return false;
+  members: PreviousGroupMember[],
+): boolean {
+  for (const group of groups) {
+    const groupTypeScope = parseTypeScope(group.message);
+    if (!groupTypeScope) continue;
+    for (const member of members) {
+      if (!member.typeScope) continue;
+      if (
+        sameFileSet(group.files, member.files) &&
+        typeScopeMatches(groupTypeScope, member.typeScope)
+      ) {
+        return true;
+      }
+    }
   }
-  if (groups.length !== 1) {
-    return false;
-  }
-
-  const group = groups[0];
-  const groupTypeScope = parseTypeScope(group.message);
-  if (
-    !groupTypeScope ||
-    !typeScopeMatches(groupTypeScope, candidate.typeScope) ||
-    !sameFileSet(group.files, stagedFiles)
-  ) {
-    return false;
-  }
-
-  if (candidate.pushed) {
-    events.push({
-      type: "info",
-      message:
-        "pi-autocommit: 前回の似たコミットは push 済みのため統合しませんでした。" +
-        "チェックポイントのみを整理しました。",
-    });
-    return false;
-  }
-
-  const result = await store.amendCommit(group.message);
-  if (result.code !== 0) {
-    const detail =
-      result.stderr.trim() || result.stdout.trim() || "Unknown error";
-    throw new Error(`Amend failed (code ${result.code}): ${detail}`);
-  }
-
-  events.push({
-    type: "merged",
-    message: `pi-autocommit: 前回のコミットに統合しました — ${group.message.split("\n")[0]}`,
-  });
-  events.push({ type: "organised", checkpointCount, commitCount: 1 });
-  events.push({
-    type: "stage-changed",
-    hasChanges: await store.checkUncommittedChanges(),
-  });
-  return true;
+  return false;
 }
 
 /**
@@ -271,10 +253,10 @@ export async function organizeCheckpointCommits(
     return { events, organised: false };
   }
 
-  // Detect a similar commit directly below the checkpoint run before the
-  // reset moves HEAD (the candidate is `HEAD~checkpointCount`).
-  const mergeCandidate = config.mergeSimilarPrevious
-    ? await findMergeCandidate(store, checkpointCount)
+  // The previous commit group (the batch the last `agent_end` produced) sits
+  // directly below the checkpoint run. Capture it before the reset moves HEAD.
+  const previousGroup = config.mergeSimilarPrevious
+    ? await findPreviousGroup(store, checkpointCount)
     : null;
 
   // Undo the checkpoint commits but keep all their changes staged. Leaving
@@ -292,7 +274,7 @@ export async function organizeCheckpointCommits(
   resolveLanguageFromMessages(config, event.messages);
 
   try {
-    const groups = await proposeCommitGroups(
+    let groups = await proposeCommitGroups(
       ctx,
       config,
       event,
@@ -301,16 +283,40 @@ export async function organizeCheckpointCommits(
     );
 
     if (
-      mergeCandidate &&
-      (await tryMergeIntoPreviousCommit(
-        store,
-        mergeCandidate,
-        groups,
-        checkpointCount,
-        events,
-      ))
+      previousGroup &&
+      groups.length > 0 &&
+      hasMatchingPreviousCommit(groups, previousGroup.members)
     ) {
-      return { events, organised: true };
+      if (previousGroup.pushed) {
+        events.push({
+          type: "info",
+          message:
+            "pi-autocommit: 前回の似たコミット群は push 済みのため統合しませんでした。" +
+            "チェックポイントのみを整理しました。",
+        });
+      } else {
+        // Extend the soft reset over the whole previous group. The index
+        // already holds the combined diff (the group's tip tree plus the
+        // checkpoint changes), so resetting HEAD further only widens it.
+        await store.resetSoft(previousGroup.members.length);
+        if (await abortOnOversizedDiff(store, events)) {
+          return { events, organised: false };
+        }
+
+        // Re-split the combined diff: the right message for the merged
+        // changes can differ from either side's, so this is a fresh pass.
+        groups = await proposeCommitGroups(
+          ctx,
+          config,
+          event,
+          store,
+          complete,
+        );
+        events.push({
+          type: "merged",
+          message: `pi-autocommit: 前回のコミット群（${previousGroup.members.length} 件）と統合して再整理しました。`,
+        });
+      }
     }
 
     if (groups.length === 0) {
