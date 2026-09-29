@@ -76,7 +76,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 | `ignoreSubmodules` | boolean | `false` | Keep submodule-related parent-side changes out of auto-commits: gitlink updates (mode 160000 index entries, including absorbed embedded repositories) and `.gitmodules`. Checkpoint commits and the reorganiser never record these paths, so pin updates are left to you. Detached-orphan detection stays active as an informational notice at session start. See [Submodules](#submodules) below. |
-| `mergeSimilarPrevious` | boolean | `true` | When reorganisation finds the commit directly below the checkpoint run has the same changed-file set and the same Conventional Commit `type`/`scope` and is not yet pushed, amend that commit instead of adding a new one. Pushed commits are never rewritten; a notice is shown instead. See [Merging into a similar previous commit](#merging-into-a-similar-previous-commit) below. |
+| `mergeSimilarPrevious` | boolean | `true` | When reorganisation finds a commit in the group directly below the checkpoint run (contiguous commits no more than 10 seconds apart in committer time) with the same changed-file set and the same Conventional Commit `type`/`scope`, the checkpoint run and that whole group are re-consolidated together. Pushed groups are never rewritten; a notice is shown instead. See [Merging into a similar previous commit group](#merging-into-a-similar-previous-commit-group) below. |
 
 The `lang` resolution priority: the configured value when set (a fixed language wins over detection), else auto-detection from the conversation's user messages, else English. Auto-detection inspects character scripts; the heuristic fallback (used when the LLM is unavailable) only writes Japanese or English.
 
@@ -126,17 +126,17 @@ When your workflow keeps submodule pin updates out of pi-autocommit's hands enti
 
 Checkpoint commits and reorganisation then never record gitlink updates or `.gitmodules` changes — commits piling up inside a submodule produce no parent-side auto-commits. The pin drift stays visible as an uncommitted change in the footer indicator; commit it manually when you want to move the pin. Detection of detached-orphan submodule commits stays active, shown as an informational notice at session start.
 
-### Merging into a similar previous commit
+### Merging into a similar previous commit group
 
-At `agent_end`, when the commit directly below the checkpoint run satisfies all of the following, the checkpoint changes are folded into it with `git commit --amend` instead of becoming a new commit:
+At `agent_end`, the commits directly below the checkpoint run form a *previous commit group*: contiguous commits no more than 10 seconds apart in committer time, which is how the multiple logical commits one `agent_end` produced appear. When any member of that group satisfies all of the following, the checkpoint run and the whole group are soft-reset together and the combined diff is fed to the reorganiser again:
 
-1. Its changed-file set exactly equals the checkpoint run's changed-file set.
-2. Reorganisation yields a single commit group whose `type(scope)` matches that commit (a missing scope on either side degrades to a type-only match).
-3. It is not yet pushed (it does not exist on the upstream branch).
+1. Its changed-file set exactly equals a group proposed for the checkpoint run.
+2. Its `type(scope)` matches that group's (a missing scope on either side degrades to a type-only match).
+3. No member of the group is pushed (none exists on the upstream branch).
 
-So when the previous reorganisation produced `feat(cli): ...` and the current agent run touches exactly the same files, `feat(cli)` is rewritten as one commit.
+This re-consolidates rather than amending, because the right message for the combined diff can differ from either side's. So when the previous reorganisation produced `feat(cli)` and `test(cli)` and the current agent run touches the same files, they are re-split with the current changes.
 
-When condition 3 fails — the commit is already on the remote — history is left untouched: only the checkpoint commits are reorganised as usual and a notice reports that no merge happened.
+When condition 3 fails — the group is already on the remote — history is left untouched: only the checkpoint commits are reorganised as usual and a notice reports that no merge happened.
 
 To disable the behaviour:
 
