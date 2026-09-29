@@ -10,6 +10,7 @@ const KNOWN_KEYS = new Set([
   "scope",
   "commitPickerMaxCommits",
   "ignoreSubmodules",
+  "mergeSimilarPrevious",
 ]);
 
 /** Config file name, relative to `.pi/`. */
@@ -64,6 +65,14 @@ export interface PiAutocommitConfig {
    * (gitlinks are recorded like any other changed file, per ADR-0008).
    */
   ignoreSubmodules: boolean;
+
+  /**
+   * Merge reorganisation into the previous commit when it is a similar commit
+   * (same changed-file set and same Conventional Commit `type`/`scope`) and is
+   * not yet pushed. When the previous commit is already on the remote it is
+   * left untouched and a notice is shown instead. Defaults to `true`.
+   */
+  mergeSimilarPrevious: boolean;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
@@ -71,6 +80,7 @@ const DEFAULT_CONFIG: PiAutocommitConfig = {
   enable: false,
   commitPickerMaxCommits: 30,
   ignoreSubmodules: false,
+  mergeSimilarPrevious: true,
 };
 
 /**
@@ -128,6 +138,11 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? parsed.ignoreSubmodules
         : DEFAULT_CONFIG.ignoreSubmodules;
 
+    const mergeSimilarPrevious =
+      typeof parsed.mergeSimilarPrevious === "boolean"
+        ? parsed.mergeSimilarPrevious
+        : DEFAULT_CONFIG.mergeSimilarPrevious;
+
     return {
       lang,
       enable,
@@ -135,6 +150,7 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
       scope,
       commitPickerMaxCommits,
       ignoreSubmodules,
+      mergeSimilarPrevious,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

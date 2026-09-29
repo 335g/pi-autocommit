@@ -9,6 +9,7 @@ const BASE_CONFIG: PiAutocommitConfig = {
   enable: true,
   commitPickerMaxCommits: 30,
   ignoreSubmodules: false,
+  mergeSimilarPrevious: false,
 };
 
 /**

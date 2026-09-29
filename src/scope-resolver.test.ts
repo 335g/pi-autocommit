@@ -13,6 +13,7 @@ function config(scope?: Record<string, string>): PiAutocommitConfig {
     enable: true,
     commitPickerMaxCommits: 30,
     ignoreSubmodules: false,
+    mergeSimilarPrevious: false,
     scope,
   };
 }

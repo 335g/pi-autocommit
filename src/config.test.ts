@@ -298,6 +298,28 @@ void describe("saveModel", () => {
     }
   });
 
+  void it("loads mergeSimilarPrevious from config", () => {
+    for (const value of [true, false]) {
+      const dir = withConfigFile({ mergeSimilarPrevious: value });
+      try {
+        assert.strictEqual(loadConfig(dir).mergeSimilarPrevious, value);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  void it("defaults mergeSimilarPrevious to true when not set or non-boolean", () => {
+    for (const data of [{}, { mergeSimilarPrevious: "yes" }]) {
+      const dir = withConfigFile(data);
+      try {
+        assert.strictEqual(loadConfig(dir).mergeSimilarPrevious, true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
   void it("loads commitPickerMaxCommits from config", () => {
     const dir = withConfigFile({ commitPickerMaxCommits: 50 });
     try {
