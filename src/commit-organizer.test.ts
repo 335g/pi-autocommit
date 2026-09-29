@@ -45,6 +45,7 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     enable: true,
     commitPickerMaxCommits: 30,
     ignoreSubmodules: false,
+    mergeSimilarPrevious: false,
     ...over,
   };
 }
@@ -234,6 +235,12 @@ class InMemoryReorganiserStore implements ReorganiserStore {
       /** When set, `cherryPick()` returns this failure. */
       cherryPickError?: string;
       /**
+       * The commit at `HEAD~checkpointCount` (`getCommitSummary`), or `null`
+       * when there is no such commit. Used to exercise similar-previous
+       * merging.
+       */
+      previousCommit?: { subject: string; files: string[] } | null;
+      /**
        * When true, `getStagedMaterials()` returns a diff above the LLM size
        * cap so the reorganisation must abort without committing.
        */
@@ -347,6 +354,27 @@ class InMemoryReorganiserStore implements ReorganiserStore {
         killed: false,
       }
     );
+  }
+
+  async amendCommit(message: string): Promise<ExecResult> {
+    this.operations.push(`amendCommit:${message.split("\n")[0]}`);
+    this.commits.push(message);
+    this.stagedFiles = [];
+    return (
+      this.options.commitResult ?? {
+        code: 0,
+        stdout: "",
+        stderr: "",
+        killed: false,
+      }
+    );
+  }
+
+  async getCommitSummary(
+    ref: string,
+  ): Promise<{ subject: string; files: string[] } | null> {
+    this.operations.push(`getCommitSummary:${ref}`);
+    return this.options.previousCommit ?? null;
   }
 
   async getRecentCommits(maxCount: number, _skip?: number): Promise<string> {
@@ -1618,5 +1646,213 @@ below.ts
     // Final hardReset targets the original HEAD (sha-0) — full restore.
     const resets = store.operations.filter((op) => op.startsWith("hardReset:"));
     assert.strictEqual(resets[resets.length - 1], "hardReset:sha-0");
+  });
+});
+
+// ── mergeSimilarPrevious (agent_end) ──────────────────────────────
+
+void describe("organizeCheckpointCommits mergeSimilarPrevious", () => {
+  const checkpoint = (files: string[]) => ({
+    message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
+    files,
+  });
+
+  void it("amends the similar previous commit instead of committing anew", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/auth/login.ts"])],
+      previousCommit: {
+        subject: "feat(auth): add JWT login",
+        files: ["src/auth/login.ts"],
+      },
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login flow
+=== FILES ===
+src/auth/login.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.strictEqual(store.commits.length, 1);
+    assert.ok(store.commits[0]?.startsWith("feat(auth):"));
+    assert.ok(
+      store.operations.some((op) => op.startsWith("amendCommit:feat(auth):")),
+    );
+    assert.ok(
+      result.events.some((e) => e.type === "merged"),
+      "expected a merged event",
+    );
+    assert.strictEqual(
+      result.events.some(
+        (e) =>
+          e.type === "organised" &&
+          e.checkpointCount === 1 &&
+          e.commitCount === 1,
+      ),
+      true,
+    );
+  });
+
+  void it("does not merge when the previous commit touches different files", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/auth/login.ts"])],
+      previousCommit: {
+        subject: "feat(auth): add JWT login",
+        files: ["src/auth/login.ts", "src/auth/types.ts"],
+      },
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+src/auth/login.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.ok(!store.operations.some((op) => op.startsWith("amendCommit:")));
+    assert.ok(store.operations.some((op) => op.startsWith("commit:")));
+  });
+
+  void it("does not merge when the conventional type differs", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/auth/login.ts"])],
+      previousCommit: {
+        subject: "fix(auth): correct JWT login",
+        files: ["src/auth/login.ts"],
+      },
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+src/auth/login.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.ok(!store.operations.some((op) => op.startsWith("amendCommit:")));
+  });
+
+  void it("does not merge a pushed previous commit and notifies instead", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/auth/login.ts"])],
+      previousCommit: {
+        subject: "feat(auth): add JWT login",
+        files: ["src/auth/login.ts"],
+      },
+      upstreamAheadCount: 1,
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+src/auth/login.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.ok(!store.operations.some((op) => op.startsWith("amendCommit:")));
+    assert.ok(store.operations.some((op) => op.startsWith("commit:")));
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "info" && e.message.includes("push 済み"),
+      ),
+    );
+  });
+
+  void it("does not merge when the checkpoint splits into multiple groups", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/a.ts", "src/b.ts"])],
+      previousCommit: { subject: "feat(x): change a and b", files: ["src/a.ts", "src/b.ts"] },
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(x): change a
+=== FILES ===
+src/a.ts
+=== END ===
+=== COMMIT 2 ===
+feat(x): change b
+=== FILES ===
+src/b.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.ok(!store.operations.some((op) => op.startsWith("amendCommit:")));
+    assert.strictEqual(store.commits.length, 2);
+  });
+
+  void it("skips merge detection when disabled", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [checkpoint(["src/a.ts"])],
+      previousCommit: { subject: "feat(x): change a", files: ["src/a.ts"] },
+    });
+
+    await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: false }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(x): change a
+=== FILES ===
+src/a.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.ok(!store.operations.some((op) => op.startsWith("getCommitSummary:")));
+    assert.ok(!store.operations.some((op) => op.startsWith("amendCommit:")));
   });
 });

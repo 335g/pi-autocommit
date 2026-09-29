@@ -6,6 +6,7 @@ export type PipelineEvent =
   | { type: "committed"; message: string }
   | { type: "organised"; checkpointCount: number; commitCount: number }
   | { type: "fallback"; message: string }
+  | { type: "merged"; message: string }
   | { type: "stage-changed"; hasChanges?: boolean };
 
 export interface PipelineResult {

@@ -12,6 +12,7 @@ import {
   MAX_LLM_DIFF_CHARS,
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
+import { parseNameStatus } from "./git-parser.js";
 import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
@@ -34,6 +35,146 @@ import { detectLanguage, languageName, userMessageTexts } from "./language.js";
 
 /** Marker used for checkpoint commits created at `turn_end`. */
 export const CHECKPOINT_COMMIT_MARKER = "wip(checkpoint):";
+
+/** Conventional Commit `type`/`scope` extracted from a subject line. */
+interface TypeScope {
+  type: string;
+  scope: string | null;
+}
+
+/**
+ * Parse `type(scope): subject` (or `type: subject`) from a commit subject.
+ * Returns `null` when the subject is not a Conventional Commit.
+ */
+function parseTypeScope(subject: string): TypeScope | null {
+  const match = /^([a-z]+)(?:\(([^)]*)\))?!?:/.exec(subject.trim());
+  if (!match) return null;
+  const scope = match[2] ? match[2].trim() : "";
+  return { type: match[1], scope: scope.length > 0 ? scope : null };
+}
+
+/**
+ * Whether two type/scope pairs count as the same kind of change. A missing
+ * scope on either side degrades to a type-only match.
+ */
+function typeScopeMatches(a: TypeScope, b: TypeScope): boolean {
+  if (a.type !== b.type) return false;
+  if (a.scope === null || b.scope === null) return true;
+  return a.scope === b.scope;
+}
+
+/** Set equality for changed-file lists (order-independent). */
+function sameFileSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every((path) => set.has(path));
+}
+
+/** Derive changed-file paths from `git --name-status` output. */
+function nameStatusPaths(nameStatus: string): string[] {
+  return parseNameStatus(nameStatus).map((entry) => entry.path);
+}
+
+/**
+ * The commit directly below the checkpoint run, when it can be merged into:
+ * a Conventional Commit with a parseable type/scope, plus whether it is
+ * already on the remote.
+ */
+interface MergeCandidate {
+  typeScope: TypeScope;
+  files: string[];
+  /** True when the commit exists on the upstream branch (must not rewrite). */
+  pushed: boolean;
+}
+
+/**
+ * Resolve `HEAD~checkpointCount` and decide whether it is a merge candidate.
+ * Returns `null` when the commit does not exist or its subject is not a
+ * Conventional Commit (nothing to compare type/scope against).
+ */
+async function findMergeCandidate(
+  store: ReorganiserStore,
+  checkpointCount: number,
+): Promise<MergeCandidate | null> {
+  if (checkpointCount <= 0) return null;
+  const summary = await store.getCommitSummary(`HEAD~${checkpointCount}`);
+  if (!summary) return null;
+  const typeScope = parseTypeScope(summary.subject);
+  if (!typeScope) return null;
+
+  // The commit sits at index `checkpointCount` from HEAD; it is on the
+  // remote when that index has reached the upstream tip.
+  const aheadCount = await store.getUpstreamAheadCount();
+  const pushed = aheadCount !== null && checkpointCount >= aheadCount;
+  return { typeScope, files: summary.files, pushed };
+}
+
+/**
+ * Fold the reorganised checkpoint changes into the similar previous commit
+ * with `git commit --amend`, instead of committing them separately.
+ *
+ * Only runs when the checkpoint run covers exactly the same files as the
+ * previous commit and yields exactly one group whose type/scope matches it —
+ * so the amend cannot swallow unrelated groups or unrelated files. When the
+ * previous commit is already pushed it is left untouched and a notice is
+ * emitted; the caller then proceeds with the normal commit path.
+ *
+ * @returns true when the amend happened and the caller must stop.
+ */
+async function tryMergeIntoPreviousCommit(
+  store: ReorganiserStore,
+  candidate: MergeCandidate,
+  groups: CommitGroup[],
+  checkpointCount: number,
+  events: PipelineEvent[],
+): Promise<boolean> {
+  const { nameStatus } = await store.getStagedMaterials();
+  const stagedFiles = nameStatusPaths(nameStatus);
+  if (!sameFileSet(stagedFiles, candidate.files)) {
+    return false;
+  }
+  if (groups.length !== 1) {
+    return false;
+  }
+
+  const group = groups[0];
+  const groupTypeScope = parseTypeScope(group.message);
+  if (
+    !groupTypeScope ||
+    !typeScopeMatches(groupTypeScope, candidate.typeScope) ||
+    !sameFileSet(group.files, stagedFiles)
+  ) {
+    return false;
+  }
+
+  if (candidate.pushed) {
+    events.push({
+      type: "info",
+      message:
+        "pi-autocommit: 前回の似たコミットは push 済みのため統合しませんでした。" +
+        "チェックポイントのみを整理しました。",
+    });
+    return false;
+  }
+
+  const result = await store.amendCommit(group.message);
+  if (result.code !== 0) {
+    const detail =
+      result.stderr.trim() || result.stdout.trim() || "Unknown error";
+    throw new Error(`Amend failed (code ${result.code}): ${detail}`);
+  }
+
+  events.push({
+    type: "merged",
+    message: `pi-autocommit: 前回のコミットに統合しました — ${group.message.split("\n")[0]}`,
+  });
+  events.push({ type: "organised", checkpointCount, commitCount: 1 });
+  events.push({
+    type: "stage-changed",
+    hasChanges: await store.checkUncommittedChanges(),
+  });
+  return true;
+}
 
 /**
  * Abort a reorganisation whose staged diff is too large for the LLM.
@@ -130,6 +271,12 @@ export async function organizeCheckpointCommits(
     return { events, organised: false };
   }
 
+  // Detect a similar commit directly below the checkpoint run before the
+  // reset moves HEAD (the candidate is `HEAD~checkpointCount`).
+  const mergeCandidate = config.mergeSimilarPrevious
+    ? await findMergeCandidate(store, checkpointCount)
+    : null;
+
   // Undo the checkpoint commits but keep all their changes staged. Leaving
   // them staged is also the abort state: an oversized diff stops here with the
   // changes ready for the user to commit by hand.
@@ -152,6 +299,20 @@ export async function organizeCheckpointCommits(
       store,
       complete,
     );
+
+    if (
+      mergeCandidate &&
+      (await tryMergeIntoPreviousCommit(
+        store,
+        mergeCandidate,
+        groups,
+        checkpointCount,
+        events,
+      ))
+    ) {
+      return { events, organised: true };
+    }
+
     if (groups.length === 0) {
       // No logical groups: fall back to one commit.
       await fallbackSingleCommit(ctx, config, store, events, complete);

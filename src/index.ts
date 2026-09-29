@@ -76,6 +76,9 @@ async function handlePipelineEvents(
       case "fallback":
         ctx.ui.notify(event.message, "warning");
         break;
+      case "merged":
+        ctx.ui.notify(event.message, "info");
+        break;
       case "stage-changed":
         await statusIndicator.updateFooter();
         break;
