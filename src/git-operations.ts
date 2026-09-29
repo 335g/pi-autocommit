@@ -168,37 +168,28 @@ export class GitOperations {
   }
 
   /**
-   * Amend the current HEAD commit with the staged index and the given
-   * message (`git commit --amend`). Preserves the original author; GPG
-   * signing is disabled like {@link commit}.
-   */
-  async amendCommit(message: string): Promise<ExecResult> {
-    return await this.pi.exec("git", [
-      "-c",
-      "commit.gpgsign=false",
-      "commit",
-      "--amend",
-      "-m",
-      message,
-    ]);
-  }
-
-  /**
-   * Read a commit's subject and its changed file paths (relative to its
-   * first parent), or `null` when `ref` cannot be resolved (e.g. the commit
-   * does not exist). Renames report the new path, matching the parser used
-   * for the staged diff so file sets are comparable.
+   * Read a commit's subject, changed file paths (relative to its first
+   * parent) and committer time (UNIX seconds). Returns `null` when `ref`
+   * cannot be resolved (e.g. the commit does not exist). Renames report the
+   * new path, matching the parser used for the staged diff so file sets are
+   * comparable.
    */
   async getCommitSummary(
     ref: string,
-  ): Promise<{ subject: string; files: string[] } | null> {
+  ): Promise<{ subject: string; files: string[]; committerTime: number } | null> {
     const subjectResult = await this.pi.exec("git", [
       "log",
       "-1",
-      "--format=%s",
+      "--format=%s%x00%ct",
       ref,
     ]);
     if (subjectResult.code !== 0) return null;
+
+    const [subject = "", committerTimeRaw = ""] = subjectResult.stdout
+      .trim()
+      .split("\0");
+    const committerTime = Number.parseInt(committerTimeRaw, 10);
+    if (!Number.isFinite(committerTime)) return null;
 
     const filesResult = await this.pi.exec("git", [
       "diff-tree",
@@ -221,7 +212,7 @@ export class GitOperations {
       })
       .filter((path) => path.length > 0);
 
-    return { subject: subjectResult.stdout.trim(), files };
+    return { subject, files, committerTime };
   }
 
   /**

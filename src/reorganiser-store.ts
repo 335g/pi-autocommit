@@ -71,18 +71,13 @@ export interface ReorganiserStore {
   commit(message: string): Promise<ExecResult>;
 
   /**
-   * Amend the current HEAD commit with the staged index and the given
-   * message, preserving the original author.
-   */
-  amendCommit(message: string): Promise<ExecResult>;
-
-  /**
-   * Read a commit's subject and changed files, or `null` when `ref` cannot
-   * be resolved. Used to detect a "similar previous commit" for merging.
+   * Read a commit's subject, changed files and committer time, or `null`
+   * when `ref` cannot be resolved. Used to detect a "similar previous
+   * commit" group for merging.
    */
   getCommitSummary(
     ref: string,
-  ): Promise<{ subject: string; files: string[] } | null>;
+  ): Promise<{ subject: string; files: string[]; committerTime: number } | null>;
 
   /**
    * Return the last N commits in `%H%x00%s` format, newest first.
@@ -227,13 +222,9 @@ export class GitReorganiserStore implements ReorganiserStore {
     return this.git.commit(message);
   }
 
-  async amendCommit(message: string): Promise<ExecResult> {
-    return this.git.amendCommit(message);
-  }
-
   async getCommitSummary(
     ref: string,
-  ): Promise<{ subject: string; files: string[] } | null> {
+  ): Promise<{ subject: string; files: string[]; committerTime: number } | null> {
     return this.git.getCommitSummary(ref);
   }
 
