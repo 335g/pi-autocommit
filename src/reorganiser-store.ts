@@ -71,6 +71,20 @@ export interface ReorganiserStore {
   commit(message: string): Promise<ExecResult>;
 
   /**
+   * Amend the current HEAD commit with the staged index and the given
+   * message, preserving the original author.
+   */
+  amendCommit(message: string): Promise<ExecResult>;
+
+  /**
+   * Read a commit's subject and changed files, or `null` when `ref` cannot
+   * be resolved. Used to detect a "similar previous commit" for merging.
+   */
+  getCommitSummary(
+    ref: string,
+  ): Promise<{ subject: string; files: string[] } | null>;
+
+  /**
    * Return the last N commits in `%H%x00%s` format, newest first.
    *
    * @param maxCount maximum number of commits to return
@@ -211,6 +225,16 @@ export class GitReorganiserStore implements ReorganiserStore {
 
   async commit(message: string): Promise<ExecResult> {
     return this.git.commit(message);
+  }
+
+  async amendCommit(message: string): Promise<ExecResult> {
+    return this.git.amendCommit(message);
+  }
+
+  async getCommitSummary(
+    ref: string,
+  ): Promise<{ subject: string; files: string[] } | null> {
+    return this.git.getCommitSummary(ref);
   }
 
   async getRecentCommits(maxCount: number, skip?: number): Promise<string> {
