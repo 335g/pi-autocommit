@@ -12,7 +12,8 @@ A [pi-coding-agent](https://github.com/earendil-works/pi-coding-agent) extension
 - **Automatic checkpoints** — commits changes at the end of every turn that mutates files, so intermediate state is never lost.
 - **LLM-powered reorganisation** — at the end of the agent loop, checkpoints are soft-reset and split into coherent Conventional Commits using the assistant's own reasoning as context.
 - **Heuristic fallback** — when the LLM is unavailable, a single Conventional Commit is produced from diff analysis.
-- **Uncommitted-changes footer indicator** — a footer cue shows whether the working tree has changes, so you can spot unintended files *before* a checkpoint captures them.
+- **Interactive range selection** — `organiseMode: "picker"` stops `agent_end` on the commit picker so you choose which commits get reorganised, instead of the extension deciding.
+- **Uncommitted-changes footer indicator** — a footer cue shows whether the working tree has changes, so you can spot unintended files *before* a checkpoint captures them. The active organise mode sits next to it.
 - **Language support** — commit messages follow the conversation's language automatically (English, Japanese, Korean, Chinese, Russian by script), or a fixed language of your choice via `lang`.
 - **Merge conflict detection** — skips committing when a merge is in progress.
 
@@ -40,9 +41,9 @@ Auto-commit is **disabled by default**. Enable it by setting `"enable": true` in
    ```
    wip(checkpoint): auto-commit at turn N
    ```
-2. **`agent_end`** — At the end of the agent loop, it counts the checkpoint commits at HEAD, soft-resets them, and asks the LLM to split the combined diff into logical Conventional Commits (using the assistant's own messages as context). Each logical group is then staged and committed separately.
+2. **`agent_end`** — At the end of the agent loop, it counts the checkpoint commits at HEAD, soft-resets them, and asks the LLM to split the combined diff into logical Conventional Commits (using the assistant's own messages as context). Each logical group is then staged and committed separately. With `organiseMode: "picker"` this step stops on the commit picker first, so the range is chosen by hand.
 
-The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files.
+The footer indicator (`[has changes]`) reminds you when there are uncommitted changes — check it before writing your next prompt to catch unintended files. The footer also shows the active organise mode (`[auto]` / `[picker]`) while auto-commit is enabled.
 
 While enabled, agent-initiated destructive or history-interleaving git commands in the `bash` tool are blocked: `git commit` (including `--amend`), `git push`, `git reset --hard`, `git merge`, `git cherry-pick`, and `git rebase`. Commits and pushes are blocked so history stays under pi-autocommit's checkpoint-then-reorganise control — a push before `agent_end` would ship raw checkpoint commits to the remote; `reset --hard` is blocked because it destroys the index and working tree; `merge`, `cherry-pick`, and `rebase` are blocked because they interleave a foreign commit into the checkpoint run, breaking automatic reorganisation.
 
@@ -55,7 +56,7 @@ If a merge does pull in un-reorganised checkpoint commits from another session (
 
 The block reason follows the configured commit-message language (Japanese when `lang` is Japanese, otherwise English) and notes that the guard can be disabled with `/autocommit-enable false`. When disabled, the agent is free to use git on its own.
 
-This runs silently in the background. Notifications appear for progress and errors, but no interactive confirmation is required.
+This runs silently in the background by default. Notifications appear for progress and errors, and no interactive confirmation is required unless `organiseMode` is `"picker"`.
 
 ## Configuration
 
@@ -76,9 +77,29 @@ Create `.pi/pi-autocommit.json` in your project root:
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 | `ignoreSubmodules` | boolean | `false` | Keep submodule-related parent-side changes out of auto-commits: gitlink updates (mode 160000 index entries, including absorbed embedded repositories) and `.gitmodules`. Checkpoint commits and the reorganiser never record these paths, so pin updates are left to you. Detached-orphan detection stays active as an informational notice at session start. See [Submodules](#submodules) below. |
+| `organiseMode` | string | `"auto"` | How much control `agent_end` gives you: `"auto"` reorganises silently, `"picker"` shows the commit picker first so you choose the range. Switch it with `/autocommit-mode`; the active mode is shown in the footer. See [Organise mode](#organise-mode) below. |
 | `mergeSimilarPrevious` | boolean | `true` | When reorganisation finds a commit in the group directly below the checkpoint run (contiguous commits no more than 10 seconds apart in committer time) that mostly touches the same files (Jaccard overlap ≥ 0.5) with the same Conventional Commit `type`/`scope`, the checkpoint run and that whole group are re-consolidated together. Pushed groups are never rewritten; a notice is shown instead. See [Merging into a similar previous commit group](#merging-into-a-similar-previous-commit-group) below. |
 
 The `lang` resolution priority: the configured value when set (a fixed language wins over detection), else auto-detection from the conversation's user messages, else English. Auto-detection inspects character scripts; the heuristic fallback (used when the LLM is unavailable) only writes Japanese or English.
+
+### Organise mode
+
+`organiseMode` decides how much control you get when checkpoints are reorganised:
+
+| Mode | `agent_end` behaviour |
+|------|----------------------|
+| `auto` (default) | Reorganises the checkpoint run silently. `mergeSimilarPrevious` extends the range downward on its own when the previous commit group is similar. |
+| `picker` | Shows the commit picker first. The default range is the checkpoint run at HEAD; extend it with `1` / `2` to pull in earlier commits. `Esc` cancels and leaves the checkpoints for `/autocommit-organise`. |
+
+Switch it at any time — the setting is persisted to `.pi/pi-autocommit.json` and the footer updates immediately:
+
+```
+/autocommit-mode picker    # choose the range at agent_end
+/autocommit-mode auto      # reorganise silently
+/autocommit-mode           # cycle to the next mode
+```
+
+`/autocommit-organise` always shows the picker, whatever the mode is — you asked for it explicitly.
 
 ### Disabling auto-commit
 

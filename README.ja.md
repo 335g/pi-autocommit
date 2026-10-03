@@ -14,7 +14,8 @@
 - **自動チェックポイント** — ファイルを変更するターン終了ごとにコミットを作成するため、途中経過が失われることはありません。
 - **LLM による再構成** — エージェントループ終了時に checkpoint を soft reset し、アシスタント自身の推論をコンテキストとして論理的な Conventional Commits に分割します。
 - **ヒューリスティックフォールバック** — LLM が利用できない場合は差分解析から単一の Conventional Commit を生成します。
-- **未コミット変更のフッター表示** — ワーキングツリーに変更があるかをフッターに表示し、checkpoint に取り込まれる前に意図しないファイルに気づけるようにします。
+- **対話的な範囲選択** — `organiseMode: "picker"` にすると `agent_end` がコミットピッカーで止まり、どれを整理するかを拡張機能ではなく自分で選べます。
+- **未コミット変更のフッター表示** — ワーキングツリーに変更があるかをフッターに表示し、checkpoint に取り込まれる前に意図しないファイルに気づけるようにします。隣には現在の整理モードも表示されます。
 - **言語対応** — コミットメッセージを会話の言語に自動追従（文字種で判定: 英語・日本語・韓国語・中国語・ロシア語）。`lang` で固定言語も指定可能。
 - **マージコンフリクト検出** — マージ競合中はコミットをスキップします。
 
@@ -42,9 +43,9 @@ pi install @335g/pi-autocommit
    ```
    wip(checkpoint): auto-commit at turn N
    ```
-2. **`agent_end`** — エージェントループ終了時に HEAD にある checkpoint コミットを数え、soft reset し、LLM に結合差分を論理的な Conventional Commits に分割させます（アシスタント自身のメッセージをコンテキストとして使用）。各論理グループを順にステージしてコミットします。
+2. **`agent_end`** — エージェントループ終了時に HEAD にある checkpoint コミットを数え、soft reset し、LLM に結合差分を論理的な Conventional Commits に分割させます（アシスタント自身のメッセージをコンテキストとして使用）。各論理グループを順にステージしてコミットします。`organiseMode: "picker"` では、この前にコミットピッカーを表示して範囲を手で選ばせます。
 
-フッター表示（`[has changes]`）は未コミット変更の有無を知らせます。次のプロンプトを書く前に確認すれば、意図しないファイルの混入に気づけます。
+フッター表示（`[has changes]`）は未コミット変更の有無を知らせます。次のプロンプトを書く前に確認すれば、意図しないファイルの混入に気づけます。自動コミットが有効な間、フッターには整理モード（`[auto]` / `[picker]`）も併せて表示されます。
 
 有効な間、エージェントが `bash` ツールで実行する破壊的・履歴割り込み系の git コマンドはブロックされます: `git commit`（`--amend` 含む）・`git push`・`git reset --hard`・`git merge`・`git cherry-pick`・`git rebase`。commit/push は pi-autocommit が checkpoint-then-reorganise で履歴を管理しており、`agent_end` 前に push すると未整理の checkpoint コミットがリモートへ送られてしまうため、`reset --hard` はインデックスとワーキングツリーを破棄するため、merge/cherry-pick/rebase は checkpoint の列に別のコミットを割り込ませ自動再整理を壊すためです。
 
@@ -57,7 +58,7 @@ pi install @335g/pi-autocommit
 
 ブロック理由は設定されたコミットメッセージ言語（日本語設定時は日本語、それ以外は英語）で表示され、`/autocommit-enable false` で解除できる旨も含まれます。無効な間は、エージェントは自由に git を操作できます。
 
-バックグラウンドで動作し、進捗やエラーは UI に通知されますが、対話的な確認は不要です。
+デフォルトではバックグラウンドで動作し、進捗やエラーは UI に通知されますが、対話的な確認は不要です。`organiseMode` が `"picker"` のときだけ `agent_end` で確認が入ります。
 
 ## 設定
 
@@ -78,9 +79,29 @@ pi install @335g/pi-autocommit
 | `model` | string | — | コミットメッセージ生成に使用する LLM モデルを `"provider/modelId"` 形式で指定（例: `"anthropic/claude-sonnet-4"`）。省略時はセッションの現在のモデルを使用 |
 | `scope` | object | — | パスから scope へのマッピング。Conventional Commits の scope を決定論的に固定します。設定すると LLM は scope を推論せず、変更ファイルパスから解決されます。下記の [スコープマッピング](#スコープマッピング) を参照 |
 | `ignoreSubmodules` | boolean | `false` | submodule 関連の親リポジトリ側の差分（gitlink 更新（mode 160000 エントリ。吸収された埋め込みリポジトリを含む）と `.gitmodules`）を自動コミットの対象外にします。checkpoint コミットも再編成もこれらのパスを記録しないため、ピン更新はユーザーの手動コミットに委ねられます。孤児コミット検出はセッション開始時の案内表示として継続します。下記の [Submodule](#submodule) を参照 |
+| `organiseMode` | string | `"auto"` | `agent_end` でどれだけ制御を渡すか。`"auto"` は無対話に整理し、`"picker"` は先にコミットピッカーを表示して範囲を手で選ばせます。`/autocommit-mode` で切り替えでき、現在のモードはフッターに出ます。下記の [整理モード](#整理モード) を参照 |
 | `mergeSimilarPrevious` | boolean | `true` | チェックポイント整理時、その直下の「直前コミット群」（committer 時刻が 10 秒以内で連続する一連のコミット）のいずれかが「ほぼ同じファイルに触れている」（Jaccard 係数 ≥ 0.5）かつ「同じ Conventional Commit の type/scope」のとき、その群ごと巻き込んで再度まとめ直します。push 済みの群は書き換えず、通知のみ行います。下記の [類似コミット群への統合](#類似コミット群への統合) を参照 |
 
 `lang` の解決優先度: 設定値がある場合はそれが最優先（固定言語は検出より優先）、なければ会話のユーザーメッセージから自動判定、それもできなければ英語。自動判定は文字種を検査します。ヒューリスティックフォールバック（LLM が利用できない場合）は日本語または英語のみで生成します。
+
+### 整理モード
+
+`organiseMode` は checkpoint を整理するときに渡す制御の量を決めます。
+
+| モード | `agent_end` の挙動 |
+|------|----------------------|
+| `auto`（デフォルト） | checkpoint の列を無対話に整理します。`mergeSimilarPrevious` が有効なら、直前コミット群が似ているときに範囲を自動で下へ広げます。 |
+| `picker` | 先にコミットピッカーを表示します。既定の範囲は HEAD の checkpoint 列で、`1` / `2` で広げて以前のコミットも巻き込めます。`Esc` でキャンセルすると checkpoint は履歴に残り、`/autocommit-organise` で後から整理できます。 |
+
+いつでも切り替えられます。設定は `.pi/pi-autocommit.json` に保存され、フッター表示もすぐ更新されます。
+
+```
+/autocommit-mode picker    # agent_end で範囲を選ぶ
+/autocommit-mode auto      # 無対話に整理する
+/autocommit-mode           # 次のモードへ巡回
+```
+
+`/autocommit-organise` はモードに関係なく常にピッカーを表示します（明示的に実行した操作だからです）。
 
 ### 自動コミットを無効化する
 
