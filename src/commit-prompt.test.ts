@@ -44,6 +44,7 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     commitPickerMaxCommits: 30,
     ignoreSubmodules: false,
     mergeSimilarPrevious: false,
+    organiseMode: "auto",
     ...over,
   };
 }

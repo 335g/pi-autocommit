@@ -12,6 +12,7 @@ function config(over: Partial<PiAutocommitConfig> = {}): PiAutocommitConfig {
     ...over,
     ignoreSubmodules: over.ignoreSubmodules ?? false,
     mergeSimilarPrevious: over.mergeSimilarPrevious ?? false,
+    organiseMode: over.organiseMode ?? "auto",
   };
 }
 
