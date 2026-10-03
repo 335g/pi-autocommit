@@ -11,10 +11,29 @@ const KNOWN_KEYS = new Set([
   "commitPickerMaxCommits",
   "ignoreSubmodules",
   "mergeSimilarPrevious",
+  "organiseMode",
 ]);
 
 /** Config file name, relative to `.pi/`. */
 const CONFIG_FILENAME = "pi-autocommit.json";
+
+/**
+ * How much control the user gets when checkpoints are reorganised.
+ *
+ * - `auto` — reorganise silently at `agent_end` (no popup).
+ * - `picker` — show the commit picker at `agent_end` so the range to
+ *   reorganise is chosen by hand. `/autocommit-organise` always shows the
+ *   picker regardless of this setting.
+ */
+export const ORGANISE_MODES = ["auto", "picker"] as const;
+export type OrganiseMode = (typeof ORGANISE_MODES)[number];
+
+function isOrganiseMode(value: unknown): value is OrganiseMode {
+  return (
+    typeof value === "string" &&
+    (ORGANISE_MODES as readonly string[]).includes(value)
+  );
+}
 
 /**
  * Normalised configuration for the pi-autocommit extension.
@@ -73,6 +92,12 @@ export interface PiAutocommitConfig {
    * left untouched and a notice is shown instead. Defaults to `true`.
    */
   mergeSimilarPrevious: boolean;
+
+  /**
+   * Whether `agent_end` reorganises silently (`"auto"`, the default) or stops
+   * on the commit picker so the range is chosen by hand (`"picker"`).
+   */
+  organiseMode: OrganiseMode;
 }
 
 const DEFAULT_CONFIG: PiAutocommitConfig = {
@@ -81,6 +106,7 @@ const DEFAULT_CONFIG: PiAutocommitConfig = {
   commitPickerMaxCommits: 30,
   ignoreSubmodules: false,
   mergeSimilarPrevious: true,
+  organiseMode: "auto",
 };
 
 /**
@@ -143,6 +169,10 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
         ? parsed.mergeSimilarPrevious
         : DEFAULT_CONFIG.mergeSimilarPrevious;
 
+    const organiseMode = isOrganiseMode(parsed.organiseMode)
+      ? parsed.organiseMode
+      : DEFAULT_CONFIG.organiseMode;
+
     return {
       lang,
       enable,
@@ -151,6 +181,7 @@ export function loadConfig(cwd: string): PiAutocommitConfig {
       commitPickerMaxCommits,
       ignoreSubmodules,
       mergeSimilarPrevious,
+      organiseMode,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -177,14 +208,10 @@ function normaliseScope(
 }
 
 /**
- * Persist `enable` to `.pi/pi-autocommit.json`, preserving every other key.
- *
- * Reads the existing file (if any) and replaces only the `enable` field,
- * so unknown keys and other known keys (`lang`, `model`) are kept intact.
- * When the file does not exist, it is created with default values
- * (`lang: "auto"`, no `model`) and the given `enable` value.
+ * Write one key into `.pi/pi-autocommit.json`, preserving every other key.
+ * Pass `undefined` to delete the key. Creates the file when missing.
  */
-export function saveEnable(cwd: string, enable: boolean): void {
+function persist(cwd: string, key: string, value: unknown): void {
   const configPath = join(cwd, ".pi", CONFIG_FILENAME);
 
   let parsed: Record<string, unknown> = {};
@@ -196,41 +223,38 @@ export function saveEnable(cwd: string, enable: boolean): void {
     parsed = { lang: DEFAULT_CONFIG.lang };
   }
 
-  parsed.enable = enable;
+  if (value === undefined) {
+    delete parsed[key];
+  } else {
+    parsed[key] = value;
+  }
 
   mkdirSync(dirname(configPath), { recursive: true });
   writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
 }
 
 /**
+ * Persist `enable` to `.pi/pi-autocommit.json`, preserving every other key.
+ */
+export function saveEnable(cwd: string, enable: boolean): void {
+  persist(cwd, "enable", enable);
+}
+
+/**
  * Persist `model` to `.pi/pi-autocommit.json`, preserving every other key.
- *
- * Reads the existing file (if any) and replaces only the `model` field,
- * so unknown keys and other known keys (`lang`, `enable`) are kept intact.
  * Pass `undefined` to clear the `model` key entirely (fall back to the
- * session model). When the file does not exist, it is created with default
- * values (`lang: "auto"`, `enable: true`) and the given `model` value.
+ * session model).
  */
 export function saveModel(cwd: string, model: string | undefined): void {
-  const configPath = join(cwd, ".pi", CONFIG_FILENAME);
+  persist(cwd, "model", model);
+}
 
-  let parsed: Record<string, unknown> = {};
-  try {
-    const raw = readFileSync(configPath, "utf-8");
-    parsed = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    // Missing or unreadable file — start from defaults.
-    parsed = { lang: DEFAULT_CONFIG.lang, enable: DEFAULT_CONFIG.enable };
-  }
-
-  if (model === undefined) {
-    delete parsed.model;
-  } else {
-    parsed.model = model;
-  }
-
-  mkdirSync(dirname(configPath), { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
+/**
+ * Persist `organiseMode` to `.pi/pi-autocommit.json`, preserving every other
+ * key.
+ */
+export function saveOrganiseMode(cwd: string, mode: OrganiseMode): void {
+  persist(cwd, "organiseMode", mode);
 }
 
 /**
