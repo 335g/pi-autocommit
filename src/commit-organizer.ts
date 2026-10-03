@@ -62,17 +62,37 @@ function typeScopeMatches(a: TypeScope, b: TypeScope): boolean {
   return a.scope === b.scope;
 }
 
-/** Set equality for changed-file lists (order-independent). */
-function sameFileSet(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  const set = new Set(b);
-  return a.every((path) => set.has(path));
+/**
+ * Jaccard similarity of two changed-file lists (order-independent):
+ * `|a ∩ b| / |a ∪ b|`, in `[0, 1]`. Two empty lists score 1.
+ */
+export function fileSetOverlap(
+  a: readonly string[],
+  b: readonly string[],
+): number {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (setA.size === 0 && setB.size === 0) return 1;
+  let shared = 0;
+  for (const path of setA) {
+    if (setB.has(path)) shared++;
+  }
+  return shared / (setA.size + setB.size - shared);
 }
 
 /** Seconds of committer-time gap that still counts as one previous commit group. */
 export const PREVIOUS_GROUP_MAX_GAP_SECONDS = 10;
 /** Upper bound on how many commits one previous group may absorb. */
 export const PREVIOUS_GROUP_MAX_SIZE = 20;
+/**
+ * Minimum {@link fileSetOverlap} for a proposed group to count as the same
+ * work as a previous commit. 0.5 means at least half the files on either side
+ * are shared: one extra test file next to the file it covers still merges,
+ * while an unrelated change does not.
+ *
+ * ponytail: fixed threshold, expose it in config when real use shows it is wrong.
+ */
+export const PREVIOUS_GROUP_MIN_FILE_OVERLAP = 0.5;
 
 /** One commit in the previous commit group, with the data needed to match it. */
 interface PreviousGroupMember {
@@ -136,7 +156,8 @@ async function findPreviousGroup(
 
 /**
  * Whether any proposed checkpoint group matches a member of the previous
- * group: an exact changed-file set and a matching Conventional `type(scope)`.
+ * group: a mostly shared changed-file set ({@link
+ * PREVIOUS_GROUP_MIN_FILE_OVERLAP}) and a matching Conventional `type(scope)`.
  */
 function hasMatchingPreviousCommit(
   groups: CommitGroup[],
@@ -148,7 +169,8 @@ function hasMatchingPreviousCommit(
     for (const member of members) {
       if (!member.typeScope) continue;
       if (
-        sameFileSet(group.files, member.files) &&
+        fileSetOverlap(group.files, member.files) >=
+          PREVIOUS_GROUP_MIN_FILE_OVERLAP &&
         typeScopeMatches(groupTypeScope, member.typeScope)
       ) {
         return true;

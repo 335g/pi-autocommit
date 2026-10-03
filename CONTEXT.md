@@ -40,7 +40,7 @@ The component that analyses checkpoint commits at the end of an agent loop and s
 _Avoid_: commit splitter, commit cleaner
 
 **Similar previous commit group merge**
-Extending `agent_end` reorganisation past the checkpoint run and into the *previous commit group* directly below it — contiguous commits no more than 10 seconds apart in committer time, which is how the multiple logical commits one `agent_end` produced appear. When any member of that group is a Conventional Commit whose changed-file set exactly equals a group proposed for the checkpoint run and whose `type(scope)` matches it, and no member is pushed, the checkpoint run and the whole group are soft-reset together and the combined diff is re-organised from scratch. A pushed group is never rewritten; it is left intact and a notice is shown. Controlled by `mergeSimilarPrevious` (default `true`).
+Extending `agent_end` reorganisation past the checkpoint run and into the *previous commit group* directly below it — contiguous commits no more than 10 seconds apart in committer time, which is how the multiple logical commits one `agent_end` produced appear. When any member of that group is a Conventional Commit whose changed-file set mostly overlaps a group proposed for the checkpoint run (Jaccard similarity — shared ÷ union — of at least 0.5) and whose `type(scope)` matches it, and no member is pushed, the checkpoint run and the whole group are soft-reset together and the combined diff is re-organised from scratch. A pushed group is never rewritten; it is left intact and a notice is shown. Controlled by `mergeSimilarPrevious` (default `true`).
 _Avoid_: auto-amend, commit folding
 
 **Commit strategy**

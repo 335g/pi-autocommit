@@ -76,7 +76,7 @@ Create `.pi/pi-autocommit.json` in your project root:
 | `model` | string | — | LLM model for commit message generation, in `"provider/modelId"` format (e.g. `"anthropic/claude-sonnet-4"`). When omitted, the session's current model is used. |
 | `scope` | object | — | Path-to-scope mapping that fixes the Conventional Commits scope deterministically. When set, the LLM no longer infers the scope; it is resolved from the changed file paths instead. See [Scope mapping](#scope-mapping) below. |
 | `ignoreSubmodules` | boolean | `false` | Keep submodule-related parent-side changes out of auto-commits: gitlink updates (mode 160000 index entries, including absorbed embedded repositories) and `.gitmodules`. Checkpoint commits and the reorganiser never record these paths, so pin updates are left to you. Detached-orphan detection stays active as an informational notice at session start. See [Submodules](#submodules) below. |
-| `mergeSimilarPrevious` | boolean | `true` | When reorganisation finds a commit in the group directly below the checkpoint run (contiguous commits no more than 10 seconds apart in committer time) with the same changed-file set and the same Conventional Commit `type`/`scope`, the checkpoint run and that whole group are re-consolidated together. Pushed groups are never rewritten; a notice is shown instead. See [Merging into a similar previous commit group](#merging-into-a-similar-previous-commit-group) below. |
+| `mergeSimilarPrevious` | boolean | `true` | When reorganisation finds a commit in the group directly below the checkpoint run (contiguous commits no more than 10 seconds apart in committer time) that mostly touches the same files (Jaccard overlap ≥ 0.5) with the same Conventional Commit `type`/`scope`, the checkpoint run and that whole group are re-consolidated together. Pushed groups are never rewritten; a notice is shown instead. See [Merging into a similar previous commit group](#merging-into-a-similar-previous-commit-group) below. |
 
 The `lang` resolution priority: the configured value when set (a fixed language wins over detection), else auto-detection from the conversation's user messages, else English. Auto-detection inspects character scripts; the heuristic fallback (used when the LLM is unavailable) only writes Japanese or English.
 
@@ -130,7 +130,7 @@ Checkpoint commits and reorganisation then never record gitlink updates or `.git
 
 At `agent_end`, the commits directly below the checkpoint run form a *previous commit group*: contiguous commits no more than 10 seconds apart in committer time, which is how the multiple logical commits one `agent_end` produced appear. When any member of that group satisfies all of the following, the checkpoint run and the whole group are soft-reset together and the combined diff is fed to the reorganiser again:
 
-1. Its changed-file set exactly equals a group proposed for the checkpoint run.
+1. Its changed-file set mostly overlaps a group proposed for the checkpoint run — Jaccard similarity (`shared ÷ union`) of at least `0.5`, so one extra file next to the files it covers still merges while an unrelated change does not.
 2. Its `type(scope)` matches that group's (a missing scope on either side degrades to a type-only match).
 3. No member of the group is pushed (none exists on the upstream branch).
 

@@ -6,6 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   CHECKPOINT_COMMIT_MARKER,
+  fileSetOverlap,
   organizeCheckpointCommits,
   reorganiseCheckpointsManual,
   reorganiseSelectedRange,
@@ -1642,6 +1643,17 @@ below.ts
 
 // ── mergeSimilarPrevious (agent_end) ──────────────────────────────
 
+void describe("fileSetOverlap", () => {
+  void it("scores intersection over union", () => {
+    assert.strictEqual(fileSetOverlap(["a"], ["a"]), 1);
+    assert.strictEqual(fileSetOverlap(["a"], ["a", "b"]), 0.5);
+    assert.strictEqual(fileSetOverlap(["a", "b"], ["b", "a"]), 1);
+    assert.strictEqual(fileSetOverlap(["a", "b", "c"], ["a", "d", "e"]), 0.2);
+    assert.strictEqual(fileSetOverlap(["a"], ["b"]), 0);
+    assert.strictEqual(fileSetOverlap([], []), 1);
+  });
+});
+
 void describe("organizeCheckpointCommits mergeSimilarPrevious", () => {
   const checkpoint = (files: string[]) => ({
     message: `${CHECKPOINT_COMMIT_MARKER} turn 1`,
@@ -1802,11 +1814,43 @@ src/b.ts
     );
   });
 
-  void it("does not merge when the file sets differ", async () => {
+  void it("merges when the file sets mostly overlap", async () => {
     const store = new InMemoryReorganiserStore({
       checkpointCommits: [
         checkpoint(["src/b.ts"]),
         previous("feat(b): add b", ["src/b.ts", "src/b.test.ts"]),
+      ],
+    });
+
+    const result = await organizeCheckpointCommits(
+      makeCtx(stubModel),
+      config({ mergeSimilarPrevious: true }),
+      makeEvent(),
+      store,
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(b): add b
+=== FILES ===
+src/b.ts
+=== END ===
+`.trim(),
+      ),
+    );
+
+    assert.ok(result.events.some((e) => e.type === "merged"));
+    assert.strictEqual(
+      store.operations.filter((op) => op.startsWith("resetSoft:")).length,
+      2,
+      "the checkpoint reset plus the extended reset over the previous group",
+    );
+  });
+
+  void it("does not merge when the file sets are unrelated", async () => {
+    const store = new InMemoryReorganiserStore({
+      checkpointCommits: [
+        checkpoint(["src/b.ts"]),
+        previous("feat(b): add b", ["src/x.ts", "src/y.ts"]),
       ],
     });
 
