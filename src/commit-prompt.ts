@@ -111,6 +111,18 @@ export interface CommitGroup {
   files: string[];
 }
 
+/**
+ * Optional user review of the proposed groups, run between proposition and
+ * commit. Returns the groups to commit (possibly with edited messages), or
+ * `null` to abort: nothing is committed and the changes stay staged.
+ *
+ * The file partition must be preserved — dropping a group would leave its
+ * files uncovered and trip the coverage guard in `commitGroups`.
+ */
+export type ReviewGroupsFn = (
+  groups: CommitGroup[],
+) => Promise<CommitGroup[] | null>;
+
 // ── Shared private helpers ────────────────────────────────
 
 /** Language-aware subject instruction. */

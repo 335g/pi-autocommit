@@ -10,9 +10,15 @@ import {
   diffExceedsLlmLimit,
   extractAssistantContext,
   MAX_LLM_DIFF_CHARS,
+  type ReviewGroupsFn,
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
-import { commitGroups, fallbackSingleCommit } from "./reorganiser-helpers.js";
+import {
+  commitGroups,
+  commitReviewedGroups,
+  fallbackSingleCommit,
+  ReviewAbortedError,
+} from "./reorganiser-helpers.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
 
 /**
@@ -758,6 +764,7 @@ export async function reorganiseSelectedRange(
   store: ReorganiserStore,
   range: { startIndex: number; endIndex: number },
   complete?: CompleteFn,
+  review?: ReviewGroupsFn,
 ): Promise<OrganizerResult> {
   const events: PipelineEvent[] = [];
   const { startIndex: lo, endIndex: hi } = range;
@@ -815,7 +822,7 @@ export async function reorganiseSelectedRange(
           commitCount: 1,
         });
       } else {
-        const actual = await commitGroups(store, groups, events);
+        const actual = await commitReviewedGroups(store, groups, events, review);
         events.push({
           type: "organised",
           checkpointCount: commitCount,
@@ -823,6 +830,21 @@ export async function reorganiseSelectedRange(
         });
       }
     } catch (error) {
+      // A cancelled review is not a failure: nothing was committed and the
+      // soft reset leaves every change staged for a manual commit.
+      if (error instanceof ReviewAbortedError) {
+        events.push({
+          type: "info",
+          message:
+            "pi-autocommit: 整理をキャンセルしました。変更は staged のまま残しています" +
+            "（/autocommit-organise で再実行できます）",
+        });
+        events.push({
+          type: "stage-changed",
+          hasChanges: await store.checkUncommittedChanges(),
+        });
+        return { events, organised: false };
+      }
       try {
         await stageForFallback(store, config);
         await fallbackSingleCommit(ctx, config, store, events, complete);
@@ -945,7 +967,7 @@ export async function reorganiseSelectedRange(
         commitCount: 1,
       });
     } else {
-      const actual = await commitGroups(store, groups, events);
+      const actual = await commitReviewedGroups(store, groups, events, review);
       events.push({
         type: "organised",
         checkpointCount: commitCount,
@@ -970,6 +992,18 @@ export async function reorganiseSelectedRange(
       await store.hardReset(originalHead);
     } catch {
       // Best effort: report the original error below.
+    }
+    if (error instanceof ReviewAbortedError) {
+      events.push({
+        type: "info",
+        message:
+          "pi-autocommit: 整理をキャンセルしました（操作前の状態に復元済み）",
+      });
+      events.push({
+        type: "stage-changed",
+        hasChanges: await store.checkUncommittedChanges(),
+      });
+      return { events, organised: false };
     }
     const message = error instanceof Error ? error.message : String(error);
     events.push({

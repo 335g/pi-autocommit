@@ -1469,6 +1469,76 @@ b.ts
     assert.strictEqual(store.commits.length, 1);
   });
 
+  void it("review: commits the edited message", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["a.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 0 },
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+=== END ===
+`.trim(),
+      ),
+      async (groups) => groups.map((g) => ({ ...g, message: "fix(auth): x" })),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.deepStrictEqual(store.commits, ["fix(auth): x"]);
+  });
+
+  void it("review: aborts without committing and leaves the changes staged", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["a.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 0 },
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+=== END ===
+`.trim(),
+      ),
+      async () => null,
+    );
+
+    assert.strictEqual(result.organised, false);
+    assert.deepStrictEqual(store.commits, []);
+    assert.deepStrictEqual(store.stagedFiles, ["a.ts"]);
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "info" && e.message.includes("キャンセル"),
+      ),
+    );
+    assert.ok(
+      !result.events.some((e) => e.type === "error"),
+      "a cancelled review is not an error",
+    );
+  });
+
   void it("fast path: blocks when the range reaches the remote tip", async () => {
     const store = new InMemoryReorganiserStore({
       upstreamAheadCount: 2, // remote tip is at index 2

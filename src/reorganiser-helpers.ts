@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { PipelineEvent } from "./commit-events.js";
-import type { CommitGroup } from "./commit-prompt.js";
+import type { CommitGroup, ReviewGroupsFn } from "./commit-prompt.js";
 import {
   type CompleteFn,
   completeSingleMessage,
@@ -9,6 +9,45 @@ import {
 } from "./commit-prompt.js";
 import type { PiAutocommitConfig } from "./config.js";
 import type { ReorganiserStore } from "./reorganiser-store.js";
+
+/**
+ * Thrown when the user rejects the proposed groups. Carries no damage of its
+ * own — callers that already moved HEAD restore it, callers that only
+ * soft-reset leave the changes staged.
+ */
+export class ReviewAbortedError extends Error {
+  constructor() {
+    super("提案されたコミットをキャンセルしました");
+    this.name = "ReviewAbortedError";
+  }
+}
+
+/**
+ * Let the user review the proposed groups, then commit them.
+ *
+ * Without a `review` callback this is exactly {@link commitGroups}. With one,
+ * a `null` result aborts: the staged changes are left untouched and
+ * {@link ReviewAbortedError} is thrown so the caller can undo whatever it had
+ * already done to HEAD.
+ *
+ * @returns The number of commits executed.
+ */
+export async function commitReviewedGroups(
+  store: ReorganiserStore,
+  groups: CommitGroup[],
+  events: PipelineEvent[],
+  review?: ReviewGroupsFn,
+): Promise<number> {
+  if (!review) {
+    return commitGroups(store, groups, events);
+  }
+
+  const reviewed = await review(groups);
+  if (reviewed === null) {
+    throw new ReviewAbortedError();
+  }
+  return commitGroups(store, reviewed, events);
+}
 
 /**
  * Stage and commit each logical group in order.
