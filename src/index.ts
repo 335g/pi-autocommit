@@ -30,10 +30,14 @@ import {
 } from "./commit-policy.js";
 import {
   isJapanese,
+  isOrganiseMode,
   loadConfig,
+  ORGANISE_MODES,
+  type OrganiseMode,
   type PiAutocommitConfig,
   saveEnable,
   saveModel,
+  saveOrganiseMode,
 } from "./config.js";
 import { GitOperations } from "./git-operations.js";
 import { validateModelString } from "./llm-commit.js";
@@ -282,6 +286,53 @@ export default function (pi: ExtensionAPI) {
       const enable = trimmed === "true";
       saveEnable(ctx.cwd, enable);
       ctx.ui.notify(`pi-autocommit: enable = ${enable}`, "info");
+    },
+  });
+
+  // ───────────────────────────────────────────────────────
+  // /autocommit-mode [auto|picker]
+  // ───────────────────────────────────────────────────────
+
+  /** One-line description of each mode, shown in notifications. */
+  const MODE_HINT: Record<OrganiseMode, string> = {
+    auto: "agent_end で無対話に整理",
+    picker: "agent_end でコミット範囲を選ぶ",
+  };
+
+  pi.registerCommand("autocommit-mode", {
+    description:
+      "Set the agent_end organise mode (auto|picker). No arg cycles to the next mode.",
+    getArgumentCompletions: (): AutocompleteItem[] =>
+      ORGANISE_MODES.map((mode) => ({
+        value: mode,
+        label: mode,
+        description: MODE_HINT[mode],
+      })),
+    handler: async (args, ctx) => {
+      const config = loadConfig(ctx.cwd);
+      const statusIndicator = new StatusIndicator(git, ctx);
+      const trimmed = args?.trim().toLowerCase();
+
+      let mode: OrganiseMode;
+      if (trimmed === "") {
+        const index = ORGANISE_MODES.indexOf(config.organiseMode);
+        mode = ORGANISE_MODES[(index + 1) % ORGANISE_MODES.length];
+      } else if (isOrganiseMode(trimmed)) {
+        mode = trimmed;
+      } else {
+        ctx.ui.notify(
+          `Usage: /autocommit-mode <${ORGANISE_MODES.join("|")}>`,
+          "error",
+        );
+        return;
+      }
+
+      saveOrganiseMode(ctx.cwd, mode);
+      await statusIndicator.updateFooter();
+      ctx.ui.notify(
+        `pi-autocommit: organiseMode = ${mode}（${MODE_HINT[mode]}）`,
+        "info",
+      );
     },
   });
 
@@ -667,24 +718,39 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      // Auto-organise checkpoint commits directly (no interactive popup).
-      // The manual /autocommit-organise command is available for interactive
-      // use when needed.
       const sessionId = ctx.sessionManager.getSessionId();
-      const result = await runWithOrganiseProgress(
-        ctx,
-        "⏳ チェックポイントを整理中...",
-        () =>
-          organizeCheckpointCommits(
-            ctx,
-            config,
-            event,
-            reorganiserStore,
-            undefined,
-            sessionId,
-          ),
-      );
-      await handlePipelineEvents(ctx, statusIndicator, result.events);
+
+      // `picker` hands the range decision to the user: the popup's default
+      // already covers the checkpoint run at HEAD, and extending it downward
+      // is the manual form of what `mergeSimilarPrevious` does by itself.
+      // Cancelling leaves the checkpoints in history for
+      // /autocommit-organise.
+      if (config.organiseMode === "picker") {
+        await maybeRunInteractiveReorganise(
+          ctx,
+          config,
+          event,
+          statusIndicator,
+          new GitPickerStore(git),
+          reorganiserStore,
+        );
+      } else {
+        // Auto-organise checkpoint commits directly (no interactive popup).
+        const result = await runWithOrganiseProgress(
+          ctx,
+          "⏳ チェックポイントを整理中...",
+          () =>
+            organizeCheckpointCommits(
+              ctx,
+              config,
+              event,
+              reorganiserStore,
+              undefined,
+              sessionId,
+            ),
+        );
+        await handlePipelineEvents(ctx, statusIndicator, result.events);
+      }
 
       // Detect checkpoint commits from other sessions that entered via a
       // merge during this run (e.g. a delegated worktree branch whose agent

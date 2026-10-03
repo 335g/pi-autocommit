@@ -8,7 +8,12 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { loadConfig, saveEnable, saveModel } from "./config.js";
+import {
+  loadConfig,
+  saveEnable,
+  saveModel,
+  saveOrganiseMode,
+} from "./config.js";
 
 /**
  * Create a temporary directory with a `.pi/pi-autocommit.json` file.
@@ -388,6 +393,42 @@ void describe("saveModel", () => {
       assert.strictEqual(loadConfig(dir).model, undefined);
       saveModel(dir, "openai/gpt-4o");
       assert.strictEqual(loadConfig(dir).model, "openai/gpt-4o");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+void describe("organiseMode", () => {
+  void it("defaults to auto", () => {
+    const dir = mkdtempSync("/tmp/pi-autocommit-test-");
+    try {
+      assert.strictEqual(loadConfig(dir).organiseMode, "auto");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("ignores an unknown value", () => {
+    const dir = withConfigFile({ organiseMode: "review" });
+    try {
+      assert.strictEqual(loadConfig(dir).organiseMode, "auto");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  void it("saves the mode and preserves other keys", () => {
+    const dir = withConfigFile({ lang: "ja", enable: true });
+    try {
+      saveOrganiseMode(dir, "picker");
+      const parsed = JSON.parse(
+        readFileSync(join(dir, ".pi", "pi-autocommit.json"), "utf-8"),
+      );
+      assert.strictEqual(parsed.organiseMode, "picker");
+      assert.strictEqual(parsed.lang, "ja");
+      assert.strictEqual(parsed.enable, true);
+      assert.strictEqual(loadConfig(dir).organiseMode, "picker");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
