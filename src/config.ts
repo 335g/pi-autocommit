@@ -28,7 +28,7 @@ const CONFIG_FILENAME = "pi-autocommit.json";
 export const ORGANISE_MODES = ["auto", "picker"] as const;
 export type OrganiseMode = (typeof ORGANISE_MODES)[number];
 
-function isOrganiseMode(value: unknown): value is OrganiseMode {
+export function isOrganiseMode(value: unknown): value is OrganiseMode {
   return (
     typeof value === "string" &&
     (ORGANISE_MODES as readonly string[]).includes(value)
@@ -220,7 +220,7 @@ function persist(cwd: string, key: string, value: unknown): void {
     parsed = JSON.parse(raw) as Record<string, unknown>;
   } catch {
     // Missing or unreadable file — start from defaults.
-    parsed = { lang: DEFAULT_CONFIG.lang };
+    parsed = { lang: DEFAULT_CONFIG.lang, enable: DEFAULT_CONFIG.enable };
   }
 
   if (value === undefined) {
