@@ -89,8 +89,12 @@ _Avoid_: organize command, manual commit, /organize
 A popup that lists recent commits and lets the user select a range to squash and reorganise. `wip(checkpoint):` commits are auto-selected (`[1]` at HEAD, `[2]` at the last checkpoint). The user can extend the range to include non-checkpoint commits by moving the cursor and pressing `1` / `2`. Shown at `agent_end` when the organise mode is `picker`, and always by `/autocommit-organise`.
 
 **Organise mode**
-How much control `agent_end` hands over before checkpoints are reorganised: `auto` (the default) reorganises the checkpoint run silently, `picker` stops on the commit picker so the range is chosen by hand. Persisted as `organiseMode`, switched by `/autocommit-mode` (no argument cycles), and mirrored in the footer. `picker` is the manual form of what `mergeSimilarPrevious` decides on its own, so the automatic downward merge does not run in that mode — the user draws the range instead.
+How much control `agent_end` hands over before checkpoints are reorganised, as a ladder: `auto` (the default) reorganises the checkpoint run silently, `picker` stops on the commit picker so the range is chosen by hand, `review` adds the commit review dialog on top of the picker. Persisted as `organiseMode`, switched by `/autocommit-mode` (no argument cycles), and mirrored in the footer. `picker` and `review` are the manual form of what `mergeSimilarPrevious` decides on its own, so the automatic downward merge does not run in those modes — the user draws the range instead.
 _Avoid_: interactive mode, confirm mode
+
+**Commit review dialog**
+The per-commit confirmation `review` mode runs between proposition and commit: each proposed group is shown with its message and files, confirming keeps it, and rejecting opens pi's multi-line editor prefilled with the proposed message. Cancelling the editor aborts the whole reorganisation — no commit is made, the soft reset is left in place with every change staged (the same state the oversized-diff abort uses), and in the range picker's slow path the pre-operation HEAD is restored. Only messages can change: the file partition is untouched so the coverage guard in `commitGroups` still holds, which is why a group cannot be dropped or have files moved out.
+_Avoid_: commit preview, message approval
 
 **Range-based reset**
 `git reset --soft HEAD~{N}` where N is the depth of the oldest selected commit from HEAD. All changes in the selected range become staged and are fed to the reorganiser's LLM pipeline for splitting into logical Conventional Commits.
@@ -107,7 +111,7 @@ A footer element that shows whether the working tree has uncommitted changes. It
 _Avoid_: status badge, dirty flag
 
 **Organise-mode indicator**
-A footer element that shows the active organise mode (`[auto]` / `[picker]`) while auto-commit is enabled, and nothing when it is disabled — the mode only means something while checkpoints are being made. Read from the config on every update so a `/autocommit-mode` switch is visible immediately.
+A footer element that shows the active organise mode (`[auto]` / `[picker]` / `[review]`) while auto-commit is enabled, and nothing when it is disabled — the mode only means something while checkpoints are being made. Read from the config on every update so a `/autocommit-mode` switch is visible immediately.
 _Avoid_: mode badge, footer mode
 
 ## Submodules
