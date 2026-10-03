@@ -22,10 +22,13 @@ const CONFIG_FILENAME = "pi-autocommit.json";
  *
  * - `auto` — reorganise silently at `agent_end` (no popup).
  * - `picker` — show the commit picker at `agent_end` so the range to
- *   reorganise is chosen by hand. `/autocommit-organise` always shows the
- *   picker regardless of this setting.
+ *   reorganise is chosen by hand.
+ * - `review` — the picker, then a confirm/edit dialog for every proposed
+ *   commit before anything is written.
+ *
+ * `/autocommit-organise` always shows the picker regardless of this setting.
  */
-export const ORGANISE_MODES = ["auto", "picker"] as const;
+export const ORGANISE_MODES = ["auto", "picker", "review"] as const;
 export type OrganiseMode = (typeof ORGANISE_MODES)[number];
 
 export function isOrganiseMode(value: unknown): value is OrganiseMode {
@@ -94,8 +97,9 @@ export interface PiAutocommitConfig {
   mergeSimilarPrevious: boolean;
 
   /**
-   * Whether `agent_end` reorganises silently (`"auto"`, the default) or stops
-   * on the commit picker so the range is chosen by hand (`"picker"`).
+   * How much control `agent_end` hands over: `"auto"` (the default) reorganises
+   * silently, `"picker"` stops on the commit picker, `"review"` also confirms
+   * every proposed commit message before committing.
    */
   organiseMode: OrganiseMode;
 }

@@ -7,6 +7,7 @@ import {
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { GitCheckpointStore } from "./checkpoint-store.js";
 import type { PipelineEvent } from "./commit-events.js";
+import type { ReviewGroupsFn } from "./commit-prompt.js";
 import {
   CHECKPOINT_COMMIT_MARKER,
   organizeCheckpointCommits,
@@ -40,6 +41,7 @@ import {
   saveOrganiseMode,
 } from "./config.js";
 import { GitOperations } from "./git-operations.js";
+import { reviewCommitGroups } from "./group-review.js";
 import { validateModelString } from "./llm-commit.js";
 import { CLEAR_VALUE, showModelPopup } from "./model-popup.js";
 import { GitPickerStore, type PickerStore } from "./picker-store.js";
@@ -152,11 +154,25 @@ async function maybeRunInteractiveReorganise(
 
     const range = await showCommitPicker(ctx, items, loadMore, remoteTipSha);
     if (range !== null) {
+      // `review` mode confirms every proposed commit before it is written;
+      // the other modes commit the proposal as-is.
+      const review: ReviewGroupsFn | undefined =
+        config.organiseMode === "review"
+          ? (groups) => reviewCommitGroups(ctx, groups)
+          : undefined;
       const result = await runWithOrganiseProgress(
         ctx,
         "⏳ Reorganising checkpoint commits...",
         () =>
-          reorganiseSelectedRange(ctx, config, event, reorganiserStore, range),
+          reorganiseSelectedRange(
+            ctx,
+            config,
+            event,
+            reorganiserStore,
+            range,
+            undefined,
+            review,
+          ),
       );
       await handlePipelineEvents(ctx, statusIndicator, result.events);
     } else {
@@ -297,11 +313,12 @@ export default function (pi: ExtensionAPI) {
   const MODE_HINT: Record<OrganiseMode, string> = {
     auto: "agent_end で無対話に整理",
     picker: "agent_end でコミット範囲を選ぶ",
+    review: "範囲選択 + コミット前にメッセージを確認・編集",
   };
 
   pi.registerCommand("autocommit-mode", {
     description:
-      "Set the agent_end organise mode (auto|picker). No arg cycles to the next mode.",
+      "Set the agent_end organise mode (auto|picker|review). No arg cycles to the next mode.",
     getArgumentCompletions: (): AutocompleteItem[] =>
       ORGANISE_MODES.map((mode) => ({
         value: mode,
@@ -720,12 +737,13 @@ export default function (pi: ExtensionAPI) {
 
       const sessionId = ctx.sessionManager.getSessionId();
 
-      // `picker` hands the range decision to the user: the popup's default
-      // already covers the checkpoint run at HEAD, and extending it downward
-      // is the manual form of what `mergeSimilarPrevious` does by itself.
-      // Cancelling leaves the checkpoints in history for
-      // /autocommit-organise.
-      if (config.organiseMode === "picker") {
+      // `picker` and `review` hand the range decision to the user: the
+      // popup's default already covers the checkpoint run at HEAD, and
+      // extending it downward is the manual form of what
+      // `mergeSimilarPrevious` does by itself. `review` then confirms each
+      // proposed commit before it is written. Cancelling leaves the
+      // checkpoints in history for /autocommit-organise.
+      if (config.organiseMode !== "auto") {
         await maybeRunInteractiveReorganise(
           ctx,
           config,

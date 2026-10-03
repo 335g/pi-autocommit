@@ -410,7 +410,7 @@ void describe("organiseMode", () => {
   });
 
   void it("ignores an unknown value", () => {
-    const dir = withConfigFile({ organiseMode: "review" });
+    const dir = withConfigFile({ organiseMode: "confirm" });
     try {
       assert.strictEqual(loadConfig(dir).organiseMode, "auto");
     } finally {
