@@ -3,7 +3,6 @@ import type { CommitGroup } from "./commit-prompt.js";
 
 /** How many files of one group the preview lists before summarising. */
 const MAX_PREVIEW_FILES = 8;
-
 /** Marks a group header line in the partition editor. */
 const HEADER_PREFIX = "## ";
 
@@ -17,26 +16,53 @@ const PARTITION_HELP = [
 ].join("\n");
 
 /**
- * Render one proposed group for a dialog: the message, then its files.
- * Long file lists are cut with a "+N more" summary so the dialog stays
- * readable.
+ * Render one proposed group for its confirmation dialog.
+ *
+ * The message and the files each get their own label, and the dialog's
+ * options are spelled out, because `ctx.ui.confirm()` hands its whole body to
+ * pi's `ExtensionSelectorComponent`, which renders title and body as one
+ * bold accent-coloured block. Styling cannot express hierarchy there, so the
+ * labels and blank lines have to.
  */
 export function formatGroupPreview(group: CommitGroup): string {
   const shown = group.files.slice(0, MAX_PREVIEW_FILES);
   const rest = group.files.length - shown.length;
   const files = shown.map((file) => `  ${file}`).join("\n");
   const suffix = rest > 0 ? `\n  …他 ${rest} ファイル` : "";
-  return `${group.message}\n\n${files}${suffix}`;
+  const message = group.message
+    .split("\n")
+    .map((line) => (line.length > 0 ? `  ${line}` : ""))
+    .join("\n");
+  return [
+    "メッセージ",
+    message,
+    "",
+    `ファイル (${group.files.length})`,
+    `${files}${suffix}`,
+    "",
+    "Yes = このメッセージでコミットする",
+    "No  = メッセージを書き換える（エディタが開きます）",
+  ].join("\n");
 }
 
-/** Render every proposed group, so the whole split is visible at once. */
+/**
+ * Render every proposed group for the gate dialog: one line per commit so the
+ * shape of the whole split is visible without a scroll, then what the
+ * dialog's Yes and No do.
+ */
 export function formatAllGroupsPreview(groups: CommitGroup[]): string {
-  return groups
-    .map(
-      (group, index) =>
-        `[${index + 1}/${groups.length}] ${formatGroupPreview(group)}`,
-    )
-    .join("\n\n");
+  const lines = groups.map(
+    (group, index) =>
+      `  ${index + 1}) ${group.message.split("\n")[0]}\n       ${group.files.length} ファイル`,
+  );
+  return [
+    `${groups.length} 件のコミットに分けます。`,
+    "",
+    ...lines,
+    "",
+    "Yes = 分割を編集する（エディタが開きます）",
+    "No  = このまま作成する",
+  ].join("\n");
 }
 
 /**
@@ -158,7 +184,7 @@ async function reviewMessages(
 ): Promise<CommitGroup[] | null> {
   const reviewed: CommitGroup[] = [];
   for (const [index, group] of groups.entries()) {
-    const title = `pi-autocommit: コミット ${index + 1}/${groups.length} を作成しますか？`;
+    const title = `pi-autocommit: コミット ${index + 1}/${groups.length}`;
     const ok = await ctx.ui.confirm(title, formatGroupPreview(group));
     if (ok) {
       reviewed.push(group);
@@ -202,7 +228,7 @@ export async function reviewCommitGroups(
   ctx.ui.setWorkingVisible(false);
   try {
     const edit = await ctx.ui.confirm(
-      "pi-autocommit: コミットの分割を編集しますか？",
+      "pi-autocommit: 提案された分割",
       formatAllGroupsPreview(groups),
     );
     const partitioned = edit ? await editPartition(ctx, groups) : groups;

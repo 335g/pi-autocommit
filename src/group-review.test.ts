@@ -49,12 +49,24 @@ function makeCtx(
 }
 
 void describe("formatGroupPreview", () => {
-  void it("shows the message and its files", () => {
+  void it("labels the message and the files separately", () => {
     const preview = formatGroupPreview(group("feat(a): x", ["a.ts", "b.ts"]));
-    assert.ok(preview.startsWith("feat(a): x"));
-    assert.ok(preview.includes("  a.ts"));
-    assert.ok(preview.includes("  b.ts"));
+    assert.ok(preview.includes("メッセージ\n  feat(a): x"));
+    assert.ok(preview.includes("ファイル (2)\n  a.ts\n  b.ts"));
     assert.ok(!preview.includes("他"));
+  });
+
+  void it("indents every line of a multi-line message", () => {
+    const preview = formatGroupPreview(
+      group("feat(a): x\n\nbecause reasons", ["a.ts"]),
+    );
+    assert.ok(preview.includes("  because reasons"));
+  });
+
+  void it("spells out what the dialog options do", () => {
+    const preview = formatGroupPreview(group("feat(a): x", ["a.ts"]));
+    assert.ok(preview.includes("Yes = このメッセージでコミットする"));
+    assert.ok(preview.includes("No  = メッセージを書き換える"));
   });
 
   void it("summarises a file list longer than the preview limit", () => {
@@ -63,17 +75,25 @@ void describe("formatGroupPreview", () => {
     assert.ok(preview.includes("f7.ts"));
     assert.ok(!preview.includes("f8.ts"));
     assert.ok(preview.includes("…他 3 ファイル"));
+    assert.ok(preview.includes("ファイル (11)"));
   });
 });
 
 void describe("formatAllGroupsPreview", () => {
-  void it("numbers every group so the whole split is visible at once", () => {
+  void it("lists every group with its file count so the whole split is visible", () => {
     const preview = formatAllGroupsPreview([
       group("feat(a): x", ["a.ts"]),
-      group("test(a): y", ["b.ts"]),
+      group("test(a): y", ["b.ts", "c.ts"]),
     ]);
-    assert.ok(preview.includes("[1/2] feat(a): x"));
-    assert.ok(preview.includes("[2/2] test(a): y"));
+    assert.ok(preview.includes("2 件のコミットに分けます。"));
+    assert.ok(preview.includes("  1) feat(a): x\n       1 ファイル"));
+    assert.ok(preview.includes("  2) test(a): y\n       2 ファイル"));
+  });
+
+  void it("spells out what the gate options do", () => {
+    const preview = formatAllGroupsPreview([group("feat(a): x", ["a.ts"])]);
+    assert.ok(preview.includes("Yes = 分割を編集する"));
+    assert.ok(preview.includes("No  = このまま作成する"));
   });
 });
 
