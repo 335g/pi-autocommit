@@ -102,6 +102,8 @@ export class GitOperations {
    */
   async getStagedStat(): Promise<string> {
     const { stdout } = await this.pi.exec("git", [
+      "-c",
+      "core.quotePath=false",
       "diff",
       "--cached",
       "--stat",
@@ -120,6 +122,8 @@ export class GitOperations {
    */
   async getStagedDiff(): Promise<string> {
     const { stdout } = await this.pi.exec("git", [
+      "-c",
+      "core.quotePath=false",
       "diff",
       "--cached",
       "--submodule=log",
@@ -129,9 +133,16 @@ export class GitOperations {
 
   /**
    * Get the name-status of staged changes (`git diff --cached --name-status`).
+   *
+   * `core.quotePath=false` keeps non-ASCII paths raw. Every consumer compares
+   * these paths against commit-group file lists, which are raw, so a quoted
+   * `"\346\227\245.ts"` would never match: the coverage guard would fall back
+   * to a single commit and the review path would treat the file as dropped.
    */
   async getStagedNameStatus(): Promise<string> {
     const { stdout } = await this.pi.exec("git", [
+      "-c",
+      "core.quotePath=false",
       "diff",
       "--cached",
       "--name-status",
@@ -232,6 +243,29 @@ export class GitOperations {
     if (result.code !== 0) {
       throw new Error(
         `git restore --staged -- ${file} failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
+      );
+    }
+  }
+
+  /**
+   * Unstage only the given files (`git restore --staged -- <file>...`).
+   *
+   * Used by the review path to leave files the user dropped out of the
+   * partition uncommitted instead of sweeping them into a commit.
+   */
+  async unstageFiles(files: string[]): Promise<void> {
+    if (files.length === 0) {
+      return;
+    }
+    const result = await this.pi.exec("git", [
+      "restore",
+      "--staged",
+      "--",
+      ...files,
+    ]);
+    if (result.code !== 0) {
+      throw new Error(
+        `git restore --staged failed (code ${result.code}): ${result.stderr.trim() || "Unknown error"}`,
       );
     }
   }

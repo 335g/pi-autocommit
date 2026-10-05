@@ -226,7 +226,13 @@ describe("GitOperations.getStagedDiff", () => {
   it("passes --submodule=log so submodule commit logs reach the LLM", async () => {
     const git = new GitOperations({
       exec: async (_cmd: string, args?: string[]) => {
-        assert.deepEqual(args, ["diff", "--cached", "--submodule=log"]);
+        assert.deepEqual(args, [
+          "-c",
+          "core.quotePath=false",
+          "diff",
+          "--cached",
+          "--submodule=log",
+        ]);
         return {
           code: 0,
           stdout:
@@ -358,4 +364,39 @@ describe("GitOperations.getCurrentBranch", () => {
     } as unknown as ExtensionAPI);
     assert.equal(await failing.getCurrentBranch(), null);
   });
+});
+
+describe("GitOperations staged materials keep paths raw", () => {
+  /**
+   * Every consumer compares these paths against commit-group file lists,
+   * which are raw. A quoted `"\346\227\245.ts"` never matches, so the coverage
+   * guard would fall back to a single commit and the review path would treat
+   * the file as dropped.
+   */
+  async function argsOf(
+    call: (git: GitOperations) => Promise<unknown>,
+  ): Promise<string[]> {
+    let captured: string[] = [];
+    const git = new GitOperations({
+      exec: async (_command: string, args?: string[]) => {
+        captured = args ?? [];
+        return { code: 0, stdout: "", stderr: "", killed: false };
+      },
+    } as unknown as ExtensionAPI);
+    await call(git);
+    return captured;
+  }
+
+  const cases = [
+    ["getStagedNameStatus", (g: GitOperations) => g.getStagedNameStatus()],
+    ["getStagedDiff", (g: GitOperations) => g.getStagedDiff()],
+    ["getStagedStat", (g: GitOperations) => g.getStagedStat()],
+  ] as const;
+
+  for (const [name, call] of cases) {
+    it(`${name} disables core.quotePath`, async () => {
+      const args = await argsOf(call);
+      assert.deepEqual(args.slice(0, 2), ["-c", "core.quotePath=false"]);
+    });
+  }
 });
