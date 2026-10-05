@@ -154,8 +154,9 @@ async function maybeRunInteractiveReorganise(
 
     const range = await showCommitPicker(ctx, items, loadMore, remoteTipSha);
     if (range !== null) {
-      // `review` mode confirms every proposed commit before it is written;
-      // the other modes commit the proposal as-is.
+      // `review` mode lets the user edit the file partition and each
+      // proposed message before anything is written; the other modes commit
+      // the proposal as-is.
       const review: ReviewGroupsFn | undefined =
         config.organiseMode === "review"
           ? (groups) => reviewCommitGroups(ctx, groups)
@@ -313,7 +314,7 @@ export default function (pi: ExtensionAPI) {
   const MODE_HINT: Record<OrganiseMode, string> = {
     auto: "agent_end で無対話に整理",
     picker: "agent_end でコミット範囲を選ぶ",
-    review: "範囲選択 + コミット前にメッセージを確認・編集",
+    review: "範囲選択 + コミット前に分割とメッセージを編集",
   };
 
   pi.registerCommand("autocommit-mode", {
@@ -740,8 +741,9 @@ export default function (pi: ExtensionAPI) {
       // `picker` and `review` hand the range decision to the user: the
       // popup's default already covers the checkpoint run at HEAD, and
       // extending it downward is the manual form of what
-      // `mergeSimilarPrevious` does by itself. `review` then confirms each
-      // proposed commit before it is written. Cancelling leaves the
+      // `mergeSimilarPrevious` does by itself. `review` then offers the
+      // partition editor and confirms each proposed commit before it is
+      // written. Cancelling leaves the
       // checkpoints in history for /autocommit-organise.
       if (config.organiseMode !== "auto") {
         await maybeRunInteractiveReorganise(

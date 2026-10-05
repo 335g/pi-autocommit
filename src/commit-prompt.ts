@@ -113,11 +113,13 @@ export interface CommitGroup {
 
 /**
  * Optional user review of the proposed groups, run between proposition and
- * commit. Returns the groups to commit (possibly with edited messages), or
- * `null` to abort: nothing is committed and the changes stay staged.
+ * commit. Returns the groups to commit (with edited messages and/or an edited
+ * file partition), or `null` to abort: nothing is committed and the changes
+ * stay staged.
  *
- * The file partition must be preserved — dropping a group would leave its
- * files uncovered and trip the coverage guard in `commitGroups`.
+ * A file the returned groups do not claim is unstaged and left uncommitted by
+ * {@link commitReviewedGroups}, so the coverage guard in `commitGroups` still
+ * holds for every file that stays staged.
  */
 export type ReviewGroupsFn = (
   groups: CommitGroup[],

@@ -50,6 +50,13 @@ export interface ReorganiserStore {
   unstageAll(): Promise<void>;
 
   /**
+   * Unstage only the given files, leaving them as uncommitted working-tree
+   * changes. Used by the review path for files the user dropped out of the
+   * proposed partition.
+   */
+  unstageFiles(files: string[]): Promise<void>;
+
+  /**
    * Check whether the index contains any staged changes.
    * Returns true when there are staged differences vs HEAD.
    */
@@ -200,6 +207,10 @@ export class GitReorganiserStore implements ReorganiserStore {
 
   async unstageAll(): Promise<void> {
     return this.git.unstageAll();
+  }
+
+  async unstageFiles(files: string[]): Promise<void> {
+    return this.git.unstageFiles(files);
   }
 
   async hasStagedChanges(): Promise<boolean> {

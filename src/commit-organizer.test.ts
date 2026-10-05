@@ -321,6 +321,11 @@ class InMemoryReorganiserStore implements ReorganiserStore {
     this.stagedFiles = [];
   }
 
+  async unstageFiles(files: string[]): Promise<void> {
+    this.operations.push(`unstageFiles:${files.join(",")}`);
+    this.stagedFiles = this.stagedFiles.filter((f) => !files.includes(f));
+  }
+
   async hasStagedChanges(): Promise<boolean> {
     this.operations.push("hasStagedChanges");
     return this.stagedFiles.length > 0;
@@ -1536,6 +1541,86 @@ a.ts
     assert.ok(
       !result.events.some((e) => e.type === "error"),
       "a cancelled review is not an error",
+    );
+  });
+
+  void it("review: unstages files dropped from the partition and commits the rest", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["a.ts"] },
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 2`, files: ["b.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 1 },
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+=== END ===
+=== COMMIT 2 ===
+chore: scratch file
+=== FILES ===
+b.ts
+=== END ===
+`.trim(),
+      ),
+      // The user deleted b.ts from the partition.
+      async (groups) => groups.filter((g) => !g.files.includes("b.ts")),
+    );
+
+    assert.strictEqual(result.organised, true);
+    assert.deepStrictEqual(store.commits, ["feat(auth): add JWT login"]);
+    assert.ok(store.operations.includes("unstageFiles:b.ts"));
+    assert.deepStrictEqual(store.stagedFiles, []);
+    assert.ok(
+      result.events.some(
+        (e) => e.type === "info" && e.message.includes("b.ts"),
+      ),
+      "the dropped file is reported, not silently left behind",
+    );
+  });
+
+  void it("review: commits nothing when every file is dropped", async () => {
+    const store = new InMemoryReorganiserStore({
+      upstreamAheadCount: 5,
+      checkpointCommits: [
+        { message: `${CHECKPOINT_COMMIT_MARKER} turn 1`, files: ["a.ts"] },
+      ],
+    });
+
+    const result = await reorganiseSelectedRange(
+      makeCtx(stubModel),
+      config(),
+      makeEvent(),
+      store,
+      { startIndex: 0, endIndex: 0 },
+      fakeCompleteReturning(
+        `
+=== COMMIT 1 ===
+feat(auth): add JWT login
+=== FILES ===
+a.ts
+=== END ===
+`.trim(),
+      ),
+      async () => [],
+    );
+
+    assert.deepStrictEqual(store.commits, []);
+    assert.ok(store.operations.includes("unstageFiles:a.ts"));
+    assert.deepStrictEqual(store.stagedFiles, []);
+    assert.ok(
+      !result.events.some((e) => e.type === "error"),
+      "dropping everything is a choice, not a failure",
     );
   });
 

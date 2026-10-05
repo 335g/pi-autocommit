@@ -30,6 +30,11 @@ export class ReviewAbortedError extends Error {
  * {@link ReviewAbortedError} is thrown so the caller can undo whatever it had
  * already done to HEAD.
  *
+ * Files the reviewed groups no longer claim are unstaged before committing,
+ * so they stay uncommitted working-tree changes instead of tripping the
+ * coverage guard and collapsing the run into a single fallback commit. They
+ * are reported, because a silently dropped file is how a change goes missing.
+ *
  * @returns The number of commits executed.
  */
 export async function commitReviewedGroups(
@@ -46,6 +51,22 @@ export async function commitReviewedGroups(
   if (reviewed === null) {
     throw new ReviewAbortedError();
   }
+
+  const { nameStatus } = await store.getStagedMaterials();
+  const covered = new Set(reviewed.flatMap((g) => g.files));
+  const dropped = parseNameStatusPaths(nameStatus).filter(
+    (path) => !covered.has(path),
+  );
+  if (dropped.length > 0) {
+    await store.unstageFiles(dropped);
+    events.push({
+      type: "info",
+      message:
+        `pi-autocommit: ${dropped.length} ファイルをコミットから外しました（未コミットのまま残ります）: ` +
+        `${dropped.slice(0, 5).join(", ")}${dropped.length > 5 ? ", ..." : ""}`,
+    });
+  }
+
   return commitGroups(store, reviewed, events);
 }
 
