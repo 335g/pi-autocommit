@@ -98,8 +98,9 @@ export interface PiAutocommitConfig {
 
   /**
    * How much control `agent_end` hands over: `"auto"` (the default) reorganises
-   * silently, `"picker"` stops on the commit picker, `"review"` also confirms
-   * every proposed commit message before committing.
+   * silently, `"picker"` stops on the commit picker, `"review"` also offers the
+   * partition editor and confirms every proposed commit message before
+   * committing. See ADR-0012, ADR-0013 and ADR-0014.
    */
   organiseMode: OrganiseMode;
 }
